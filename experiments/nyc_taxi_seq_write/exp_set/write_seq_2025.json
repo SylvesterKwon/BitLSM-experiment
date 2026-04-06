@@ -1,7 +1,6 @@
 {
   "db_path_base": "/scratch/honk",
   "workload": "/home/dohyun/Workloads/write_seq_2025_all.tsv",
-  "output_dir": "src/honk_player/result",
   "common_params": {
     "indexed_attrs": "payment_type,PULocationID,fare_amount,tpep_pickup_datetime"
   },

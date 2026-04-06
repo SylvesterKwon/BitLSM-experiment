@@ -12,6 +12,11 @@ Both drivers are method-agnostic; the binding is selected at runtime via `Create
 ## Directory Layout
 
 ```
+experiments/                   # standalone experiments (each has its own runner + spec)
+│   └── <experiment_name>/     # e.g. seq_write, nyc_taxi_seq_read
+│       ├── exp_set/           # param set JSON files
+│       ├── run.py             # experiment runner
+│       └── result/            # CSV outputs (auto-created)
 src/
 ├── run_common.py              # shared runner utilities (logging, hw-reset, daemon, etc.)
 ├── run.py                     # synthetic benchmark sweep runner
@@ -136,3 +141,28 @@ When adding a new binding, follow the existing pattern in `no_index_binding.cpp`
 - Write CSV: `time_elapsed_ms,records_written` (checkpoint every 1M records)
 - Read CSV (benchmark): `RESULT:{elapsed_ms},{matched},{selectivity}` printed to stdout, collected by run.py into master CSV
 - Read CSV (honk): `query_id,query_attr_num,filter_attrs,time_elapsed_ms,records_matched,records_total,selectivity_actual`
+
+## Standalone Experiments (`experiments/`)
+
+Each experiment lives in its own directory under `experiments/`. Every experiment directory contains:
+
+- `exp_set/` — param set JSON files (one per sweep configuration)
+- `run.py` — self-contained runner with its own logic. Imports `src/run_common.py` for shared utilities (logging, daemon, hw-reset, etc.) but owns the experiment flow.
+- `result/` — auto-created output directory for CSVs
+
+Each experiment runner defines its own logic rather than branching on `exp_type`. Param set JSONs only carry data (methods, parameters, paths), not behavior.
+
+Runners accept the same common flags (`--dry-run`, `--methods`, `--cooldown`, `--hw-reset`, `--clean-db`, `--start-from`, `--daemon`/`--no-daemon`) and take a param set JSON as positional arg.
+
+```bash
+python3 experiments/<name>/run.py experiments/<name>/exp_set/<params>.json [options]
+```
+
+### Experiments
+
+| Experiment | Description | Binary |
+|---|---|---|
+| `seq_write` | Synthetic sequential write — time + DB size | benchmark binaries |
+| `nyc_taxi_seq_write` | NYC taxi sequential write | `honk_player` |
+| `nyc_taxi_seq_read` | NYC taxi sequential read (DB must exist) | `honk_player` |
+| `nyc_taxi_interleave` | NYC taxi read-under-ingestion | `honk_player` |

@@ -6,7 +6,6 @@
     "/home/dohyun/Workloads/read_seq_2025_sel0.01_k3_r100.tsv",
     "/home/dohyun/Workloads/read_seq_2025_sel0.01_k4_r100.tsv"
   ],
-  "output_dir": "src/honk_player/result",
   "common_params": {
     "indexed_attrs": "payment_type,PULocationID,fare_amount,tpep_pickup_datetime"
   },
