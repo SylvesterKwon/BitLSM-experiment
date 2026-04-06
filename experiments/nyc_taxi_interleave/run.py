@@ -67,7 +67,9 @@ def run(config_path: str, dry_run: bool, method_filter: list,
     with open(config_path) as f:
         config = json.load(f)
 
-    exp_label     = os.path.splitext(os.path.basename(config_path))[0]
+    exp_set_name  = os.path.splitext(os.path.basename(config_path))[0]
+    exp_name      = os.path.basename(EXP_DIR)
+    exp_label     = f"{exp_name}_{exp_set_name}"
     db_path_base  = config["db_path_base"]
     raw_workload  = config["workload"]
     workloads     = raw_workload if isinstance(raw_workload, list) else [raw_workload]

@@ -2,7 +2,9 @@
   "db_path_base": "/scratch/seq_write_performance",
   "schema_dir": "src/benchmark/schema",
   "common_params": {
-    "n": [100000000],
+    "n": [
+      100000000
+    ],
     "schema": [
       "default_a1_c100.json",
       "default_a2_c100.json",
@@ -22,7 +24,11 @@
       "name": "bitlsm",
       "binary": "build/bin/bit-lsm",
       "params": {
-        "rho": [0.2, 0.1, 0.05]
+        "rho": [
+          0.2,
+          0.1,
+          0.05
+        ]
       }
     },
     {
@@ -33,11 +39,6 @@
     {
       "name": "si-ck",
       "binary": "build/bin/si-ck",
-      "params": {}
-    },
-    {
-      "name": "si-eager",
-      "binary": "build/bin/si-eager",
       "params": {}
     }
   ]
