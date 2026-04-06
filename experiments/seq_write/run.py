@@ -48,8 +48,7 @@ EXP_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PARAMS = ["n", "schema", "rho"]
 
 MASTER_COLUMNS = [
-    "method", "n", "schema", "rho",
-    "total_time_ms", "db_size_bytes",
+    "method", "time_elapsed_ms", "records_written", "db_size_bytes",
 ]
 
 
@@ -76,17 +75,38 @@ def get_db_size_bytes(db_path: str) -> int:
     return -1
 
 
-def parse_total_time_ms(output: str) -> int | None:
-    """Extract total elapsed time from benchmark binary stdout.
+def parse_checkpoints(output: str) -> list[tuple[int, int]]:
+    """Parse checkpoint lines from benchmark binary stdout.
 
-    Looks for line like: 'created 100000000 kvps. (total:12345ms elapsed)'
+    Looks for lines like: 'putted: 1000000 kvps, elapsed: 1234ms'
+    and final line: 'created 100000000 kvps. (total:12345ms elapsed)'
+
+    Returns list of (time_elapsed_ms, records_written).
     """
+    checkpoints = []
     for line in output.splitlines():
-        if "total:" in line and "ms elapsed" in line:
+        if "putted:" in line and "elapsed:" in line:
+            parts = line.split()
+            records = int(parts[parts.index("putted:") + 1])
+            elapsed_str = parts[-1]  # e.g. "1234ms"
+            elapsed = int(elapsed_str.rstrip("ms"))
+            checkpoints.append((elapsed, records))
+        elif "total:" in line and "ms elapsed" in line:
             start = line.index("total:") + len("total:")
             end = line.index("ms elapsed")
-            return int(line[start:end])
-    return None
+            total_ms = int(line[start:end])
+            # Extract n from "created N kvps."
+            parts = line.split()
+            n = int(parts[parts.index("created") + 1])
+            checkpoints.append((total_ms, n))
+    return checkpoints
+
+
+def method_label(name: str, combo: dict) -> str:
+    """Build method label, appending rho for bitlsm (e.g. 'bitlsm_rho0.05')."""
+    if "rho" in combo:
+        return f"{name}_rho{fmt(combo['rho'])}"
+    return name
 
 
 def build_command(binary: str, exp_label: str, db_path: str,
@@ -202,20 +222,29 @@ def run(config_path: str, dry_run: bool, method_filter: list, cooldown: int,
                     if rc != 0:
                         sys.exit(f"Run failed (exit {rc}): {' '.join(cmd)}")
 
-                    total_time = parse_total_time_ms(captured)
+                    checkpoints = parse_checkpoints(captured)
                     db_size = get_db_size_bytes(db_path)
+                    label = method_label(name, combo)
 
-                    print(f"  [result] total_time={total_time}ms, db_size={db_size} bytes ({db_size / (1024**3):.2f} GiB)")
+                    if checkpoints:
+                        total_ms = checkpoints[-1][0]
+                        print(f"  [result] total_time={total_ms}ms, db_size={db_size} bytes ({db_size / (1024**3):.2f} GiB)")
                     print()
 
-                    append_result(master_csv, {
-                        "method": name,
-                        "n": combo.get("n", ""),
-                        "schema": _schema_stem(str(combo.get("schema", ""))),
-                        "rho": fmt(combo["rho"]) if "rho" in combo else "",
-                        "total_time_ms": total_time if total_time is not None else "",
-                        "db_size_bytes": db_size,
-                    })
+                    for elapsed_ms, records in checkpoints[:-1]:
+                        append_result(master_csv, {
+                            "method": label,
+                            "time_elapsed_ms": elapsed_ms,
+                            "records_written": records,
+                            "db_size_bytes": "",
+                        })
+                    if checkpoints:
+                        append_result(master_csv, {
+                            "method": label,
+                            "time_elapsed_ms": checkpoints[-1][0],
+                            "records_written": checkpoints[-1][1],
+                            "db_size_bytes": db_size,
+                        })
 
                     if hw_reset:
                         reset_hardware(db_path_base)

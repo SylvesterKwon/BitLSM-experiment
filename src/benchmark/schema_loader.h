@@ -27,7 +27,7 @@ inline Schema load_schema(const std::string& path) {
   Schema schema;
   auto& attrs = j.at("attrs");
   schema.options.attr_num = static_cast<uint32_t>(attrs.size());
-  schema.payload_bytes = j.value("payload_bytes", 32u);
+  schema.payload_bytes = j.value("payload_bytes", 0u);
 
   for (auto& attr : attrs) {
     std::string type = attr.at("type").get<std::string>();

@@ -9,7 +9,6 @@
 #include <cstdint>
 #include <cstring>
 #include <cxxopts.hpp>
-#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -37,11 +36,6 @@ using bit_lsm::CompareOp;
 inline const char* kCharSet =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 inline const size_t kMaxCharIndex = strlen(kCharSet) - 1;
-
-struct ProgressLog {
-  uint64_t time_elapsed_ms;
-  uint64_t records_written;
-};
 
 struct ReadResult {
   uint64_t time_elapsed_ms;
@@ -178,10 +172,8 @@ class BenchmarkExperiment {
       cout << "RESULT:" << sr.elapsed_ms << "," << sr.matched
            << "," << sel_actual << "\n";
     } else {
-      vector<ProgressLog> progress_log;
-      FillKVP(schema, n, progress_log);
+      FillKVP(schema, n);
       binding_->Close();
-      SaveWriteCSV(output_dir, exp_label, n, s_name, progress_log);
     }
 
     return 0;
@@ -190,8 +182,7 @@ class BenchmarkExperiment {
  private:
   std::unique_ptr<experiment::Binding> binding_;
 
-  void FillKVP(const Schema& schema, uint64_t n,
-               vector<ProgressLog>& progress_log) {
+  void FillKVP(const Schema& schema, uint64_t n) {
     cout << "creating " << n << " kvps into " << binding_->Name()
          << " using Put API...\n";
 
@@ -238,7 +229,6 @@ class BenchmarkExperiment {
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::high_resolution_clock::now() - start_time)
                 .count();
-        progress_log.push_back({static_cast<uint64_t>(elapsed_ms), i + 1});
         cout << "putted: " << i + 1 << " kvps, elapsed: " << elapsed_ms
              << "ms\n";
       }
@@ -251,21 +241,6 @@ class BenchmarkExperiment {
          << "ms elapsed)\n";
   }
 
-  void SaveWriteCSV(const string& output_dir, const string& exp_label,
-                    uint64_t n, const string& schema_name,
-                    const vector<ProgressLog>& progress_log) {
-    std::filesystem::create_directories(output_dir);
-    string filename = exp_label + "_" + binding_->Name() + "_n" +
-                      to_string(n) + "_schema_" + schema_name +
-                      binding_->ParamSuffix() + ".csv";
-    string full_path = output_dir + "/" + filename;
-    ofstream f(full_path);
-    f << "time_elapsed_ms,records_written\n";
-    for (auto& log : progress_log)
-      f << log.time_elapsed_ms << "," << log.records_written << "\n";
-    f.close();
-    cout << "Result saved to: " << full_path << "\n";
-  }
 };
 
 }  // namespace benchmark

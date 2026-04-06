@@ -4,6 +4,5 @@
       "type": "categorical",
       "cardinality": 10
     }
-  ],
-  "payload_bytes": 32
+  ]
 }
