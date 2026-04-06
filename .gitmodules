@@ -1,0 +1,3 @@
+[submodule "third_party/BitLSM"]
+	path = third_party/BitLSM
+	url = https://github.com/SylvesterKwon/BitLSM.git
