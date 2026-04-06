@@ -16,6 +16,9 @@ import time
 from datetime import datetime
 from itertools import product
 
+# Project root: parent of src/
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 
 # ---------------------------------------------------------------------------
 # Process management
@@ -150,6 +153,16 @@ def reset_hardware(db_path_base: str):
     print("  [hw-reset] done")
 
 
+def make_result_dir(exp_name: str) -> str:
+    """Build a timestamped result directory under PROJECT_ROOT/results/.
+
+    Returns: absolute path like ``results/202604061430_seq_write/``.
+    The directory is NOT created here — callers create it with ``os.makedirs``.
+    """
+    ts = datetime.now().strftime("%Y%m%d_%H%M")
+    return os.path.join(PROJECT_ROOT, "results", f"{ts}_{exp_name}")
+
+
 def cooldown_sleep(seconds: int):
     """Sleep with countdown display."""
     for remaining in range(seconds, 0, -1):
@@ -193,9 +206,18 @@ def maybe_run_as_daemon(args):
     proc = subprocess.Popen(
         cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         preexec_fn=os.setpgrp)
+
+    # Write PID file so the process can be killed easily later.
+    pid_dir = os.path.join(PROJECT_ROOT, "logs")
+    os.makedirs(pid_dir, exist_ok=True)
+    pid_path = os.path.join(pid_dir, f"{proc.pid}.pid")
+    with open(pid_path, "w") as f:
+        f.write(f"{proc.pid}\n{' '.join(cmd)}\n")
+
     print(f"Background PID: {proc.pid}")
-    print(f"- Check daemon status: ps -p {proc.pid}")
-    print(f"- Terminate daemon: kill {proc.pid}")
+    print(f"  PID file: {pid_path}")
+    print(f"  Check:    ps -p {proc.pid}")
+    print(f"  Kill:     kill {proc.pid} && rm {pid_path}")
     sys.exit(0)
 
 

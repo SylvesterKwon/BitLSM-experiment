@@ -10,7 +10,7 @@ set(CMAKE_CXX_STANDARD 20)
 
 # Build Type & Compiler Flags Preferences
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
-  set(CMAKE_BUILD_TYPE "RelWithDebInfo" CACHE STRING "Choose the type of build." FORCE)
+  set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose the type of build." FORCE)
 endif()
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -mtune=native -DNDEBUG")
 set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")

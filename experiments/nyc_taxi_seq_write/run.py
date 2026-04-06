@@ -20,6 +20,7 @@ from run_common import (
     clean_db,
     cooldown_sleep,
     fmt,
+    make_result_dir,
     maybe_run_as_daemon,
     parse_method_filter,
     reset_hardware,
@@ -29,7 +30,6 @@ from run_common import (
 )
 
 EXP_DIR = os.path.dirname(os.path.abspath(__file__))
-RESULT_DIR = os.path.join(EXP_DIR, "result")
 BINARY = "build/bin/honk_player"
 
 DB_PARAMS = ["rho"]
@@ -68,7 +68,7 @@ def run(config_path: str, dry_run: bool, method_filter: list,
     workloads     = raw_workload if isinstance(raw_workload, list) else [raw_workload]
     methods       = config["methods"]
     common_params = config.get("common_params", {})
-    output_dir    = RESULT_DIR
+    output_dir    = make_result_dir(exp_label)
 
     log_file, log_path = setup_logging(exp_label)
 

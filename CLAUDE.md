@@ -12,11 +12,12 @@ Both drivers are method-agnostic; the binding is selected at runtime via `Create
 ## Directory Layout
 
 ```
+results/                       # all experiment outputs (auto-created)
+│   └── YYYYMMDD_HHMM_<label>/ # timestamped result directories
 experiments/                   # standalone experiments (each has its own runner + spec)
 │   └── <experiment_name>/     # e.g. seq_write, nyc_taxi_seq_read
 │       ├── exp_set/           # param set JSON files
-│       ├── run.py             # experiment runner
-│       └── result/            # CSV outputs (auto-created)
+│       └── run.py             # experiment runner
 src/
 ├── run_common.py              # shared runner utilities (logging, hw-reset, daemon, etc.)
 ├── run.py                     # synthetic benchmark sweep runner
@@ -138,6 +139,8 @@ When adding a new binding, follow the existing pattern in `no_index_binding.cpp`
 
 ## Result Files
 
+All results are written to `results/YYYYMMDD_HHMM_<exp_label>/` under the project root. The timestamp is minute-granularity, generated once per runner invocation via `make_result_dir()` in `run_common.py`.
+
 - Write CSV: `time_elapsed_ms,records_written` (checkpoint every 1M records)
 - Read CSV (benchmark): `RESULT:{elapsed_ms},{matched},{selectivity}` printed to stdout, collected by run.py into master CSV
 - Read CSV (honk): `query_id,query_attr_num,filter_attrs,time_elapsed_ms,records_matched,records_total,selectivity_actual`
@@ -148,7 +151,7 @@ Each experiment lives in its own directory under `experiments/`. Every experimen
 
 - `exp_set/` — param set JSON files (one per sweep configuration)
 - `run.py` — self-contained runner with its own logic. Imports `src/run_common.py` for shared utilities (logging, daemon, hw-reset, etc.) but owns the experiment flow.
-- `result/` — auto-created output directory for CSVs
+- `result/` — auto-created output directory for CSVs and plots
 
 Each experiment runner defines its own logic rather than branching on `exp_type`. Param set JSONs only carry data (methods, parameters, paths), not behavior.
 
@@ -166,3 +169,8 @@ python3 experiments/<name>/run.py experiments/<name>/exp_set/<params>.json [opti
 | `nyc_taxi_seq_write` | NYC taxi sequential write | `honk_player` |
 | `nyc_taxi_seq_read` | NYC taxi sequential read (DB must exist) | `honk_player` |
 | `nyc_taxi_interleave` | NYC taxi read-under-ingestion | `honk_player` |
+
+## Plotting
+
+- Plotting scripts live under each experiment directory (e.g. `experiments/<name>/plot.py`).
+- Generated plots (PNG, PDF, etc.) are saved into the same `result/` subdirectory that contains the source CSV files, keeping data and visualizations co-located.

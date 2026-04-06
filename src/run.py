@@ -33,6 +33,7 @@ from run_common import (
     clean_db,
     cooldown_sleep,
     fmt,
+    make_result_dir,
     maybe_run_as_daemon,
     parse_method_filter,
     reset_hardware,
@@ -211,7 +212,7 @@ def run(config_path: str, dry_run: bool, method_filter: list,
     # e.g. src/benchmark/exp_set/seq_write.json
     #   -> src/benchmark
     exp_dir    = os.path.dirname(os.path.dirname(os.path.abspath(config_path)))
-    output_dir = os.path.join(exp_dir, "result")
+    output_dir = make_result_dir(exp_label)
     schema_dir = os.path.join(exp_dir, "schema")
 
     # Resolve schema filenames to full paths
