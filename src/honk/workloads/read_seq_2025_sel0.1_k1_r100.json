@@ -1,0 +1,42 @@
+{
+  "dataset": [
+    "yellow_tripdata_2025-01.parquet",
+    "yellow_tripdata_2025-02.parquet",
+    "yellow_tripdata_2025-03.parquet",
+    "yellow_tripdata_2025-04.parquet",
+    "yellow_tripdata_2025-05.parquet",
+    "yellow_tripdata_2025-06.parquet",
+    "yellow_tripdata_2025-07.parquet",
+    "yellow_tripdata_2025-08.parquet",
+    "yellow_tripdata_2025-09.parquet",
+    "yellow_tripdata_2025-10.parquet",
+    "yellow_tripdata_2025-11.parquet",
+    "yellow_tripdata_2025-12.parquet"
+  ],
+  "seed": 42,
+  "phases": [
+    {
+      "label": "read_sel0.1_k1",
+      "type": "read_only",
+      "num_queries": 100,
+      "queries": [
+        {
+          "label": "sel0.1_k1",
+          "strategy": "guided_two_point",
+          "query_attr_num": 1,
+          "weight": 1,
+          "query_attrs": [
+            "payment_type",
+            "PULocationID",
+            "fare_amount",
+            "tpep_pickup_datetime"
+          ],
+          "target_selectivity_percent": {
+            "lo": 1.0,
+            "hi": 10.0
+          }
+        }
+      ]
+    }
+  ]
+}

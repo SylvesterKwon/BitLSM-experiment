@@ -1,0 +1,122 @@
+cmake_minimum_required(VERSION 3.14)
+
+project(BitLSM-experiment VERSION 0.1 LANGUAGES CXX)
+
+# 빌드 후 실행 파일이 생성될 위치를 'bin' 디렉터리로 지정
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
+# C++ Standard
+set(CMAKE_CXX_STANDARD 20)
+
+# Build Type & Compiler Flags Preferences
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  set(CMAKE_BUILD_TYPE "RelWithDebInfo" CACHE STRING "Choose the type of build." FORCE)
+endif()
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -mtune=native -DNDEBUG")
+set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
+set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O3 -march=native -mtune=native -g -fno-omit-frame-pointer -DNDEBUG")
+
+string(TOUPPER "${CMAKE_BUILD_TYPE}" UPPER_BUILD_TYPE)
+message(STATUS "=======================================================")
+message(STATUS "Current Build Type: ${CMAKE_BUILD_TYPE}")
+message(STATUS "Active CXX Flags : ${CMAKE_CXX_FLAGS_${UPPER_BUILD_TYPE}}")
+message(STATUS "=======================================================")
+
+# Folly (코어 라이브러리보다 먼저 설정해야 상위 scope에서 접근 가능)
+set(DEPS_ROOT "/opt/BitLSM/installed")
+set(FOLLY_DIR "${DEPS_ROOT}/folly")
+file(GLOB FMT_DIR "${DEPS_ROOT}/fmt-*")
+file(GLOB GLOG_DIR "${DEPS_ROOT}/glog-*")
+list(APPEND CMAKE_PREFIX_PATH
+    "${FOLLY_DIR}"
+    "${FMT_DIR}"
+    "${GLOG_DIR}"
+)
+find_package(folly CONFIG REQUIRED)
+find_package(gflags REQUIRED)
+
+# 코어 라이브러리 (rocksdb, roaring, folly 포함)
+add_subdirectory(third_party/BitLSM)
+
+# 실험 전용 의존성
+add_compile_definitions(CXXOPTS_NO_RTTI)
+include(FetchContent)
+
+## CXXOPTS
+FetchContent_Declare(
+  cxxopts
+  GIT_REPOSITORY https://github.com/jarro2783/cxxopts.git
+  GIT_TAG        v3.3.1
+)
+FetchContent_MakeAvailable(cxxopts)
+
+## nlohmann/json (header-only)
+FetchContent_Declare(
+  nlohmann_json
+  GIT_REPOSITORY https://github.com/nlohmann/json.git
+  GIT_TAG        v3.11.3
+)
+FetchContent_MakeAvailable(nlohmann_json)
+
+## simdjson
+FetchContent_Declare(
+  simdjson
+  GIT_REPOSITORY https://github.com/simdjson/simdjson.git
+  GIT_TAG        v3.12.2
+)
+FetchContent_MakeAvailable(simdjson)
+
+# 시스템 의존성
+find_library(JEMALLOC_LIB jemalloc REQUIRED)
+find_package(Threads REQUIRED)
+
+# 공통 링크 라이브러리
+set(COMMON_LINK_LIBS
+    bitlsm::bitlsm
+    roaring
+    rocksdb
+    Folly::folly
+    dl
+    Threads::Threads
+    ${JEMALLOC_LIB}
+    m
+    z
+    bz2
+    snappy
+    lz4
+    zstd
+)
+
+# EXPERIMENT BINDINGS (정적 라이브러리)
+file(GLOB BINDING_SOURCES "src/bindings/*.cpp")
+add_library(experiment_bindings STATIC ${BINDING_SOURCES})
+target_include_directories(experiment_bindings PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/bindings
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/benchmark
+)
+target_link_libraries(experiment_bindings PUBLIC
+    ${COMMON_LINK_LIBS}
+    simdjson
+    cxxopts::cxxopts
+    nlohmann_json::nlohmann_json
+)
+
+# EXPERIMENTS
+file(GLOB_RECURSE EXPERIMENT_SOURCES "src/benchmark/*.cpp" "src/honk_player/*.cpp")
+list(FILTER EXPERIMENT_SOURCES EXCLUDE REGEX ".*/bindings/.*")
+foreach(EXP_SRC ${EXPERIMENT_SOURCES})
+    get_filename_component(EXP_NAME ${EXP_SRC} NAME_WE)
+    add_executable(${EXP_NAME} ${EXP_SRC})
+    get_filename_component(EXP_DIR ${EXP_SRC} DIRECTORY)
+    get_filename_component(EXP_PARENT_DIR ${EXP_DIR} DIRECTORY)
+
+    target_include_directories(${EXP_NAME} PRIVATE
+        ${EXP_DIR}
+        ${EXP_PARENT_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/bindings
+    )
+    target_link_directories(${EXP_NAME} PRIVATE /usr/local/lib)
+    target_link_libraries(${EXP_NAME} PRIVATE ${COMMON_LINK_LIBS} experiment_bindings)
+
+    message(STATUS "Experiment executable added: ${EXP_NAME}")
+endforeach()

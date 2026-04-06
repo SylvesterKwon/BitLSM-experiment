@@ -1,0 +1,23 @@
+{
+  "dataset": [
+    "yellow_tripdata_2025-01.parquet",
+    "yellow_tripdata_2025-02.parquet",
+    "yellow_tripdata_2025-03.parquet",
+    "yellow_tripdata_2025-04.parquet",
+    "yellow_tripdata_2025-05.parquet",
+    "yellow_tripdata_2025-06.parquet",
+    "yellow_tripdata_2025-07.parquet",
+    "yellow_tripdata_2025-08.parquet",
+    "yellow_tripdata_2025-09.parquet",
+    "yellow_tripdata_2025-10.parquet",
+    "yellow_tripdata_2025-11.parquet",
+    "yellow_tripdata_2025-12.parquet"
+  ],
+  "seed": 42,
+  "phases": [
+    {
+      "label": "write",
+      "type": "write_only"
+    }
+  ]
+}

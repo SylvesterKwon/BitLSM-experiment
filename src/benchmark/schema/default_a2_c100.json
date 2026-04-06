@@ -1,0 +1,12 @@
+{
+  "attrs": [
+    {
+      "type": "categorical",
+      "cardinality": 100
+    },
+    {
+      "type": "continuous"
+    }
+  ],
+  "payload_bytes": 32
+}

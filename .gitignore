@@ -1,0 +1,15 @@
+build/
+data/
+.vscode
+*.log
+.DS_Store
+.cache
+*.csv
+nohup.out
+log/
+.claude/
+*.png
+.python-version
+__pycache__/
+.venv/
+*.pdf
