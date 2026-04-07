@@ -292,14 +292,11 @@ def run(config_path: str, dry_run: bool, method_filter: list,
                             warmed_up_dbs.add(db_path)
                             print(f"  [warmup] done")
                     else:
-                        if clean_db_flag:
-                            clean_db(db_path)
                         os.makedirs(db_path, exist_ok=True)
                     os.makedirs(output_dir, exist_ok=True)
                     rc, captured_output = run_process(cmd)
                     if rc != 0:
                         sys.exit(f"Run failed (exit {rc}): {' '.join(cmd)}")
-                    print()
 
                     # Append to master CSV for read experiments
                     if is_read_only:
@@ -307,6 +304,11 @@ def run(config_path: str, dry_run: bool, method_filter: list,
                         if result_data:
                             master_csv = os.path.join(output_dir, f"{exp_label}.csv")
                             _append_to_master_csv(master_csv, name, combo, result_data, master_fieldnames)
+
+                    if clean_db_flag:
+                        clean_db(db_path)
+                    print()
+
                     if hw_reset:
                         reset_hardware(db_path_base)
                     if cooldown > 0 and global_idx < total_runs:

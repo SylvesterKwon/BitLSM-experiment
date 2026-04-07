@@ -209,8 +209,6 @@ def run(config_path: str, dry_run: bool, method_filter: list,
                         print(f"[{global_idx}/{total_runs}] [{name}] {' '.join(cmd)}")
 
                         if not dry_run:
-                            if clean_db_flag:
-                                clean_db(db_path)
                             os.makedirs(db_path, exist_ok=True)
                             os.makedirs(output_dir, exist_ok=True)
 
@@ -231,6 +229,8 @@ def run(config_path: str, dry_run: bool, method_filter: list,
                             if time_ms is not None:
                                 print(f"  -> {method_label} t={nt}: {time_ms}ms, {records} records, {db_size} bytes")
 
+                            if clean_db_flag:
+                                clean_db(db_path)
                             print()
 
                             if hw_reset:

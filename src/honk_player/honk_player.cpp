@@ -5,14 +5,12 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
-#include <condition_variable>
 #include <cxxopts.hpp>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <mutex>
-#include <queue>
 #include <sstream>
 #include <thread>
 #include <vector>
@@ -21,44 +19,6 @@ struct WriteItem {
   std::string pk;
   std::vector<Attr> attrs;
   std::string payload;
-};
-
-template <typename T>
-class BoundedQueue {
-  std::queue<T> queue_;
-  std::mutex mu_;
-  std::condition_variable not_full_;
-  std::condition_variable not_empty_;
-  size_t capacity_;
-  bool done_ = false;
-
- public:
-  explicit BoundedQueue(size_t capacity) : capacity_(capacity) {}
-
-  void Push(T item) {
-    std::unique_lock<std::mutex> lock(mu_);
-    not_full_.wait(lock, [this] { return queue_.size() < capacity_; });
-    queue_.push(std::move(item));
-    lock.unlock();
-    not_empty_.notify_one();
-  }
-
-  bool Pop(T& item) {
-    std::unique_lock<std::mutex> lock(mu_);
-    not_empty_.wait(lock, [this] { return !queue_.empty() || done_; });
-    if (queue_.empty() && done_) return false;
-    item = std::move(queue_.front());
-    queue_.pop();
-    lock.unlock();
-    not_full_.notify_one();
-    return true;
-  }
-
-  void Close() {
-    std::lock_guard<std::mutex> lock(mu_);
-    done_ = true;
-    not_empty_.notify_all();
-  }
 };
 
 using namespace std;
@@ -184,22 +144,43 @@ int main(int argc, char* argv[]) {
     }
   };
 
-  // --- Multi-threaded write path ---
+  // --- Multi-threaded write path (pre-parse → parallel write) ---
   if (num_threads > 1) {
-    BoundedQueue<WriteItem> queue(4096);
+    // Phase 1: pre-parse all write records into memory
+    cout << "[pre-parse] loading workload into memory...\n";
+    auto parse_start = chrono::steady_clock::now();
+    honk::RecordParser record_parser(indexed_indices);
+    vector<Attr> tmp_attrs;
+    string tmp_payload;
+    honk::TSVReader reader(workload_path);
+    honk::Operation op;
+    vector<WriteItem> all_items;
+    all_items.reserve(50'000'000);
+
+    while (reader.Next(op)) {
+      if (op.type == honk::OpType::WRITE || op.type == honk::OpType::UPDATE) {
+        auto& w = get<honk::WriteOp>(op.data);
+        record_parser.ParseRecord(w.json, tmp_attrs, tmp_payload);
+        all_items.push_back(WriteItem{w.pk, tmp_attrs, tmp_payload});
+      }
+    }
+
+    auto parse_elapsed = chrono::duration_cast<chrono::milliseconds>(
+                             chrono::steady_clock::now() - parse_start).count();
+    cout << "[pre-parse] " << all_items.size() << " records loaded in "
+         << parse_elapsed << "ms\n";
+
+    // Phase 2: parallel write — each thread writes its own segment
+    uint64_t total_n = all_items.size();
     std::atomic<uint64_t> total_writes{0};
+    std::mutex io_mu;
     auto wall_start = chrono::steady_clock::now();
 
-    // CSV output (protected by mutex since workers write checkpoints)
-    ensure_write_csv();
-    std::mutex io_mu;
-
-    // Worker threads: dequeue and Put()
     vector<thread> workers;
     for (int t = 0; t < num_threads; t++) {
-      workers.emplace_back([&] {
-        WriteItem item;
-        while (queue.Pop(item)) {
+      workers.emplace_back([&, t] {
+        for (uint64_t i = t; i < total_n; i += num_threads) {
+          auto& item = all_items[i];
           binding->Put(item.pk, item.attrs, item.payload);
           uint64_t prev = total_writes.fetch_add(1, std::memory_order_relaxed);
           uint64_t cur = prev + 1;
@@ -209,6 +190,7 @@ int main(int argc, char* argv[]) {
                                now - wall_start).count();
             std::lock_guard<std::mutex> lock(io_mu);
             if (!no_csv) {
+              ensure_write_csv();
               write_csv << elapsed << "," << cur << "\n";
               write_csv.flush();
             }
@@ -218,34 +200,22 @@ int main(int argc, char* argv[]) {
       });
     }
 
-    // Producer: read TSV, parse, push to queue
-    honk::RecordParser record_parser(indexed_indices);
-    vector<Attr> attrs;
-    string payload;
-    honk::TSVReader reader(workload_path);
-    honk::Operation op;
-
-    while (reader.Next(op)) {
-      if (op.type == honk::OpType::WRITE || op.type == honk::OpType::UPDATE) {
-        auto& w = get<honk::WriteOp>(op.data);
-        record_parser.ParseRecord(w.json, attrs, payload);
-        queue.Push(WriteItem{w.pk, attrs, payload});
-      }
-    }
-
-    queue.Close();
     for (auto& w : workers) w.join();
+
+    uint64_t writes = total_writes.load();
+    auto put_elapsed = chrono::duration_cast<chrono::milliseconds>(
+                           chrono::steady_clock::now() - wall_start).count();
 
     binding->Close();
 
-    uint64_t writes = total_writes.load();
     auto total_elapsed = chrono::duration_cast<chrono::milliseconds>(
                              chrono::steady_clock::now() - wall_start).count();
     cout << "\n=== Summary ===\n"
          << "Binding: " << binding->Name() << binding->ParamSuffix() << "\n"
          << "Total writes: " << writes << "\n"
          << "Total reads: 0\n"
-         << "Total time: " << total_elapsed << "ms\n";
+         << "Total time: " << put_elapsed << "ms\n"
+         << "Total time (incl. compaction): " << total_elapsed << "ms\n";
     return 0;
   }
 
