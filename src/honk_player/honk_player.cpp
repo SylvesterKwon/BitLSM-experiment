@@ -337,6 +337,10 @@ int main(int argc, char* argv[]) {
     }
   }
 
+  auto put_elapsed = chrono::duration_cast<chrono::milliseconds>(
+                         chrono::steady_clock::now() - wall_start)
+                         .count();
+
   binding->Close();
 
   auto total_elapsed = chrono::duration_cast<chrono::milliseconds>(
@@ -346,7 +350,8 @@ int main(int argc, char* argv[]) {
        << "Binding: " << binding->Name() << binding->ParamSuffix() << "\n"
        << "Total writes: " << writes << "\n"
        << "Total reads: " << reads << "\n"
-       << "Total time: " << total_elapsed << "ms\n";
+       << "Total time: " << put_elapsed << "ms\n"
+       << "Total time (incl. compaction): " << total_elapsed << "ms\n";
 
   return 0;
 }

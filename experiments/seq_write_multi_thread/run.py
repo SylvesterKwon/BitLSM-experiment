@@ -41,7 +41,7 @@ SUMMARY_HEADER = "method,num_threads,time_elapsed_ms,records_written,db_size_byt
 
 
 CHECKPOINT_RE = re.compile(r"\[write\]\s+(\d+)\s+records,\s+(\d+)ms")
-SUMMARY_TIME_RE = re.compile(r"Total time:\s*(\d+)ms")
+SUMMARY_TIME_RE = re.compile(r"^Total time:\s*(\d+)ms")
 SUMMARY_WRITES_RE = re.compile(r"Total writes:\s*(\d+)")
 
 
