@@ -1,2 +1,0 @@
-476366
-nohup /home/dohyun/.pyenv/versions/3.10.20/bin/python3 experiments/seq_write/run.py experiments/seq_write/exp_set/default.json --clean-db --no-daemon

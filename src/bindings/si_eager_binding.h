@@ -12,13 +12,9 @@ class SIEagerBinding : public Binding {
   BitLSMOptions options_;
   benchmark::SIStrategy strategy_ = benchmark::SIStrategy::kIndexMerge;
   rocksdb::WriteOptions wo_;
-  std::string serialized_value_;
-  std::vector<rocksdb::Slice> si_value_vec_;
-  std::string encoded_si_value_;
-  std::string existing_si_str_;
 
-  void InsertSIValue(std::vector<rocksdb::Slice>* si_value,
-                     const rocksdb::Slice& key);
+  static void InsertSIValue(std::vector<rocksdb::Slice>* si_value,
+                            const rocksdb::Slice& key);
 
  public:
   void Open(int argc, char* argv[], const std::string& db_path,

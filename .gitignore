@@ -2,6 +2,7 @@ build/
 data/
 .vscode
 *.log
+*.pid
 .DS_Store
 .cache
 *.csv

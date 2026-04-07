@@ -3,14 +3,63 @@
 #include "taxi_schema.h"
 #include "tsv_parser.h"
 #include <algorithm>
+#include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cxxopts.hpp>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <mutex>
+#include <queue>
 #include <sstream>
 #include <thread>
+#include <vector>
+
+struct WriteItem {
+  std::string pk;
+  std::vector<Attr> attrs;
+  std::string payload;
+};
+
+template <typename T>
+class BoundedQueue {
+  std::queue<T> queue_;
+  std::mutex mu_;
+  std::condition_variable not_full_;
+  std::condition_variable not_empty_;
+  size_t capacity_;
+  bool done_ = false;
+
+ public:
+  explicit BoundedQueue(size_t capacity) : capacity_(capacity) {}
+
+  void Push(T item) {
+    std::unique_lock<std::mutex> lock(mu_);
+    not_full_.wait(lock, [this] { return queue_.size() < capacity_; });
+    queue_.push(std::move(item));
+    lock.unlock();
+    not_empty_.notify_one();
+  }
+
+  bool Pop(T& item) {
+    std::unique_lock<std::mutex> lock(mu_);
+    not_empty_.wait(lock, [this] { return !queue_.empty() || done_; });
+    if (queue_.empty() && done_) return false;
+    item = std::move(queue_.front());
+    queue_.pop();
+    lock.unlock();
+    not_full_.notify_one();
+    return true;
+  }
+
+  void Close() {
+    std::lock_guard<std::mutex> lock(mu_);
+    done_ = true;
+    not_empty_.notify_all();
+  }
+};
 
 using namespace std;
 
@@ -30,6 +79,10 @@ int main(int argc, char* argv[]) {
     ("indexed_attrs", "Comma-separated attr names to index (default: all)",
      cxxopts::value<string>()->default_value(""))
     ("interleave", "Interleave mode: single CSV, per-op us latency",
+     cxxopts::value<bool>()->default_value("false"))
+    ("num_threads", "Number of writer threads (default: 1)",
+     cxxopts::value<int>()->default_value("1"))
+    ("no_csv", "Disable per-binding CSV output",
      cxxopts::value<bool>()->default_value("false"));
   // clang-format on
 
@@ -47,6 +100,8 @@ int main(int argc, char* argv[]) {
   string output_dir = result["output_dir"].as<string>();
 
   bool interleave_mode = result["interleave"].as<bool>();
+  int num_threads = result["num_threads"].as<int>();
+  bool no_csv = result["no_csv"].as<bool>();
 
   // Parse indexed_attrs (field names → column indices)
   auto all_columns = honk::GetTaxiColumns();
@@ -103,6 +158,7 @@ int main(int argc, char* argv[]) {
   string interleave_path = output_dir + "/interleave_" +
       binding->Name() + binding->ParamSuffix() + ".csv";
   auto ensure_interleave_csv = [&] {
+    if (no_csv) return;
     if (!interleave_csv.is_open()) {
       interleave_csv.open(interleave_path);
       interleave_csv << "elapsed_us,records_written,op_type,latency_us\n";
@@ -113,12 +169,14 @@ int main(int argc, char* argv[]) {
   ofstream write_csv;
   ofstream read_csv;
   auto ensure_write_csv = [&] {
+    if (no_csv) return;
     if (!write_csv.is_open()) {
       write_csv.open(file_prefix + "_write_log.csv");
       write_csv << "time_elapsed_ms,records_written\n";
     }
   };
   auto ensure_read_csv = [&] {
+    if (no_csv) return;
     if (!read_csv.is_open()) {
       read_csv.open(file_prefix + "_read_log.csv");
       read_csv << "query_id,query_attr_num,filter_attrs,time_elapsed_ms,"
@@ -126,6 +184,72 @@ int main(int argc, char* argv[]) {
     }
   };
 
+  // --- Multi-threaded write path ---
+  if (num_threads > 1) {
+    BoundedQueue<WriteItem> queue(4096);
+    std::atomic<uint64_t> total_writes{0};
+    auto wall_start = chrono::steady_clock::now();
+
+    // CSV output (protected by mutex since workers write checkpoints)
+    ensure_write_csv();
+    std::mutex io_mu;
+
+    // Worker threads: dequeue and Put()
+    vector<thread> workers;
+    for (int t = 0; t < num_threads; t++) {
+      workers.emplace_back([&] {
+        WriteItem item;
+        while (queue.Pop(item)) {
+          binding->Put(item.pk, item.attrs, item.payload);
+          uint64_t prev = total_writes.fetch_add(1, std::memory_order_relaxed);
+          uint64_t cur = prev + 1;
+          if (cur % 1'000'000 == 0) {
+            auto now = chrono::steady_clock::now();
+            auto elapsed = chrono::duration_cast<chrono::milliseconds>(
+                               now - wall_start).count();
+            std::lock_guard<std::mutex> lock(io_mu);
+            if (!no_csv) {
+              write_csv << elapsed << "," << cur << "\n";
+              write_csv.flush();
+            }
+            cout << "[write] " << cur << " records, " << elapsed << "ms\n";
+          }
+        }
+      });
+    }
+
+    // Producer: read TSV, parse, push to queue
+    honk::RecordParser record_parser(indexed_indices);
+    vector<Attr> attrs;
+    string payload;
+    honk::TSVReader reader(workload_path);
+    honk::Operation op;
+
+    while (reader.Next(op)) {
+      if (op.type == honk::OpType::WRITE || op.type == honk::OpType::UPDATE) {
+        auto& w = get<honk::WriteOp>(op.data);
+        record_parser.ParseRecord(w.json, attrs, payload);
+        queue.Push(WriteItem{w.pk, attrs, payload});
+      }
+    }
+
+    queue.Close();
+    for (auto& w : workers) w.join();
+
+    binding->Close();
+
+    uint64_t writes = total_writes.load();
+    auto total_elapsed = chrono::duration_cast<chrono::milliseconds>(
+                             chrono::steady_clock::now() - wall_start).count();
+    cout << "\n=== Summary ===\n"
+         << "Binding: " << binding->Name() << binding->ParamSuffix() << "\n"
+         << "Total writes: " << writes << "\n"
+         << "Total reads: 0\n"
+         << "Total time: " << total_elapsed << "ms\n";
+    return 0;
+  }
+
+  // --- Single-threaded path (existing logic) ---
   // Prepare parsers (reusable buffers)
   honk::RecordParser record_parser(indexed_indices);
   vector<Attr> attrs;
@@ -156,13 +280,13 @@ int main(int argc, char* argv[]) {
           auto t1 = chrono::high_resolution_clock::now();
           auto latency = chrono::duration_cast<chrono::microseconds>(t1 - t0).count();
           writes++;
-          if (writes % 1'000 == 0) {
+          if (writes % 1'000 == 0 && !no_csv) {
             ensure_interleave_csv();
             auto elapsed = chrono::duration_cast<chrono::microseconds>(t1 - interleave_start).count();
             interleave_csv << elapsed << "," << writes << ",PUT," << latency << "\n";
           }
           if (writes % 1'000'000 == 0) {
-            interleave_csv.flush();
+            if (!no_csv) interleave_csv.flush();
             auto now = chrono::steady_clock::now();
             auto elapsed = chrono::duration_cast<chrono::milliseconds>(
                                now - wall_start).count();
@@ -173,13 +297,15 @@ int main(int argc, char* argv[]) {
           binding->Put(w.pk, attrs, payload);
           writes++;
           if (writes % 1'000'000 == 0) {
-            ensure_write_csv();
             auto now = chrono::steady_clock::now();
             auto elapsed = chrono::duration_cast<chrono::milliseconds>(
                                now - wall_start)
                                .count();
-            write_csv << elapsed << "," << writes << "\n";
-            write_csv.flush();
+            if (!no_csv) {
+              ensure_write_csv();
+              write_csv << elapsed << "," << writes << "\n";
+              write_csv.flush();
+            }
             cout << "[write] " << writes << " records, " << elapsed << "ms\n";
           }
         }
@@ -203,27 +329,31 @@ int main(int argc, char* argv[]) {
             in_interleave_phase = true;
             cout << "[interleave] phase begins at " << writes << " records\n";
           }
-          ensure_interleave_csv();
           auto t0 = chrono::high_resolution_clock::now();
           binding->Scan(query);
           auto t1 = chrono::high_resolution_clock::now();
           auto latency = chrono::duration_cast<chrono::microseconds>(t1 - t0).count();
           auto elapsed = chrono::duration_cast<chrono::microseconds>(t1 - interleave_start).count();
-          interleave_csv << elapsed << "," << writes << ",QUERY," << latency << "\n";
+          if (!no_csv) {
+            ensure_interleave_csv();
+            interleave_csv << elapsed << "," << writes << ",QUERY," << latency << "\n";
+          }
           reads++;
           cout << "[interleave] QUERY #" << reads << " at " << writes << " records, " << latency << "us\n";
         } else {
           auto scan_result = binding->Scan(query);
-          ensure_read_csv();  // lazy open, called once
-          double selectivity =
-              writes > 0
-                  ? static_cast<double>(scan_result.matched) / writes
-                  : 0.0;
-          read_csv << reads << "," << k << ",\"" << attr_names << "\","
-                   << scan_result.elapsed_ms << "," << scan_result.matched
-                   << "," << writes << "," << fixed << setprecision(6)
-                   << selectivity << "\n";
-          read_csv.flush();
+          if (!no_csv) {
+            ensure_read_csv();
+            double selectivity =
+                writes > 0
+                    ? static_cast<double>(scan_result.matched) / writes
+                    : 0.0;
+            read_csv << reads << "," << k << ",\"" << attr_names << "\","
+                     << scan_result.elapsed_ms << "," << scan_result.matched
+                     << "," << writes << "," << fixed << setprecision(6)
+                     << selectivity << "\n";
+            read_csv.flush();
+          }
           reads++;
         }
         break;

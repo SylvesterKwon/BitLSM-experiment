@@ -12,7 +12,6 @@ class NoIndexBinding : public Binding {
   std::vector<rocksdb::ColumnFamilyHandle*> cf_handles_;
   BitLSMOptions options_;
   rocksdb::WriteOptions wo_;
-  std::string serialized_value_;
 
  public:
   void Open(int argc, char* argv[], const std::string& db_path,

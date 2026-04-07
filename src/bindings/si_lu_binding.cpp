@@ -28,7 +28,10 @@ void SILUBinding::Open(int argc, char* argv[], const string& db_path,
 
 void SILUBinding::Put(const string& pk, const vector<Attr>& attrs,
                        const string& payload) {
-  EncodeValue(options_, attrs, payload, serialized_value_);
+  thread_local string serialized_value;
+  thread_local vector<Slice> single_pk_vec(1);
+  thread_local string encoded_si_value;
+  EncodeValue(options_, attrs, payload, serialized_value);
   Transaction* txn = db_.txn_db->BeginTransaction(wo_);
 
   for (uint32_t attr_idx = 0; attr_idx < options_.attr_num; ++attr_idx) {
@@ -41,14 +44,14 @@ void SILUBinding::Put(const string& pk, const vector<Attr>& attrs,
       si_key = GetInternalSIKey(attr_idx, sk_value);
     }
 
-    single_pk_vec_[0] = Slice(pk);
-    encoded_si_value_.clear();
-    EncodeIndexValue(&single_pk_vec_, &encoded_si_value_);
+    single_pk_vec[0] = Slice(pk);
+    encoded_si_value.clear();
+    EncodeIndexValue(&single_pk_vec, &encoded_si_value);
 
-    txn->Merge(db_.cf_handles[1], si_key, encoded_si_value_);
+    txn->Merge(db_.cf_handles[1], si_key, encoded_si_value);
   }
 
-  txn->Put(db_.cf_handles[0], pk, serialized_value_);
+  txn->Put(db_.cf_handles[0], pk, serialized_value);
   txn->Commit();
   delete txn;
 }

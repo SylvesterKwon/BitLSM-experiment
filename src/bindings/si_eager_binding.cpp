@@ -41,7 +41,11 @@ void SIEagerBinding::Open(int argc, char* argv[], const string& db_path,
 
 void SIEagerBinding::Put(const string& pk, const vector<Attr>& attrs,
                           const string& payload) {
-  EncodeValue(options_, attrs, payload, serialized_value_);
+  thread_local string serialized_value;
+  thread_local vector<Slice> si_value_vec;
+  thread_local string encoded_si_value;
+  thread_local string existing_si_str;
+  EncodeValue(options_, attrs, payload, serialized_value);
   Transaction* txn = db_.txn_db->BeginTransaction(wo_);
 
   ReadOptions ro;
@@ -55,27 +59,27 @@ void SIEagerBinding::Put(const string& pk, const vector<Attr>& attrs,
       si_key = GetInternalSIKey(attr_idx, sk_value);
     }
 
-    existing_si_str_.clear();
-    auto s = txn->Get(ro, db_.cf_handles[1], si_key, &existing_si_str_);
+    existing_si_str.clear();
+    auto s = txn->Get(ro, db_.cf_handles[1], si_key, &existing_si_str);
 
     if (s.IsNotFound()) {
-      si_value_vec_.clear();
-      si_value_vec_.push_back(Slice(pk));
-      encoded_si_value_.clear();
-      EncodeIndexValue(&si_value_vec_, &encoded_si_value_);
-      txn->Put(db_.cf_handles[1], si_key, encoded_si_value_);
+      si_value_vec.clear();
+      si_value_vec.push_back(Slice(pk));
+      encoded_si_value.clear();
+      EncodeIndexValue(&si_value_vec, &encoded_si_value);
+      txn->Put(db_.cf_handles[1], si_key, encoded_si_value);
     } else {
-      si_value_vec_.clear();
-      Slice si_slice(existing_si_str_);
-      DecodeIndexValue(si_slice, &si_value_vec_);
-      InsertSIValue(&si_value_vec_, Slice(pk));
-      encoded_si_value_.clear();
-      EncodeIndexValue(&si_value_vec_, &encoded_si_value_);
-      txn->Put(db_.cf_handles[1], si_key, encoded_si_value_);
+      si_value_vec.clear();
+      Slice si_slice(existing_si_str);
+      DecodeIndexValue(si_slice, &si_value_vec);
+      InsertSIValue(&si_value_vec, Slice(pk));
+      encoded_si_value.clear();
+      EncodeIndexValue(&si_value_vec, &encoded_si_value);
+      txn->Put(db_.cf_handles[1], si_key, encoded_si_value);
     }
   }
 
-  txn->Put(db_.cf_handles[0], pk, serialized_value_);
+  txn->Put(db_.cf_handles[0], pk, serialized_value);
   txn->Commit();
   delete txn;
 }

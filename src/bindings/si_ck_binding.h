@@ -10,10 +10,8 @@ class SICKBinding : public Binding {
   BitLSMOptions options_;
   benchmark::SIStrategy strategy_ = benchmark::SIStrategy::kIndexMerge;
   rocksdb::WriteOptions wo_;
-  std::string serialized_value_;
   static constexpr uint32_t idx_no_prefix_size_ = 4;
   static constexpr uint32_t si_prefix_length_ = 16;
-  std::string si_key_buf_;
 
  public:
   void Open(int argc, char* argv[], const std::string& db_path,

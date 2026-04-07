@@ -37,32 +37,34 @@ void SICKBinding::Open(int argc, char* argv[], const string& db_path,
 
 void SICKBinding::Put(const string& pk, const vector<Attr>& attrs,
                        const string& payload) {
-  EncodeValue(options_, attrs, payload, serialized_value_);
+  thread_local string serialized_value;
+  thread_local string si_key_buf;
+  EncodeValue(options_, attrs, payload, serialized_value);
   Transaction* txn = db_.txn_db->BeginTransaction(wo_);
 
   for (uint32_t attr_idx = 0; attr_idx < options_.attr_num; ++attr_idx) {
     if (options_.attr_types[attr_idx] == AttrType::CATEGORICAL) {
       const string& sk_value = get<string>(attrs[attr_idx]);
-      si_key_buf_ = sk_value;
-      si_key_buf_.resize(si_prefix_length_, ' ');
-      si_key_buf_ += pk;
+      si_key_buf = sk_value;
+      si_key_buf.resize(si_prefix_length_, ' ');
+      si_key_buf += pk;
       txn->Put(db_.cf_handles[1],
-               GetInternalSIKey(attr_idx, si_key_buf_, idx_no_prefix_size_),
+               GetInternalSIKey(attr_idx, si_key_buf, idx_no_prefix_size_),
                "");
     } else {
       double sk_value = get<double>(attrs[attr_idx]);
       char encoded[8];
       EncodeDoubleOrderPreserving(sk_value, encoded);
-      si_key_buf_.assign(encoded, 8);
-      si_key_buf_.resize(si_prefix_length_, '\0');
-      si_key_buf_ += pk;
+      si_key_buf.assign(encoded, 8);
+      si_key_buf.resize(si_prefix_length_, '\0');
+      si_key_buf += pk;
       txn->Put(db_.cf_handles[1],
-               GetInternalSIKey(attr_idx, si_key_buf_, idx_no_prefix_size_),
+               GetInternalSIKey(attr_idx, si_key_buf, idx_no_prefix_size_),
                "");
     }
   }
 
-  txn->Put(db_.cf_handles[0], pk, serialized_value_);
+  txn->Put(db_.cf_handles[0], pk, serialized_value);
   txn->Commit();
   delete txn;
 }

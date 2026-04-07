@@ -12,9 +12,6 @@ class SILUBinding : public Binding {
   BitLSMOptions options_;
   benchmark::SIStrategy strategy_ = benchmark::SIStrategy::kIndexMerge;
   rocksdb::WriteOptions wo_;
-  std::string serialized_value_;
-  std::vector<rocksdb::Slice> single_pk_vec_{1};
-  std::string encoded_si_value_;
 
  public:
   void Open(int argc, char* argv[], const std::string& db_path,

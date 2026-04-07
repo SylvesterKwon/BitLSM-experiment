@@ -39,8 +39,9 @@ void NoIndexBinding::Open(int, char*[], const std::string& db_path,
 void NoIndexBinding::Put(const std::string& pk,
                           const std::vector<Attr>& attrs,
                           const std::string& payload) {
-  EncodeValue(options_, attrs, payload, serialized_value_);
-  db_->Put(wo_, pk, serialized_value_);
+  thread_local std::string serialized_value;
+  EncodeValue(options_, attrs, payload, serialized_value);
+  db_->Put(wo_, pk, serialized_value);
 }
 
 ScanResult NoIndexBinding::Scan(BitLSMQuery& query) {
