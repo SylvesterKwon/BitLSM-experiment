@@ -1,9 +1,9 @@
 {
   "db_path_base": "/scratch/honk",
   "workload": [
-    "/home/dohyun/Workloads/read_seq_2025_sel0.1_k1_r100.tsv",
-    "/home/dohyun/Workloads/read_seq_2025_sel0.1_k2_r100.tsv",
-    "/home/dohyun/Workloads/read_seq_2025_sel0.1_k3_r100.tsv"
+    "/home/dohyun/Repositories/BitLSM-experiment/workloads/read_seq_2025_sel0.1_k1_r100.tsv",
+    "/home/dohyun/Repositories/BitLSM-experiment/workloads/read_seq_2025_sel0.1_k2_r100.tsv",
+    "/home/dohyun/Repositories/BitLSM-experiment/workloads/read_seq_2025_sel0.1_k3_r100.tsv"
   ],
   "common_params": {
     "indexed_attrs": "payment_type,PULocationID,fare_amount,tpep_pickup_datetime"

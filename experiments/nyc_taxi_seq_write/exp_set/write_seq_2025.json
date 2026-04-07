@@ -1,6 +1,6 @@
 {
   "db_path_base": "/scratch/honk",
-  "workload": "/home/dohyun/Workloads/write_seq_2025_all.tsv",
+  "workload": "/home/dohyun/Repositories/BitLSM-experiment/workloads/write_seq_2025_all.tsv",
   "common_params": {
     "indexed_attrs": "payment_type,PULocationID,fare_amount,tpep_pickup_datetime"
   },
