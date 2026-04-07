@@ -123,14 +123,15 @@ def run(config_path: str, dry_run: bool, method_filter: list,
                     print(f"[{global_idx}/{total_runs}] [{name}] {' '.join(cmd)}")
 
                     if not dry_run:
-                        if clean_db_flag:
-                            clean_db(db_path)
                         os.makedirs(db_path, exist_ok=True)
                         os.makedirs(output_dir, exist_ok=True)
 
                         rc, _ = run_process(cmd)
                         if rc != 0:
                             sys.exit(f"Run failed (exit {rc}): {' '.join(cmd)}")
+
+                        if clean_db_flag:
+                            clean_db(db_path)
                         print()
 
                         if hw_reset:

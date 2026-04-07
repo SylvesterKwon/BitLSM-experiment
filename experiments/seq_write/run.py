@@ -213,8 +213,6 @@ def run(config_path: str, dry_run: bool, method_filter: list, cooldown: int,
                 print(f"[{global_idx}/{total_runs}] [{name}] {' '.join(cmd)}")
 
                 if not dry_run:
-                    if clean_db_flag:
-                        clean_db(db_path)
                     os.makedirs(db_path, exist_ok=True)
                     os.makedirs(output_dir, exist_ok=True)
 
@@ -229,6 +227,9 @@ def run(config_path: str, dry_run: bool, method_filter: list, cooldown: int,
                     if checkpoints:
                         total_ms = checkpoints[-1][0]
                         print(f"  [result] total_time={total_ms}ms, db_size={db_size} bytes ({db_size / (1024**3):.2f} GiB)")
+
+                    if clean_db_flag:
+                        clean_db(db_path)
                     print()
 
                     for elapsed_ms, records in checkpoints[:-1]:
