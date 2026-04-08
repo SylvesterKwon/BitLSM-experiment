@@ -2,7 +2,7 @@
   "db_path_base": "/scratch/honk_player_interleave",
   "workload": "/home/dohyun/Repositories/BitLSM-experiment/workloads/read_under_ingestion_0.0001.tsv",
   "common_params": {
-    "indexed_attrs": "payment_type,PULocationID,fare_amount,tpep_pickup_datetime"
+    "indexed_attrs": "PULocationID,DOLocationID,tpep_pickup_datetime,tpep_dropoff_datetime,fare_amount,passenger_count"
   },
   "methods": [
     {
