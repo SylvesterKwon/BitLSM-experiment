@@ -17,6 +17,8 @@ import re
 import matplotlib.pyplot as plt
 import numpy as np
 
+plt.rcParams.update({"font.size": 6})
+
 
 METHOD_ORDER = [
     "no-index",
@@ -89,20 +91,24 @@ def parse_write_logs(result_dir: str):
 
 
 def load_summary_csv(csv_path: str):
-    """Load a summary CSV with columns: method, num_threads, time_elapsed_ms, records_written.
+    """Load final rows (with db_size_bytes) from summary CSV.
 
     Returns: {method: [(num_threads, throughput), ...]}
     """
     data = {}
     with open(csv_path, newline="") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            method = row["method"].strip()
-            nt = int(row["num_threads"])
-            time_ms = float(row["time_elapsed_ms"])
-            records = int(row["records_written"])
-            throughput = records / (time_ms / 1000) if time_ms > 0 else 0
-            data.setdefault(method, []).append((nt, throughput))
+        content = f.read().replace("\r\n", "\n").replace("\r", "\n")
+    reader = csv.DictReader(content.strip().splitlines())
+    for row in reader:
+        db_bytes = row.get("db_size_bytes", "").strip()
+        if not db_bytes:
+            continue
+        method = row["method"].strip()
+        nt = int(row["num_threads"])
+        time_ms = float(row["time_elapsed_ms"])
+        records = int(row["records_written"])
+        throughput = records / (time_ms / 1000) if time_ms > 0 else 0
+        data.setdefault(method, []).append((nt, throughput))
     return data
 
 
@@ -136,13 +142,14 @@ def plot_throughput_scaling(data, output_dir):
 
     ax.set_xlabel("Number of Writer Threads")
     ax.set_ylabel("Throughput (M records/sec)")
-    ax.set_title("Write Throughput Scaling")
     ax.set_xticks(sorted({p[0] for pts in data.values() for p in pts}))
+    ax.tick_params(axis="x", length=0)
+    ax.tick_params(axis="y", length=2, width=0.3, direction="in")
     ax.legend()
-    ax.grid(alpha=0.3)
+    ax.grid(False)
     fig.tight_layout()
 
-    out_path = os.path.join(output_dir, "throughput_scaling.png")
+    out_path = os.path.join(output_dir, "throughput_scaling.pdf")
     fig.savefig(out_path, dpi=150)
     print(f"Saved: {out_path}")
     plt.close(fig)
@@ -173,13 +180,68 @@ def plot_speedup(data, output_dir):
 
     ax.set_xlabel("Number of Writer Threads")
     ax.set_ylabel("Speedup (vs 1 thread)")
-    ax.set_title("Write Throughput Speedup")
     ax.set_xticks(all_threads)
+    ax.tick_params(axis="x", length=0)
+    ax.tick_params(axis="y", length=2, width=0.3, direction="in")
     ax.legend()
-    ax.grid(alpha=0.3)
+    ax.grid(False)
     fig.tight_layout()
 
-    out_path = os.path.join(output_dir, "throughput_speedup.png")
+    out_path = os.path.join(output_dir, "throughput_speedup.pdf")
+    fig.savefig(out_path, dpi=150)
+    print(f"Saved: {out_path}")
+    plt.close(fig)
+
+
+def load_progress_csv(csv_path: str):
+    """Load all rows from summary CSV grouped by (method, num_threads).
+
+    Returns: {num_threads: {method: [(time_sec, records), ...]}}
+    """
+    data = {}
+    with open(csv_path, newline="") as f:
+        content = f.read().replace("\r\n", "\n").replace("\r", "\n")
+    reader = csv.DictReader(content.strip().splitlines())
+    for row in reader:
+        method = row["method"].strip()
+        nt = int(row["num_threads"])
+        time_sec = float(row["time_elapsed_ms"]) / 1000
+        records = int(row["records_written"])
+        data.setdefault(nt, {}).setdefault(method, []).append((time_sec, records))
+    return data
+
+
+def plot_progress_per_thread(progress_data, output_dir):
+    """Single PDF with one subplot per num_threads, showing write progress."""
+    thread_counts = sorted(progress_data.keys())
+    n = len(thread_counts)
+    fig, axes = plt.subplots(1, n, figsize=(4 * n, 4), sharey=True)
+    if n == 1:
+        axes = [axes]
+
+    for ax, nt in zip(axes, thread_counts):
+        methods_data = progress_data[nt]
+        methods = get_ordered_methods(methods_data.keys())
+
+        for method in methods:
+            points = sorted(methods_data[method], key=lambda x: x[0])
+            times = [p[0] for p in points]
+            records = [p[1] / 1e6 for p in points]
+            color = color_for(method)
+            ax.plot(times, records, label=label_for(method),
+                    **({"color": color} if color else {}))
+
+        ax.set_xlabel("Time (sec)")
+        ax.set_title(f"{nt} thread{'s' if nt > 1 else ''}")
+        ax.tick_params(axis="x", length=2, width=0.3, direction="in")
+        ax.tick_params(axis="y", length=2, width=0.3, direction="in")
+        ax.grid(False)
+
+    axes[0].set_ylabel("Records Written (M)")
+    axes[-1].legend(loc="lower right")
+    fig.tight_layout()
+
+    out_path = os.path.join(output_dir, "write_progress_combined.pdf")
     fig.savefig(out_path, dpi=150)
     print(f"Saved: {out_path}")
     plt.close(fig)
@@ -206,6 +268,9 @@ def main():
 
     plot_throughput_scaling(data, output_dir)
     plot_speedup(data, output_dir)
+
+    progress_data = load_progress_csv(args.csv)
+    plot_progress_per_thread(progress_data, output_dir)
 
 
 if __name__ == "__main__":
