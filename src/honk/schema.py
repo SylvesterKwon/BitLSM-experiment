@@ -21,7 +21,7 @@ class Column:
 def load_columns(schema_path: str | None = None) -> list[Column]:
     """Load column definitions from schema.json."""
     if schema_path is None:
-        schema_path = os.path.join(os.path.dirname(__file__), "..", "schema.json")
+        schema_path = os.path.join(os.path.dirname(__file__), "schema.json")
     with open(schema_path) as f:
         data = json.load(f)
 

@@ -1,14 +1,17 @@
 {
   "db_path_base": "/scratch/seq_write_multi_thread",
-  "workload": "workloads/write_seq_2025_all.tsv",
+  "workload": "workloads/write_seq_2024-2025_all.tsv",
   "common_params": {
     "indexed_attrs": "payment_type,PULocationID,fare_amount,tpep_pickup_datetime",
     "num_threads": [
       1,
       2,
+      3,
       4,
-      8,
-      16
+      5,
+      6,
+      7,
+      8
     ]
   },
   "methods": [
