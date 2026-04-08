@@ -124,11 +124,12 @@ def reset_hardware(db_path_base: str):
     """Reset hardware state between runs: sync, drop_caches, fstrim."""
     print("  [hw-reset] sync + drop_caches ...")
     subprocess.run(["sync"], check=True)
-    subprocess.run(["sh", "-c", "echo 3 > /proc/sys/vm/drop_caches"], check=True)
+    subprocess.run(["sudo", "tee", "/proc/sys/vm/drop_caches"],
+                   input=b"3", stdout=subprocess.DEVNULL, check=True)
 
     os.makedirs(db_path_base, exist_ok=True)
     print("  [hw-reset] fstrim ...")
-    subprocess.run(["fstrim", "-v", db_path_base], check=True)
+    subprocess.run(["sudo", "fstrim", "-v", db_path_base], check=True)
 
     print("  [hw-reset] waiting 10s for SSD GC ...")
     time.sleep(10)

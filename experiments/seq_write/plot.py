@@ -8,8 +8,11 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 
+plt.rcParams.update({"font.size": 6})
+
 
 SCHEMAS = ["a1", "a2", "a4", "a8", "a16", "a32"]
+SCHEMA_TICK_LABELS = ["a=1", "a=2", "a=4", "a=8", "a=16", "a=32"]
 
 METHOD_ORDER = [
     "no-index",
@@ -109,8 +112,8 @@ def plot_db_size(data, output_dir):
     width = 0.8 / n
 
     for i, method in enumerate(methods):
-        vals_gib = [s[2] / (1024**3) for s in data[method]]
-        padded = vals_gib + [float("nan")] * (len(SCHEMAS) - len(vals_gib))
+        vals_gb = [s[2] / 1e9 for s in data[method]]
+        padded = vals_gb + [float("nan")] * (len(SCHEMAS) - len(vals_gb))
         offset = (i - n / 2 + 0.5) * width
         color = color_for(method)
         bars = ax.bar(x + offset, padded, width, label=label_for(method),
@@ -123,19 +126,20 @@ def plot_db_size(data, output_dir):
                     f"{v:.1f}",
                     ha="center",
                     va="bottom",
-                    fontsize=7,
                 )
 
-    ax.set_xlabel("Schema (number of attributes)")
-    ax.set_ylabel("DB Size (GiB)")
-    ax.set_title("DB Size After Sequential Writes")
+    ax.set_xlabel("# of Indexed Attributes")
+    ax.set_ylabel("DB Size (GB)")
+
     ax.set_xticks(x)
-    ax.set_xticklabels(SCHEMAS)
+    ax.set_xticklabels(SCHEMA_TICK_LABELS)
+    ax.tick_params(axis="x", length=0)
+    ax.tick_params(axis="y", length=2, width=0.3, direction="in")
     ax.legend()
-    ax.grid(axis="y", alpha=0.3)
+    ax.grid(False)
     fig.tight_layout()
 
-    out_path = os.path.join(output_dir, "db_size_comparison.png")
+    out_path = os.path.join(output_dir, "db_size_comparison.pdf")
     fig.savefig(out_path, dpi=150)
     print(f"Saved: {out_path}")
     plt.close(fig)
@@ -165,19 +169,83 @@ def plot_write_time(data, output_dir):
                     f"{v:.0f}",
                     ha="center",
                     va="bottom",
-                    fontsize=7,
                 )
 
-    ax.set_xlabel("Schema (number of attributes)")
+    ax.set_xlabel("# of Indexed Attributes")
     ax.set_ylabel("Write Time (seconds)")
-    ax.set_title("Total Write Time for Sequential Writes")
+
     ax.set_xticks(x)
-    ax.set_xticklabels(SCHEMAS)
+    ax.set_xticklabels(SCHEMA_TICK_LABELS)
+    ax.tick_params(axis="x", length=0)
+    ax.tick_params(axis="y", length=2, width=0.3, direction="in")
     ax.legend()
-    ax.grid(axis="y", alpha=0.3)
+    ax.grid(False)
     fig.tight_layout()
 
-    out_path = os.path.join(output_dir, "write_time_comparison.png")
+    out_path = os.path.join(output_dir, "write_time_comparison.pdf")
+    fig.savefig(out_path, dpi=150)
+    print(f"Saved: {out_path}")
+    plt.close(fig)
+
+
+def plot_normalized(data, output_dir):
+    """Two-column figure: DB size and write time normalized to no-index."""
+    methods = get_ordered_methods(data.keys())
+    if "no-index" not in data:
+        print("Skipping normalized plot: no-index data missing.")
+        return
+
+    size_baseline = [s[2] for s in data["no-index"]]
+    size_baseline_gb = [b / 1e9 for b in size_baseline]
+    time_baseline = [s[0] for s in data["no-index"]]
+    time_baseline_sec = [b / 1000 for b in time_baseline]
+
+    subplot_w = 7 / 2
+    subplot_h = subplot_w * 0.618
+    fig, (ax_size, ax_time) = plt.subplots(1, 2, figsize=(7, subplot_h))
+    x = np.arange(len(SCHEMAS))
+    n = len(methods)
+    width = 0.8 / n
+
+    for ax, get_raw, bl, annot_vals, annot_fmt, ylabel in [
+        (ax_size, lambda m: [s[2] for s in data[m]], size_baseline,
+         size_baseline_gb, lambda v: f"  {v:.1f} GB", "DB Size Ratio"),
+        (ax_time, lambda m: [s[0] for s in data[m]], time_baseline,
+         time_baseline_sec, lambda v: f"  {v:.1f}s", "Total Write Time Ratio"),
+    ]:
+        for i, method in enumerate(methods):
+            raw = get_raw(method)
+            ratios = [r / b if b else float("nan") for r, b in zip(raw, bl)]
+            padded = ratios + [float("nan")] * (len(SCHEMAS) - len(ratios))
+            offset = (i - n / 2 + 0.5) * width
+            color = color_for(method)
+            bars = ax.bar(x + offset, padded, width, label=label_for(method),
+                          **({"color": color} if color else {}))
+            if method == "no-index":
+                for bar, av in zip(bars, annot_vals):
+                    ax.text(
+                        bar.get_x() + bar.get_width() / 2,
+                        bar.get_height(),
+                        annot_fmt(av),
+                        ha="center",
+                        va="bottom",
+                        rotation=90,
+                    )
+
+        ax.set_xlabel("# of Indexed Attributes")
+        ax.set_ylabel(ylabel)
+        ax.set_xticks(x)
+        ax.set_xticklabels(SCHEMA_TICK_LABELS)
+        ax.tick_params(axis="x", length=0)
+        ax.tick_params(axis="y", length=2, width=0.3, direction="in")
+        ax.grid(False)
+
+    handles, labels = ax_size.get_legend_handles_labels()
+    fig.legend(handles, labels, loc="upper center", ncol=len(methods),
+               frameon=False)
+    fig.tight_layout(rect=[0, 0, 1, 0.90], w_pad=2.0)
+
+    out_path = os.path.join(output_dir, "normalized_comparison.pdf")
     fig.savefig(out_path, dpi=150)
     print(f"Saved: {out_path}")
     plt.close(fig)
@@ -208,12 +276,12 @@ def plot_write_throughput(timeseries, schema_idx, output_dir):
 
     ax.set_xlabel("Records Written (M)")
     ax.set_ylabel("Throughput (M records/sec)")
-    ax.set_title(f"Write Throughput — Schema {schema}")
+
     ax.legend()
     ax.grid(alpha=0.3)
     fig.tight_layout()
 
-    out_path = os.path.join(output_dir, f"write_throughput_{schema}.png")
+    out_path = os.path.join(output_dir, f"write_throughput_{schema}.pdf")
     fig.savefig(out_path, dpi=150)
     print(f"Saved: {out_path}")
     plt.close(fig)
@@ -246,6 +314,7 @@ def main():
 
     plot_db_size(data, output_dir)
     plot_write_time(data, output_dir)
+    plot_normalized(data, output_dir)
 
     if args.throughput_schema is not None:
         timeseries = load_timeseries(args.csv)

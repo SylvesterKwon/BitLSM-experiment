@@ -168,7 +168,7 @@ int main(int argc, char* argv[]) {
     auto parse_elapsed = chrono::duration_cast<chrono::milliseconds>(
                              chrono::steady_clock::now() - parse_start).count();
     cout << "[pre-parse] " << all_items.size() << " records loaded in "
-         << parse_elapsed << "ms\n";
+         << parse_elapsed << "ms" << endl;
 
     // Phase 2: parallel write — each thread writes its own segment
     uint64_t total_n = all_items.size();
@@ -194,7 +194,7 @@ int main(int argc, char* argv[]) {
               write_csv << elapsed << "," << cur << "\n";
               write_csv.flush();
             }
-            cout << "[write] " << cur << " records, " << elapsed << "ms\n";
+            cout << "[write] " << cur << " records, " << elapsed << "ms" << endl;
           }
         }
       });
@@ -261,7 +261,7 @@ int main(int argc, char* argv[]) {
             auto elapsed = chrono::duration_cast<chrono::milliseconds>(
                                now - wall_start).count();
             const char* phase = in_interleave_phase ? "interleave" : "pre-load";
-            cout << "[" << phase << "] " << writes << " records, " << elapsed << "ms\n";
+            cout << "[" << phase << "] " << writes << " records, " << elapsed << "ms" << endl;
           }
         } else {
           binding->Put(w.pk, attrs, payload);
@@ -276,7 +276,7 @@ int main(int argc, char* argv[]) {
               write_csv << elapsed << "," << writes << "\n";
               write_csv.flush();
             }
-            cout << "[write] " << writes << " records, " << elapsed << "ms\n";
+            cout << "[write] " << writes << " records, " << elapsed << "ms" << endl;
           }
         }
         break;
