@@ -10,7 +10,6 @@ Usage:
 
 import json
 import os
-import pty
 import re
 import subprocess
 import sys
@@ -18,7 +17,6 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from run_common import (
-    _set_pdeathsig,
     add_common_args,
     cartesian_combinations,
     clean_db,
@@ -50,45 +48,31 @@ def run_and_stream_csv(cmd, csv_file, method_label, num_threads):
 
     Returns (returncode, total_time_ms, total_records).
     """
-    master_fd, slave_fd = pty.openpty()
     proc = subprocess.Popen(
-        cmd, stdout=slave_fd, stderr=slave_fd,
-        preexec_fn=_set_pdeathsig)
-    os.close(slave_fd)
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
     total_time_ms = None
     total_records = None
-    line_buf = ""
 
-    while True:
-        try:
-            data = os.read(master_fd, 4096)
-        except OSError:
-            break
-        if not data:
-            break
-        text = data.decode("utf-8", errors="replace")
-        sys.stdout.write(text)
+    for raw_line in proc.stdout:
+        line = raw_line.decode("utf-8", errors="replace").rstrip("\n\r")
+        sys.stdout.write(line + "\n")
         sys.stdout.flush()
 
-        line_buf += text
-        while "\n" in line_buf:
-            line, line_buf = line_buf.split("\n", 1)
-            # Checkpoint line
-            m = CHECKPOINT_RE.search(line)
-            if m:
-                records, time_ms = int(m.group(1)), int(m.group(2))
-                csv_file.write(f"{method_label},{num_threads},{time_ms},{records},\n")
-                csv_file.flush()
-            # Summary lines
-            m = SUMMARY_TIME_RE.search(line)
-            if m:
-                total_time_ms = int(m.group(1))
-            m = SUMMARY_WRITES_RE.search(line)
-            if m:
-                total_records = int(m.group(1))
+        # Checkpoint line
+        m = CHECKPOINT_RE.search(line)
+        if m:
+            records, time_ms = int(m.group(1)), int(m.group(2))
+            csv_file.write(f"{method_label},{num_threads},{time_ms},{records},\n")
+            csv_file.flush()
+        # Summary lines
+        m = SUMMARY_TIME_RE.search(line)
+        if m:
+            total_time_ms = int(m.group(1))
+        m = SUMMARY_WRITES_RE.search(line)
+        if m:
+            total_records = int(m.group(1))
 
-    os.close(master_fd)
     proc.wait()
     return proc.returncode, total_time_ms, total_records
 

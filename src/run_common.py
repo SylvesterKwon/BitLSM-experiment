@@ -6,10 +6,7 @@ CLI argument parsing, and daemon mode.
 """
 
 import argparse
-import ctypes
 import os
-import pty
-import signal
 import subprocess
 import sys
 import time
@@ -24,35 +21,20 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Process management
 # ---------------------------------------------------------------------------
 
-def _set_pdeathsig():
-    """Ask kernel to send SIGKILL to this process when its parent dies."""
-    PR_SET_PDEATHSIG = 1
-    ctypes.CDLL("libc.so.6").prctl(PR_SET_PDEATHSIG, signal.SIGKILL)
-
 
 def run_process(cmd: list) -> tuple:
-    """Execute a command with pty-based real-time output + capture.
+    """Execute a command with real-time output + capture.
 
     Returns (returncode, captured_output_str).
     """
-    master_fd, slave_fd = pty.openpty()
     proc = subprocess.Popen(
-        cmd, stdout=slave_fd, stderr=slave_fd,
-        preexec_fn=_set_pdeathsig)
-    os.close(slave_fd)
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     captured = []
-    while True:
-        try:
-            data = os.read(master_fd, 4096)
-        except OSError:
-            break
-        if not data:
-            break
-        text = data.decode("utf-8", errors="replace")
+    for raw_line in proc.stdout:
+        text = raw_line.decode("utf-8", errors="replace")
         captured.append(text)
         sys.stdout.write(text)
         sys.stdout.flush()
-    os.close(master_fd)
     proc.wait()
     return proc.returncode, "".join(captured)
 
