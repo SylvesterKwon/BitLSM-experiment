@@ -3,8 +3,8 @@
   "workload": "workloads/write_seq_2024-2025_all.tsv",
   "common_params": {
     "indexed_attrs": "PULocationID,DOLocationID,tpep_pickup_datetime,tpep_dropoff_datetime,fare_amount,passenger_count",
-    "num_threads": [
-      1,
+    "num_threads": 6,
+    "max_background_jobs": [
       2,
       3,
       4,
@@ -12,8 +12,7 @@
       6,
       7,
       8
-    ],
-    "max_background_jobs": 6
+    ]
   },
   "methods": [
     {

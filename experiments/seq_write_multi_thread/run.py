@@ -35,7 +35,7 @@ BINARY = "build/bin/honk_player"
 
 DB_PARAMS = ["rho"]
 
-SUMMARY_HEADER = "method,num_threads,time_elapsed_ms,records_written,db_size_bytes"
+SUMMARY_HEADER = "method,num_threads,max_background_jobs,time_elapsed_ms,records_written,db_size_bytes"
 
 
 CHECKPOINT_RE = re.compile(r"\[write\]\s+(\d+)\s+records,\s+(\d+)ms")
@@ -43,7 +43,7 @@ SUMMARY_TIME_RE = re.compile(r"^Total time:\s*(\d+)ms")
 SUMMARY_WRITES_RE = re.compile(r"Total writes:\s*(\d+)")
 
 
-def run_and_stream_csv(cmd, csv_file, method_label, num_threads):
+def run_and_stream_csv(cmd, csv_file, method_label, num_threads, max_background_jobs):
     """Run honk_player and write checkpoint rows to CSV in real-time.
 
     Returns (returncode, total_time_ms, total_records).
@@ -63,7 +63,7 @@ def run_and_stream_csv(cmd, csv_file, method_label, num_threads):
         m = CHECKPOINT_RE.search(line)
         if m:
             records, time_ms = int(m.group(1)), int(m.group(2))
-            csv_file.write(f"{method_label},{num_threads},{time_ms},{records},\n")
+            csv_file.write(f"{method_label},{num_threads},{max_background_jobs},{time_ms},{records},\n")
             csv_file.flush()
         # Summary lines
         m = SUMMARY_TIME_RE.search(line)
@@ -97,6 +97,8 @@ def encode_method_params(params: dict) -> str:
         parts.append("_".join(f"{k}{fmt(v)}" for k, v in db_params.items()))
     if "num_threads" in params:
         parts.append(f"t{fmt(params['num_threads'])}")
+    if "max_background_jobs" in params:
+        parts.append(f"bg{fmt(params['max_background_jobs'])}")
     return "_".join(parts) if parts else "default"
 
 
@@ -131,10 +133,14 @@ def run(config_path: str, dry_run: bool, method_filter: list,
     common_params = config.get("common_params", {})
     output_dir    = make_result_dir(exp_label)
 
-    # Extract num_threads from common_params (sweep parameter)
+    # Extract sweep parameters from common_params
     num_threads_list = common_params.pop("num_threads", [1])
     if not isinstance(num_threads_list, list):
         num_threads_list = [num_threads_list]
+
+    max_bg_jobs_list = common_params.pop("max_background_jobs", [6])
+    if not isinstance(max_bg_jobs_list, list):
+        max_bg_jobs_list = [max_bg_jobs_list]
 
     log_file, log_path = setup_logging(exp_label)
 
@@ -148,11 +154,12 @@ def run(config_path: str, dry_run: bool, method_filter: list,
             len(cartesian_combinations(m.get("params", {})))
             for m in methods
         )
-        total_runs = len(workloads) * method_combos * len(num_threads_list)
+        total_runs = len(workloads) * method_combos * len(num_threads_list) * len(max_bg_jobs_list)
         print(f"config   : {config_path}")
         print(f"label    : {exp_label}")
         print(f"total    : {total_runs} run(s)")
         print(f"threads  : {num_threads_list}")
+        print(f"bg_jobs  : {max_bg_jobs_list}")
         print(f"cooldown : {cooldown}s between runs")
         print(f"hw-reset : {'on (sudo)' if hw_reset else 'off'}")
         print(f"clean-db : {'on' if clean_db_flag else 'off'}")
@@ -180,47 +187,48 @@ def run(config_path: str, dry_run: bool, method_filter: list,
 
                 for combo in combos:
                     for nt in num_threads_list:
-                        global_idx += 1
-                        if global_idx < start_from:
-                            print(f"[{global_idx}/{total_runs}] [{name}] SKIP (--start-from {start_from})")
-                            continue
+                        for bg_jobs in max_bg_jobs_list:
+                            global_idx += 1
+                            if global_idx < start_from:
+                                print(f"[{global_idx}/{total_runs}] [{name}] SKIP (--start-from {start_from})")
+                                continue
 
-                        full_combo = {**combo, "num_threads": nt}
-                        db_path = f"{db_path_base}/{name}/{encode_method_params(full_combo)}"
-                        cmd = build_command(name, workload, db_path, output_dir,
-                                            full_combo, common_params)
+                            full_combo = {**combo, "num_threads": nt, "max_background_jobs": bg_jobs}
+                            db_path = f"{db_path_base}/{name}/{encode_method_params(full_combo)}"
+                            cmd = build_command(name, workload, db_path, output_dir,
+                                                full_combo, common_params)
 
-                        print(f"[{global_idx}/{total_runs}] [{name}] {' '.join(cmd)}")
+                            print(f"[{global_idx}/{total_runs}] [{name}] {' '.join(cmd)}")
 
-                        if not dry_run:
-                            os.makedirs(db_path, exist_ok=True)
-                            os.makedirs(output_dir, exist_ok=True)
+                            if not dry_run:
+                                os.makedirs(db_path, exist_ok=True)
+                                os.makedirs(output_dir, exist_ok=True)
 
-                            method_label = encode_method_label(name, combo)
-                            need_header = not os.path.exists(summary_csv_path)
-                            with open(summary_csv_path, "a") as csvf:
-                                if need_header:
-                                    csvf.write(SUMMARY_HEADER + "\n")
-                                rc, time_ms, records = run_and_stream_csv(
-                                    cmd, csvf, method_label, nt)
-                                if rc != 0:
-                                    sys.exit(f"Run failed (exit {rc}): {' '.join(cmd)}")
-                                # Final row with db_size
-                                db_size = get_db_size(db_path)
+                                method_label = encode_method_label(name, combo)
+                                need_header = not os.path.exists(summary_csv_path)
+                                with open(summary_csv_path, "a") as csvf:
+                                    if need_header:
+                                        csvf.write(SUMMARY_HEADER + "\n")
+                                    rc, time_ms, records = run_and_stream_csv(
+                                        cmd, csvf, method_label, nt, bg_jobs)
+                                    if rc != 0:
+                                        sys.exit(f"Run failed (exit {rc}): {' '.join(cmd)}")
+                                    # Final row with db_size
+                                    db_size = get_db_size(db_path)
+                                    if time_ms is not None:
+                                        csvf.write(f"{method_label},{nt},{bg_jobs},{time_ms},{records},{db_size}\n")
+                                        csvf.flush()
                                 if time_ms is not None:
-                                    csvf.write(f"{method_label},{nt},{time_ms},{records},{db_size}\n")
-                                    csvf.flush()
-                            if time_ms is not None:
-                                print(f"  -> {method_label} t={nt}: {time_ms}ms, {records} records, {db_size} bytes")
+                                    print(f"  -> {method_label} t={nt} bg={bg_jobs}: {time_ms}ms, {records} records, {db_size} bytes")
 
-                            if clean_db_flag:
-                                clean_db(db_path)
-                            print()
+                                if clean_db_flag:
+                                    clean_db(db_path)
+                                print()
 
-                            if hw_reset:
-                                reset_hardware(db_path_base)
-                            if cooldown > 0 and global_idx < total_runs:
-                                cooldown_sleep(cooldown)
+                                if hw_reset:
+                                    reset_hardware(db_path_base)
+                                if cooldown > 0 and global_idx < total_runs:
+                                    cooldown_sleep(cooldown)
 
     finally:
         teardown_logging(log_file, log_path)

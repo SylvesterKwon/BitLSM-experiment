@@ -12,13 +12,15 @@ void BitLSMBinding::Open(int argc, char* argv[], const std::string& db_path,
   cxxopts::Options cxx("bitlsm", "");
   cxx.allow_unrecognised_options();
   cxx.add_options()("rho", "BitLSM rho threshold",
-                    cxxopts::value<double>()->default_value("0.1"));
+                    cxxopts::value<double>()->default_value("0.1"))
+                   ("max_background_jobs", "",
+                    cxxopts::value<int>()->default_value("6"));
   auto result = cxx.parse(argc, argv);
   rho_ = result["rho"].as<double>();
 
   rocksdb::Options rocksdb_options;
   rocksdb_options.create_if_missing = true;
-  rocksdb_options.max_background_jobs = 6;
+  rocksdb_options.max_background_jobs = result["max_background_jobs"].as<int>();
   rocksdb_options.bytes_per_sync = 1048576;
   rocksdb_options.compaction_pri = rocksdb::kMinOverlappingRatio;
   rocksdb_options.max_write_buffer_number = 5;

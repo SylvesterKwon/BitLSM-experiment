@@ -18,10 +18,13 @@ void SICKBinding::Open(int argc, char* argv[], const string& db_path,
   cxxopts::Options cxx("si-ck", "");
   cxx.allow_unrecognised_options();
   cxx.add_options()("read_strategy", "im or pf",
-                    cxxopts::value<string>()->default_value("im"));
+                    cxxopts::value<string>()->default_value("im"))
+                   ("max_background_jobs", "",
+                    cxxopts::value<int>()->default_value("6"));
   auto result = cxx.parse(argc, argv);
   strategy_ =
       benchmark::ParseSIStrategy(result["read_strategy"].as<string>());
+  int max_bg_jobs = result["max_background_jobs"].as<int>();
 
   ColumnFamilyOptions si_cf_opts;
   BlockBasedTableOptions si_table_options;
@@ -32,7 +35,7 @@ void SICKBinding::Open(int argc, char* argv[], const string& db_path,
   si_cf_opts.prefix_extractor.reset(
       NewCappedPrefixTransform(idx_no_prefix_size_ + si_prefix_length_));
 
-  db_ = benchmark::OpenSITransactionDB(db_path, si_cf_opts);
+  db_ = benchmark::OpenSITransactionDB(db_path, si_cf_opts, max_bg_jobs);
 }
 
 void SICKBinding::Put(const string& pk, const vector<Attr>& attrs,

@@ -163,13 +163,14 @@ struct SIDBHandles {
 
 inline SIDBHandles OpenSITransactionDB(
     const std::string& db_path,
-    rocksdb::ColumnFamilyOptions si_cf_opts_override = {}) {
+    rocksdb::ColumnFamilyOptions si_cf_opts_override = {},
+    int max_background_jobs = 6) {
   SIDBHandles h;
 
   rocksdb::Options opts;
   opts.create_if_missing = true;
   opts.create_missing_column_families = true;
-  opts.max_background_jobs = 6;
+  opts.max_background_jobs = max_background_jobs;
   opts.bytes_per_sync = 1048576;
   opts.compaction_pri = rocksdb::kMinOverlappingRatio;
   opts.max_write_buffer_number = 5;

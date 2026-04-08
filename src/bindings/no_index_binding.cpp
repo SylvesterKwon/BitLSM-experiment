@@ -1,6 +1,7 @@
 #include "no_index_binding.h"
 #include "bit_lsm_utils.h"
 #include <chrono>
+#include <cxxopts.hpp>
 #include <iostream>
 #include <rocksdb/table.h>
 
@@ -8,13 +9,19 @@ using namespace rocksdb;
 
 namespace experiment {
 
-void NoIndexBinding::Open(int, char*[], const std::string& db_path,
+void NoIndexBinding::Open(int argc, char* argv[], const std::string& db_path,
                            const BitLSMOptions& opts) {
   options_ = opts;
 
+  cxxopts::Options cxx("no-index", "");
+  cxx.allow_unrecognised_options();
+  cxx.add_options()("max_background_jobs", "",
+                    cxxopts::value<int>()->default_value("6"));
+  auto result = cxx.parse(argc, argv);
+
   Options rocksdb_options;
   rocksdb_options.create_if_missing = true;
-  rocksdb_options.max_background_jobs = 6;
+  rocksdb_options.max_background_jobs = result["max_background_jobs"].as<int>();
   rocksdb_options.bytes_per_sync = 1048576;
   rocksdb_options.compaction_pri = kMinOverlappingRatio;
   rocksdb_options.max_write_buffer_number = 5;

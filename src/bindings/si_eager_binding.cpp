@@ -31,12 +31,15 @@ void SIEagerBinding::Open(int argc, char* argv[], const string& db_path,
   cxxopts::Options cxx("si-eager", "");
   cxx.allow_unrecognised_options();
   cxx.add_options()("read_strategy", "im or pf",
-                    cxxopts::value<string>()->default_value("im"));
+                    cxxopts::value<string>()->default_value("im"))
+                   ("max_background_jobs", "",
+                    cxxopts::value<int>()->default_value("6"));
   auto result = cxx.parse(argc, argv);
   strategy_ =
       benchmark::ParseSIStrategy(result["read_strategy"].as<string>());
+  int max_bg_jobs = result["max_background_jobs"].as<int>();
 
-  db_ = benchmark::OpenSITransactionDB(db_path);
+  db_ = benchmark::OpenSITransactionDB(db_path, {}, max_bg_jobs);
 }
 
 void SIEagerBinding::Put(const string& pk, const vector<Attr>& attrs,
