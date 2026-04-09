@@ -26,10 +26,12 @@
           "query_attr_num": 1,
           "weight": 1,
           "query_attrs": [
-            "payment_type",
             "PULocationID",
+            "DOLocationID",
+            "tpep_pickup_datetime",
+            "tpep_dropoff_datetime",
             "fare_amount",
-            "tpep_pickup_datetime"
+            "passenger_count"
           ],
           "target_selectivity_percent": {
             "lo": 0.1,
