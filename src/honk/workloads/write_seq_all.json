@@ -28,29 +28,8 @@
   "seed": 42,
   "phases": [
     {
-      "label": "read_sel0.01_k3",
-      "type": "read_only",
-      "num_queries": 100,
-      "queries": [
-        {
-          "label": "sel0.01_k3",
-          "strategy": "guided_two_point",
-          "query_attr_num": 3,
-          "weight": 1,
-          "query_attrs": [
-            "PULocationID",
-            "DOLocationID",
-            "tpep_pickup_datetime",
-            "tpep_dropoff_datetime",
-            "fare_amount",
-            "passenger_count"
-          ],
-          "target_selectivity_percent": {
-            "lo": 0.1,
-            "hi": 1.0
-          }
-        }
-      ]
+      "label": "write",
+      "type": "write_only"
     }
   ]
 }
