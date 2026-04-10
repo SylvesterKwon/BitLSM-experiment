@@ -104,7 +104,8 @@ def encode_method_params(params: dict) -> str:
 
 def build_command(method_name: str, workload: str, db_path: str,
                   output_dir: str, combo: dict, common_params: dict) -> list:
-    cmd = [BINARY,
+    cmd = ["taskset", "-c", "0-15",
+           BINARY,
            "--binding", method_name,
            "--workload", workload,
            "--db_path", db_path,
