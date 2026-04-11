@@ -1,6 +1,6 @@
 {
   "db_path_base": "/scratch/seq_write_multi_thread",
-  "workload": "workloads/write_seq_2024-2025_all.tsv",
+  "workload": "workloads/write_seq_all.tsv",
   "common_params": {
     "indexed_attrs": "PULocationID,DOLocationID,tpep_pickup_datetime,tpep_dropoff_datetime,fare_amount,passenger_count",
     "num_threads": [
