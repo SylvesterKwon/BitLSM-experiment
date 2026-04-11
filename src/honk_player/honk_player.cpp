@@ -43,7 +43,9 @@ int main(int argc, char* argv[]) {
     ("num_threads", "Number of writer threads (default: 1)",
      cxxopts::value<int>()->default_value("1"))
     ("no_csv", "Disable per-binding CSV output",
-     cxxopts::value<bool>()->default_value("false"));
+     cxxopts::value<bool>()->default_value("false"))
+    ("query_limit", "Stop after N read queries (0 = unlimited)",
+     cxxopts::value<uint64_t>()->default_value("0"));
   // clang-format on
 
   auto result = opts.parse(argc, argv);
@@ -62,6 +64,7 @@ int main(int argc, char* argv[]) {
   bool interleave_mode = result["interleave"].as<bool>();
   int num_threads = result["num_threads"].as<int>();
   bool no_csv = result["no_csv"].as<bool>();
+  uint64_t query_limit = result["query_limit"].as<uint64_t>();
 
   // Parse indexed_attrs (field names → column indices)
   auto all_columns = honk::GetTaxiColumns();
@@ -234,7 +237,8 @@ int main(int argc, char* argv[]) {
   auto interleave_start = chrono::high_resolution_clock::now();
   bool interleave_started = false;
 
-  while (reader.Next(op)) {
+  while (reader.Next(op) &&
+         (query_limit == 0 || reads < query_limit)) {
     switch (op.type) {
       case honk::OpType::WRITE:
       case honk::OpType::UPDATE: {

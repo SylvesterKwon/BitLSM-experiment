@@ -23,6 +23,7 @@
   "methods": [
     {
       "name": "no-index",
+      "query_limit": 10,
       "params": {}
     },
     {

@@ -48,7 +48,8 @@ def workload_stem(path: str) -> str:
 
 
 def build_command(method_name: str, workload: str, db_path: str,
-                  output_dir: str, combo: dict, common_params: dict) -> list:
+                  output_dir: str, combo: dict, common_params: dict,
+                  query_limit: int = 0) -> list:
     cmd = [BINARY,
            "--binding", method_name,
            "--workload", workload,
@@ -58,6 +59,8 @@ def build_command(method_name: str, workload: str, db_path: str,
         cmd += [f"--{key}", fmt(val)]
     for key, val in combo.items():
         cmd += [f"--{key}", fmt(val)]
+    if query_limit > 0:
+        cmd += ["--query_limit", str(query_limit)]
     return cmd
 
 
@@ -117,6 +120,7 @@ def run(config_path: str, dry_run: bool, method_filter: list,
             for method in methods:
                 name          = method["name"]
                 method_params = method.get("params", {})
+                query_limit   = method.get("query_limit", 0)
                 combos        = cartesian_combinations(method_params)
 
                 for combo in combos:
@@ -128,7 +132,7 @@ def run(config_path: str, dry_run: bool, method_filter: list,
                     wl_stem = workload_stem(workload)
                     db_path = f"{db_path_base}/{name}/{encode_method_params(combo)}"
                     cmd = build_command(name, workload, db_path, output_dir,
-                                        combo, common_params)
+                                        combo, common_params, query_limit)
 
                     print(f"[{global_idx}/{total_runs}] [{wl_stem}][{name}] {' '.join(cmd)}")
 
