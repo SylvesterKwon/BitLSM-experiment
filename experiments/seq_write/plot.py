@@ -202,16 +202,16 @@ def plot_normalized(data, output_dir):
 
     subplot_w = 7 / 2
     subplot_h = subplot_w * 0.618
-    fig, (ax_size, ax_time) = plt.subplots(1, 2, figsize=(7, subplot_h))
+    fig, (ax_time, ax_size) = plt.subplots(1, 2, figsize=(7, subplot_h))
     x = np.arange(len(SCHEMAS))
     n = len(methods)
     width = 0.8 / n
 
     for ax, get_raw, bl, annot_vals, annot_fmt, ylabel in [
-        (ax_size, lambda m: [s[2] for s in data[m]], size_baseline,
-         size_baseline_gb, lambda v: f"  {v:.1f} GB", "DB Size Ratio"),
         (ax_time, lambda m: [s[0] for s in data[m]], time_baseline,
          time_baseline_sec, lambda v: f"  {v:.1f}s", "Total Write Time Ratio"),
+        (ax_size, lambda m: [s[2] for s in data[m]], size_baseline,
+         size_baseline_gb, lambda v: f"  {v:.1f} GB", "DB Size Ratio"),
     ]:
         for i, method in enumerate(methods):
             raw = get_raw(method)
@@ -240,7 +240,7 @@ def plot_normalized(data, output_dir):
         ax.tick_params(axis="y", length=2, width=0.3, direction="in")
         ax.grid(False)
 
-    handles, labels = ax_size.get_legend_handles_labels()
+    handles, labels = ax_time.get_legend_handles_labels()
     fig.legend(handles, labels, loc="upper center", ncol=len(methods),
                frameon=False)
     fig.tight_layout(rect=[0, 0, 1, 0.90], w_pad=2.0)

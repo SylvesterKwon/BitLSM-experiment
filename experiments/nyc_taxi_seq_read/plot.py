@@ -11,20 +11,21 @@ Usage:
 
 import argparse
 import csv
+import math
 import os
 import re
 
 import matplotlib.pyplot as plt
 import numpy as np
 
-plt.rcParams.update({"font.size": 6})
+plt.rcParams.update({"font.size": 6, "hatch.linewidth": 0.3})
 
 METHOD_ORDER = [
     "no-index",
-    "si-ck_strategy_im",
     "si-ck_strategy_pf",
-    "si-lu_strategy_im",
+    "si-ck_strategy_im",
     "si-lu_strategy_pf",
+    "si-lu_strategy_im",
     "bitlsm_rho0.2",
     "bitlsm_rho0.1",
     "bitlsm_rho0.05",
@@ -41,13 +42,17 @@ METHOD_LABELS = {
 }
 METHOD_COLORS = {
     "no-index": "#808080",
-    "si-ck_strategy_im": "#B8A8D8",
+    "si-ck_strategy_im": "#9888B8",
     "si-ck_strategy_pf": "#9888B8",
-    "si-lu_strategy_im": "#7DE880",
+    "si-lu_strategy_im": "#4CC850",
     "si-lu_strategy_pf": "#4CC850",
     "bitlsm_rho0.2": "#F08C7C",
     "bitlsm_rho0.1": "#E04040",
     "bitlsm_rho0.05": "#9B1B1B",
+}
+METHOD_HATCHES = {
+    "si-ck_strategy_im": "xxxxxx",
+    "si-lu_strategy_im": "xxxxxx",
 }
 
 # Pattern: read_seq_sel{sel}_k{k}_r{r}_{method}_read_log.csv
@@ -75,7 +80,7 @@ def load_result_dir(result_dir):
         with open(path, newline="") as f:
             reader = csv.DictReader(f)
             for row in reader:
-                times.append(float(row["time_elapsed_ms"]))
+                times.append(float(row["time_elapsed_ms"]) / 1000.0)
 
         key = (sel, k)
         data.setdefault(key, {})
@@ -95,6 +100,10 @@ def plot_grid(data, output_dir):
     nrows = len(all_sels)
     ncols = len(all_ks)
 
+    def sel_label(s):
+        exp = int(round(math.log10(s)))
+        return rf"$\sigma = 10^{{{exp}}}$"
+
     # Collect all methods present across every cell for a shared legend
     all_methods = []
     for cell_data in data.values():
@@ -103,9 +112,7 @@ def plot_grid(data, output_dir):
                 all_methods.append(m)
     all_methods = [m for m in METHOD_ORDER if m in all_methods]
 
-    cell_w = 7 / ncols
-    cell_h = cell_w
-    fig, axes = plt.subplots(nrows, ncols, figsize=(7, cell_h * nrows),
+    fig, axes = plt.subplots(nrows, ncols, figsize=(7, 7 * 3 / 4),
                              squeeze=False)
 
     for ri, sel in enumerate(all_sels):
@@ -123,9 +130,9 @@ def plot_grid(data, output_dir):
                 ax.set_xticks([])
                 ax.set_yticks([])
                 if ri == nrows - 1:
-                    ax.set_xlabel(f"k = {k}")
+                    ax.set_xlabel(f"c = {k}")
                 if ci == 0:
-                    ax.set_ylabel(f"sel = {sel}\nQuery Time (ms)")
+                    ax.set_ylabel(f"{sel_label(sel)}\nQuery Time (s)")
                 continue
 
             # no-index as horizontal dashed line (mean)
@@ -137,6 +144,7 @@ def plot_grid(data, output_dir):
             if bp_methods:
                 bp_data = [cell_data[m] for m in bp_methods]
                 colors = [METHOD_COLORS.get(m, "#CCCCCC") for m in bp_methods]
+                hatches = [METHOD_HATCHES.get(m, "") for m in bp_methods]
 
                 bp = ax.boxplot(bp_data, patch_artist=True, widths=0.6,
                                 showfliers=False,
@@ -144,20 +152,20 @@ def plot_grid(data, output_dir):
                                 boxprops=dict(linewidth=0.5),
                                 whiskerprops=dict(linewidth=0.5),
                                 capprops=dict(linewidth=0.5))
-                for patch, color in zip(bp["boxes"], colors):
+                for patch, color, hatch in zip(bp["boxes"], colors, hatches):
                     patch.set_facecolor(color)
+                    patch.set_hatch(hatch)
 
             ax.set_xticks([])
-            ax.ticklabel_format(axis="y", style="sci", scilimits=(0, 0))
-            ax.yaxis.get_offset_text().set_fontsize(plt.rcParams["font.size"])
+            ax.ticklabel_format(axis="y", style="plain")
             ax.tick_params(axis="x", length=0)
             ax.tick_params(axis="y", length=2, width=0.3, direction="in")
             ax.grid(False)
 
             if ri == nrows - 1:
-                ax.set_xlabel(f"k = {k}")
+                ax.set_xlabel(f"c = {k}")
             if ci == 0:
-                ax.set_ylabel(f"sel = {sel}\nQuery Time (ms)")
+                ax.set_ylabel(f"{sel_label(sel)}\nQuery Time (s)")
 
     # Shared legend at top
     from matplotlib.patches import Patch
@@ -172,6 +180,7 @@ def plot_grid(data, output_dir):
         else:
             legend_handles.append(
                 Patch(facecolor=METHOD_COLORS.get(m, "#CCCCCC"),
+                      hatch=METHOD_HATCHES.get(m, ""),
                       edgecolor="black", linewidth=0.5,
                       label=METHOD_LABELS.get(m, m)))
     fig.legend(handles=legend_handles, loc="upper center",
