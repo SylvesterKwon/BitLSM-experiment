@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Plot read query time distribution (boxplots) for nyc_taxi_seq_read experiment.
 
-Grid layout: rows = selectivity, columns = k (# query attributes).
+Grid layout: rows = k (# query attributes), columns = selectivity.
 Each cell shows boxplots of per-query time_elapsed_ms across methods.
 
 Usage:
@@ -89,7 +89,7 @@ def load_result_dir(result_dir):
 
 
 def plot_grid(data, output_dir):
-    """Create a grid of boxplots: rows=selectivity, cols=k."""
+    """Create a grid of boxplots: rows=k, cols=selectivity."""
     all_sels = sorted(set(sel for sel, _ in data))
     all_ks = sorted(set(k for _, k in data))
 
@@ -97,12 +97,12 @@ def plot_grid(data, output_dir):
         print("No data to plot.")
         return
 
-    nrows = len(all_sels)
-    ncols = len(all_ks)
+    nrows = len(all_ks)
+    ncols = len(all_sels)
 
     def sel_label(s):
         exp = int(round(math.log10(s)))
-        return rf"$\sigma = 10^{{{exp}}}$"
+        return rf"$\sigma \in [10^{{{exp - 1}}}, 10^{{{exp}}})$"
 
     # Collect all methods present across every cell for a shared legend
     all_methods = []
@@ -115,8 +115,8 @@ def plot_grid(data, output_dir):
     fig, axes = plt.subplots(nrows, ncols, figsize=(7, 7 * 3 / 4),
                              squeeze=False)
 
-    for ri, sel in enumerate(all_sels):
-        for ci, k in enumerate(all_ks):
+    for ri, k in enumerate(all_ks):
+        for ci, sel in enumerate(all_sels):
             ax = axes[ri][ci]
             cell_data = data.get((sel, k), {})
 
@@ -130,9 +130,9 @@ def plot_grid(data, output_dir):
                 ax.set_xticks([])
                 ax.set_yticks([])
                 if ri == nrows - 1:
-                    ax.set_xlabel(f"c = {k}")
+                    ax.set_xlabel(f"{sel_label(sel)}")
                 if ci == 0:
-                    ax.set_ylabel(f"{sel_label(sel)}\nQuery Time (s)")
+                    ax.set_ylabel(f"c = {k}\nQuery Latency (s)")
                 continue
 
             # no-index as horizontal dashed line (mean)
@@ -163,9 +163,9 @@ def plot_grid(data, output_dir):
             ax.grid(False)
 
             if ri == nrows - 1:
-                ax.set_xlabel(f"c = {k}")
+                ax.set_xlabel(f"{sel_label(sel)}")
             if ci == 0:
-                ax.set_ylabel(f"{sel_label(sel)}\nQuery Time (s)")
+                ax.set_ylabel(f"c = {k}\nQuery Latency (s)")
 
     # Shared legend at top
     from matplotlib.patches import Patch
