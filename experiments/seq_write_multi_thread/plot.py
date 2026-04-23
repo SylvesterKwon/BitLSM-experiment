@@ -16,6 +16,7 @@ import re
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.ticker import FuncFormatter
 
 plt.rcParams.update({"font.size": 6})
 
@@ -24,7 +25,9 @@ METHOD_ORDER = [
     "no-index",
     "si-ck",
     "si-lu",
+    "bitlsm_rho0.2",
     "bitlsm_rho0.1",
+    "bitlsm_rho0.05",
 ]
 METHOD_LABELS = {
     "no-index": "No Index",
@@ -40,6 +43,14 @@ METHOD_COLORS = {
     "bitlsm_rho0.05": "#9B1B1B",
     "si-lu": "#4CC850",
     "si-ck": "#9888B8",
+}
+METHOD_MARKERS = {
+    "no-index": "o",
+    "si-ck": "^",
+    "si-lu": "X",
+    "bitlsm_rho0.2": "s",
+    "bitlsm_rho0.1": "D",
+    "bitlsm_rho0.05": "v",
 }
 
 
@@ -90,25 +101,38 @@ def parse_write_logs(result_dir: str):
     return results
 
 
-def load_summary_csv(csv_path: str):
-    """Load final rows (with db_size_bytes) from summary CSV.
-
-    Returns: {method: [(num_threads, throughput), ...]}
-    """
-    data = {}
+def _read_rows(csv_path: str):
     with open(csv_path, newline="") as f:
         content = f.read().replace("\r\n", "\n").replace("\r", "\n")
-    reader = csv.DictReader(content.strip().splitlines())
-    for row in reader:
-        db_bytes = row.get("db_size_bytes", "").strip()
-        if not db_bytes:
-            continue
-        method = row["method"].strip()
-        nt = int(row["num_threads"])
-        time_ms = float(row["time_elapsed_ms"])
-        records = int(row["records_written"])
-        throughput = records / (time_ms / 1000) if time_ms > 0 else 0
-        data.setdefault(method, []).append((nt, throughput))
+    return list(csv.DictReader(content.strip().splitlines()))
+
+
+def load_summary_csv(csv_paths):
+    """Load final rows (with db_size_bytes) from one or more summary CSVs.
+
+    Throughput per (method, num_threads) is averaged across CSVs.
+    Returns: {method: [(num_threads, throughput), ...]}
+    """
+    if isinstance(csv_paths, str):
+        csv_paths = [csv_paths]
+
+    runs = {}  # {method: {num_threads: [throughputs, ...]}}
+    for csv_path in csv_paths:
+        for row in _read_rows(csv_path):
+            db_bytes = row.get("db_size_bytes", "").strip()
+            if not db_bytes:
+                continue
+            method = row["method"].strip()
+            nt = int(row["num_threads"])
+            time_ms = float(row["time_elapsed_ms"])
+            records = int(row["records_written"])
+            throughput = records / (time_ms / 1000) if time_ms > 0 else 0
+            runs.setdefault(method, {}).setdefault(nt, []).append(throughput)
+
+    data = {}
+    for method, nt_map in runs.items():
+        for nt, values in nt_map.items():
+            data.setdefault(method, []).append((nt, sum(values) / len(values)))
     return data
 
 
@@ -126,31 +150,41 @@ def color_for(method):
     return METHOD_COLORS.get(method, None)
 
 
+def marker_for(method):
+    return METHOD_MARKERS.get(method, "o")
+
+
 def plot_throughput_scaling(data, output_dir):
-    """Line chart: throughput (M records/sec) vs num_threads per method."""
+    """Line chart: throughput (records/sec) vs num_threads per method."""
     methods = get_ordered_methods(data.keys())
 
-    fig, ax = plt.subplots(figsize=(7, 7 * 0.618))
+    fig, ax = plt.subplots(figsize=(3.333, 2.2))
+    ax.set_box_aspect(0.5)
 
     for method in methods:
-        points = sorted(data[method], key=lambda x: x[0])
+        points = sorted([p for p in data[method] if p[0] <= 6], key=lambda x: x[0])
         threads = [p[0] for p in points]
-        throughput = [p[1] / 1e6 for p in points]
+        throughput = [p[1] for p in points]
         color = color_for(method)
-        ax.plot(threads, throughput, "o-", label=label_for(method),
+        ax.plot(threads, throughput, marker=marker_for(method), linestyle="-",
+                label=label_for(method), markersize=3,
                 **({"color": color} if color else {}))
 
     ax.set_xlabel("Number of Writer Threads")
-    ax.set_ylabel("Throughput (M records/sec)")
-    ax.set_xticks(sorted({p[0] for pts in data.values() for p in pts}))
+    ax.set_ylabel("Throughput (records/sec)")
+    ax.set_xticks(sorted({p[0] for pts in data.values() for p in pts if p[0] <= 6}))
+    ax.set_ylim(bottom=0)
     ax.tick_params(axis="x", length=0)
     ax.tick_params(axis="y", length=2, width=0.3, direction="in")
-    ax.legend()
+    ax.yaxis.set_major_formatter(FuncFormatter(
+        lambda x, _: "0" if x == 0 else rf"${x/1e5:g}\times 10^5$"))
+    ax.legend(loc="lower left", bbox_to_anchor=(0, 1.02, 1, 0.2),
+              ncol=3, mode="expand", frameon=False)
     ax.grid(False)
     fig.tight_layout()
 
     out_path = os.path.join(output_dir, "throughput_scaling.pdf")
-    fig.savefig(out_path, dpi=150)
+    fig.savefig(out_path, dpi=150, bbox_inches="tight")
     print(f"Saved: {out_path}")
     plt.close(fig)
 
@@ -159,7 +193,7 @@ def plot_speedup(data, output_dir):
     """Line chart: speedup (throughput / single-thread throughput) vs num_threads."""
     methods = get_ordered_methods(data.keys())
 
-    fig, ax = plt.subplots(figsize=(7, 7 * 0.618))
+    fig, ax = plt.subplots(figsize=(3.333, 3.333 * 0.618))
 
     all_threads = sorted({p[0] for pts in data.values() for p in pts})
 
@@ -193,21 +227,32 @@ def plot_speedup(data, output_dir):
     plt.close(fig)
 
 
-def load_progress_csv(csv_path: str):
-    """Load all rows from summary CSV grouped by (method, num_threads).
+def load_progress_csv(csv_paths):
+    """Load all rows from one or more summary CSVs grouped by (method, num_threads).
+
+    Checkpoints are keyed by records_written (honk_player emits at fixed 1M
+    boundaries); time_sec is averaged across runs per checkpoint.
 
     Returns: {num_threads: {method: [(time_sec, records), ...]}}
     """
+    if isinstance(csv_paths, str):
+        csv_paths = [csv_paths]
+
+    # {num_threads: {method: {records: [time_sec, ...]}}}
+    runs = {}
+    for csv_path in csv_paths:
+        for row in _read_rows(csv_path):
+            method = row["method"].strip()
+            nt = int(row["num_threads"])
+            time_sec = float(row["time_elapsed_ms"]) / 1000
+            records = int(row["records_written"])
+            runs.setdefault(nt, {}).setdefault(method, {}).setdefault(records, []).append(time_sec)
+
     data = {}
-    with open(csv_path, newline="") as f:
-        content = f.read().replace("\r\n", "\n").replace("\r", "\n")
-    reader = csv.DictReader(content.strip().splitlines())
-    for row in reader:
-        method = row["method"].strip()
-        nt = int(row["num_threads"])
-        time_sec = float(row["time_elapsed_ms"]) / 1000
-        records = int(row["records_written"])
-        data.setdefault(nt, {}).setdefault(method, []).append((time_sec, records))
+    for nt, method_map in runs.items():
+        for method, records_map in method_map.items():
+            points = [(sum(times) / len(times), records) for records, times in records_map.items()]
+            data.setdefault(nt, {})[method] = points
     return data
 
 
@@ -215,7 +260,7 @@ def plot_progress_per_thread(progress_data, output_dir):
     """Single PDF with one subplot per num_threads, showing write progress."""
     thread_counts = sorted(progress_data.keys())
     n = len(thread_counts)
-    fig, axes = plt.subplots(1, n, figsize=(4 * n, 4), sharey=True)
+    fig, axes = plt.subplots(1, n, figsize=(3.333, 3.333 * 0.618), sharey=True)
     if n == 1:
         axes = [axes]
 
@@ -249,17 +294,23 @@ def plot_progress_per_thread(progress_data, output_dir):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Plot multi-threaded write throughput scaling"
+        description="Plot multi-threaded write throughput scaling. "
+                    "Pass multiple CSVs to average across runs."
     )
-    parser.add_argument("csv", help="Path to summary CSV file")
+    parser.add_argument("csv", nargs="+", help="Path(s) to summary CSV file(s)")
     parser.add_argument(
         "-o", "--output-dir", default=None,
-        help="Output directory (default: same as CSV)"
+        help="Output directory (default: same as first CSV)"
     )
     args = parser.parse_args()
 
-    output_dir = args.output_dir or os.path.dirname(args.csv)
+    output_dir = args.output_dir or os.path.dirname(args.csv[0])
     os.makedirs(output_dir, exist_ok=True)
+
+    if len(args.csv) > 1:
+        print(f"Averaging across {len(args.csv)} CSVs:")
+        for p in args.csv:
+            print(f"  - {p}")
 
     data = load_summary_csv(args.csv)
     if not data:
