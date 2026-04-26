@@ -1,0 +1,27 @@
+{
+  "db_path_base": "/scratch/seq_write_overhead",
+  "workload": "workloads/write_seq_all.tsv",
+  "common_params": {
+    "indexed_attrs": "PULocationID,DOLocationID,tpep_pickup_datetime,tpep_dropoff_datetime,fare_amount,passenger_count"
+  },
+  "methods": [
+    {
+      "name": "no-index",
+      "params": {}
+    },
+    {
+      "name": "bitlsm",
+      "params": {
+        "rho": [0.2, 0.1, 0.05]
+      }
+    },
+    {
+      "name": "si-lu",
+      "params": {}
+    },
+    {
+      "name": "si-ck",
+      "params": {}
+    }
+  ]
+}

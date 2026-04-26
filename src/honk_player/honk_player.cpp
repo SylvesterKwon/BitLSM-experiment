@@ -1,5 +1,6 @@
 #include "binding.h"
 #include "json_record_parser.h"
+#include "resource_monitor.h"
 #include "taxi_schema.h"
 #include "tsv_parser.h"
 #include <algorithm>
@@ -11,6 +12,8 @@
 #include <iomanip>
 #include <iostream>
 #include <mutex>
+#include <optional>
+#include <pthread.h>
 #include <sstream>
 #include <thread>
 #include <vector>
@@ -45,7 +48,10 @@ int main(int argc, char* argv[]) {
     ("no_csv", "Disable per-binding CSV output",
      cxxopts::value<bool>()->default_value("false"))
     ("query_limit", "Stop after N read queries (0 = unlimited)",
-     cxxopts::value<uint64_t>()->default_value("0"));
+     cxxopts::value<uint64_t>()->default_value("0"))
+    ("resource_monitor",
+     "Sample RSS + per-thread CPU at every 1M checkpoint",
+     cxxopts::value<bool>()->default_value("false"));
   // clang-format on
 
   auto result = opts.parse(argc, argv);
@@ -65,6 +71,9 @@ int main(int argc, char* argv[]) {
   int num_threads = result["num_threads"].as<int>();
   bool no_csv = result["no_csv"].as<bool>();
   uint64_t query_limit = result["query_limit"].as<uint64_t>();
+  bool resource_monitor_enabled = result["resource_monitor"].as<bool>();
+
+  pthread_setname_np(pthread_self(), "writer");
 
   // Parse indexed_attrs (field names → column indices)
   auto all_columns = honk::GetTaxiColumns();
@@ -114,6 +123,12 @@ int main(int argc, char* argv[]) {
       filesystem::path(workload_path).stem().string();
   string file_prefix = output_dir + "/" + workload_stem + "_" +
                         binding->Name() + binding->ParamSuffix();
+
+  std::optional<ResourceMonitor> monitor;
+  if (resource_monitor_enabled) {
+    monitor.emplace(file_prefix + "_sample_log.csv",
+                    file_prefix + "_thread_log.csv");
+  }
 
   // Interleave mode: single CSV, opened on first operation
   ofstream interleave_csv;
@@ -197,6 +212,7 @@ int main(int argc, char* argv[]) {
               write_csv << elapsed << "," << cur << "\n";
               write_csv.flush();
             }
+            if (monitor) monitor->Sample(cur);
             cout << "[write] " << cur << " records, " << elapsed << "ms" << endl;
           }
         }
@@ -280,6 +296,7 @@ int main(int argc, char* argv[]) {
               write_csv << elapsed << "," << writes << "\n";
               write_csv.flush();
             }
+            if (monitor) monitor->Sample(writes);
             cout << "[write] " << writes << " records, " << elapsed << "ms" << endl;
           }
         }
