@@ -60,7 +60,7 @@ def build_command(method_name: str, workload: str, db_path: str,
 
 def run(config_path: str, dry_run: bool, method_filter: list,
         cooldown: int, hw_reset: bool, clean_db_flag: bool,
-        start_from: int = 1):
+        start_from: int = 1, eager_purge: bool = False):
     with open(config_path) as f:
         config = json.load(f)
 
@@ -93,6 +93,7 @@ def run(config_path: str, dry_run: bool, method_filter: list,
         print(f"cooldown : {cooldown}s between runs")
         print(f"hw-reset : {'on (sudo)' if hw_reset else 'off'}")
         print(f"clean-db : {'on' if clean_db_flag else 'off'}")
+        print(f"eager-purge: {'on (MALLOC_CONF=dirty_decay_ms:1000,muzzy_decay_ms:0)' if eager_purge else 'off'}")
         if dry_run:
             print("mode     : dry-run\n")
         else:
@@ -128,7 +129,12 @@ def run(config_path: str, dry_run: bool, method_filter: list,
                         os.makedirs(db_path, exist_ok=True)
                         os.makedirs(output_dir, exist_ok=True)
 
-                        rc, _ = run_process(cmd)
+                        run_env = None
+                        if eager_purge:
+                            run_env = os.environ.copy()
+                            run_env["MALLOC_CONF"] = \
+                                "dirty_decay_ms:1000,muzzy_decay_ms:0"
+                        rc, _ = run_process(cmd, env=run_env)
                         if rc != 0:
                             sys.exit(f"Run failed (exit {rc}): {' '.join(cmd)}")
 
@@ -150,6 +156,9 @@ def main():
         description="Sequential write CPU/memory overhead experiment"
     )
     add_common_args(parser)
+    parser.add_argument("--eager_purge", action="store_true",
+                        help="Set MALLOC_CONF=dirty_decay_ms:1000,muzzy_decay_ms:0 "
+                             "(jemalloc eager purge for lower RSS)")
     args = parser.parse_args()
 
     maybe_run_as_daemon(args)
@@ -157,7 +166,8 @@ def main():
     method_filter = parse_method_filter(args)
     run(args.config, dry_run=args.dry_run, method_filter=method_filter,
         cooldown=args.cooldown, hw_reset=args.hw_reset,
-        clean_db_flag=args.clean_db, start_from=args.start_from)
+        clean_db_flag=args.clean_db, start_from=args.start_from,
+        eager_purge=args.eager_purge)
 
 
 if __name__ == "__main__":

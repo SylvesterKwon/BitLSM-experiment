@@ -22,13 +22,13 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # ---------------------------------------------------------------------------
 
 
-def run_process(cmd: list) -> tuple:
+def run_process(cmd: list, env: dict = None) -> tuple:
     """Execute a command with real-time output + capture.
 
     Returns (returncode, captured_output_str).
     """
     proc = subprocess.Popen(
-        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env)
     captured = []
     for raw_line in proc.stdout:
         text = raw_line.decode("utf-8", errors="replace")
