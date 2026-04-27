@@ -22,23 +22,23 @@ plt.rcParams.update({"font.size": 6, "hatch.linewidth": 0.3})
 
 METHOD_ORDER = [
     "no-index",
-    "si-ck_strategy_pf",
-    "si-ck_strategy_im",
     "si-lu_strategy_pf",
     "si-lu_strategy_im",
+    "si-ck_strategy_pf",
+    "si-ck_strategy_im",
     "bitlsm_rho0.2",
     "bitlsm_rho0.1",
     "bitlsm_rho0.05",
 ]
 METHOD_LABELS = {
     "no-index": "No Index",
-    "si-ck_strategy_im": "CK-IM",
-    "si-ck_strategy_pf": "CK-PF",
-    "si-lu_strategy_im": "LU-IM",
-    "si-lu_strategy_pf": "LU-PF",
-    "bitlsm_rho0.2": r"bitlsm ($\rho$=0.2)",
-    "bitlsm_rho0.1": r"bitlsm ($\rho$=0.1)",
-    "bitlsm_rho0.05": r"bitlsm ($\rho$=0.05)",
+    "si-lu_strategy_pf": "Lazy (Post Filtering)",
+    "si-lu_strategy_im": "Lazy (Intersection)",
+    "si-ck_strategy_pf": "Composite (Post Filtering)",
+    "si-ck_strategy_im": "Composite (Intersection)",
+    "bitlsm_rho0.2": r"BitLSM ($\rho$=0.2)",
+    "bitlsm_rho0.1": r"BitLSM ($\rho$=0.1)",
+    "bitlsm_rho0.05": r"BitLSM ($\rho$=0.05)",
 }
 METHOD_COLORS = {
     "no-index": "#808080",
@@ -125,12 +125,12 @@ def plot_grid(data, output_dir):
             bp_methods = [m for m in METHOD_ORDER
                           if m in cell_data and m != "no-index"]
             if not bp_methods and noindex_times is None:
-                ax.text(0.5, 0.5, "No data available",
+                ax.text(0.5, 0.5, "N/A",
                         ha="center", va="center", transform=ax.transAxes)
                 ax.set_xticks([])
                 ax.set_yticks([])
-                if ri == nrows - 1:
-                    ax.set_xlabel(f"{sel_label(sel)}")
+                if ri == 0:
+                    ax.set_title(sel_label(sel))
                 if ci == 0:
                     ax.set_ylabel(f"c = {k}\nQuery Latency (s)")
                 continue
@@ -162,8 +162,8 @@ def plot_grid(data, output_dir):
             ax.tick_params(axis="y", length=2, width=0.3, direction="in")
             ax.grid(False)
 
-            if ri == nrows - 1:
-                ax.set_xlabel(f"{sel_label(sel)}")
+            if ri == 0:
+                ax.set_title(sel_label(sel))
             if ci == 0:
                 ax.set_ylabel(f"c = {k}\nQuery Latency (s)")
 
@@ -183,9 +183,11 @@ def plot_grid(data, output_dir):
                       hatch=METHOD_HATCHES.get(m, ""),
                       edgecolor="black", linewidth=0.5,
                       label=METHOD_LABELS.get(m, m)))
-    fig.legend(handles=legend_handles, loc="upper center",
-               ncol=len(all_methods), frameon=False)
-    fig.tight_layout(rect=[0, 0, 1, 0.94])
+    legend_ncol = math.ceil(len(all_methods) / 2)
+    fig.tight_layout(rect=[0, 0, 1, 0.93])
+    fig.legend(handles=legend_handles, loc="center",
+               bbox_to_anchor=(0.5, 0.958),
+               ncol=legend_ncol, frameon=False)
 
     out_path = os.path.join(output_dir, "read_query_time_distribution.pdf")
     fig.savefig(out_path, dpi=150)

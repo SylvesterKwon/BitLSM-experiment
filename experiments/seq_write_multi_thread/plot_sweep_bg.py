@@ -20,16 +20,16 @@ plt.rcParams.update({"font.size": 6})
 
 METHOD_ORDER = [
     "no-index",
-    "si-ck",
     "si-lu",
+    "si-ck",
     "bitlsm_rho0.2",
     "bitlsm_rho0.1",
     "bitlsm_rho0.05",
 ]
 METHOD_LABELS = {
     "no-index": "No Index",
-    "si-ck": "CK",
-    "si-lu": "LU",
+    "si-lu": "Lazy",
+    "si-ck": "Composite",
     "bitlsm_rho0.1": r"BitLSM ($\rho$=0.1)",
     "bitlsm_rho0.05": r"BitLSM ($\rho$=0.05)",
     "bitlsm_rho0.2": r"BitLSM ($\rho$=0.2)",
@@ -150,7 +150,7 @@ def plot_throughput_scaling(data, output_dir):
                 **({"color": color} if color else {}))
 
     ax.set_xlabel("Max Background Jobs")
-    ax.set_ylabel("Throughput (records/sec)")
+    ax.set_ylabel("Throughput (records/s)")
     ax.set_xticks(sorted({p[0] for pts in data.values() for p in pts if p[0] <= 6}))
     ax.set_ylim(bottom=0)
     ax.tick_params(axis="x", length=0)
@@ -186,7 +186,7 @@ def plot_progress_per_bg_jobs(progress_data, output_dir):
             ax.plot(times, records, label=label_for(method),
                     **({"color": color} if color else {}))
 
-        ax.set_xlabel("Time (sec)")
+        ax.set_xlabel("Time (s)")
         ax.tick_params(axis="x", length=2, width=0.3, direction="in")
         ax.tick_params(axis="y", length=2, width=0.3, direction="in")
         ax.grid(False)

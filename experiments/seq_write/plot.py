@@ -16,8 +16,8 @@ SCHEMA_TICK_LABELS = ["a=1", "a=2", "a=4", "a=8", "a=16", "a=32"]
 
 METHOD_ORDER = [
     "no-index",
-    "si-ck",
     "si-lu",
+    "si-ck",
     "si-eager",
     "bitlsm_rho0.2",
     "bitlsm_rho0.1",
@@ -25,8 +25,8 @@ METHOD_ORDER = [
 ]
 METHOD_LABELS = {
     "no-index": "No Index",
-    "si-ck": "CK",
-    "si-lu": "LU",
+    "si-lu": "Lazy",
+    "si-ck": "Composite",
     "si-eager": "SI-Eager",
     "bitlsm_rho0.2": r"BitLSM ($\rho$=0.2)",
     "bitlsm_rho0.1": r"BitLSM ($\rho$=0.1)",
@@ -128,7 +128,6 @@ def plot_db_size(data, output_dir):
                     va="bottom",
                 )
 
-    ax.set_xlabel("# of Indexed Attributes")
     ax.set_ylabel("DB Size (GB)")
 
     ax.set_xticks(x)
@@ -171,7 +170,6 @@ def plot_write_time(data, output_dir):
                     va="bottom",
                 )
 
-    ax.set_xlabel("# of Indexed Attributes")
     ax.set_ylabel("Write Time (seconds)")
 
     ax.set_xticks(x)
@@ -232,8 +230,7 @@ def plot_normalized(data, output_dir):
                         rotation=90,
                     )
 
-        ax.set_xlabel("# of Indexed Attributes")
-        ax.set_ylabel(ylabel)
+            ax.set_ylabel(ylabel)
         ax.set_xticks(x)
         ax.set_xticklabels(SCHEMA_TICK_LABELS)
         ax.tick_params(axis="x", length=0)
@@ -275,7 +272,7 @@ def plot_write_throughput(timeseries, schema_idx, output_dir):
                 **({"color": color} if color else {}))
 
     ax.set_xlabel("Records Written (M)")
-    ax.set_ylabel("Throughput (M records/sec)")
+    ax.set_ylabel("Throughput (M records/s)")
 
     ax.legend()
     ax.grid(alpha=0.3)
