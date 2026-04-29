@@ -2,12 +2,14 @@
 #include "binding.h"
 #include "bit_lsm.h"
 #include <memory>
+#include <rocksdb/statistics.h>
 
 namespace experiment {
 
 class BitLSMBinding : public Binding {
   std::unique_ptr<bit_lsm::BitLSM> db_;
   double rho_ = 0.1;
+  std::shared_ptr<rocksdb::Statistics> stats_;
 
  public:
   void Open(int argc, char* argv[], const std::string& db_path,
@@ -16,6 +18,7 @@ class BitLSMBinding : public Binding {
            const std::string& payload) override;
   ScanResult Scan(BitLSMQuery& query) override;
   void Close() override;
+  WriteStats GetWriteStats() override;
   std::string Name() const override { return "bitlsm"; }
   std::string ParamSuffix() const override;
 };

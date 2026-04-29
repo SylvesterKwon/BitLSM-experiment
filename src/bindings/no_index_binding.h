@@ -1,7 +1,9 @@
 #pragma once
 #include "binding.h"
+#include <memory>
 #include <rocksdb/db.h>
 #include <rocksdb/options.h>
+#include <rocksdb/statistics.h>
 #include <string>
 #include <vector>
 
@@ -12,6 +14,7 @@ class NoIndexBinding : public Binding {
   std::vector<rocksdb::ColumnFamilyHandle*> cf_handles_;
   BitLSMOptions options_;
   rocksdb::WriteOptions wo_;
+  std::shared_ptr<rocksdb::Statistics> stats_;
 
  public:
   void Open(int argc, char* argv[], const std::string& db_path,
@@ -20,6 +23,7 @@ class NoIndexBinding : public Binding {
            const std::string& payload) override;
   ScanResult Scan(BitLSMQuery& query) override;
   void Close() override;
+  WriteStats GetWriteStats() override;
   std::string Name() const override { return "no-index"; }
 };
 

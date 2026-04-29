@@ -17,6 +17,11 @@ struct ScanResult {
   uint64_t matched;
 };
 
+struct WriteStats {
+  uint64_t flush_bytes = 0;
+  uint64_t compact_bytes = 0;
+};
+
 class Binding {
  public:
   virtual ~Binding() = default;
@@ -34,6 +39,11 @@ class Binding {
   virtual std::string Name() const = 0;
 
   virtual std::string ParamSuffix() const { return ""; }
+
+  // For WA experiment: flush memtable, wait for compactions to settle, and
+  // return cumulative flush/compaction write bytes from RocksDB statistics.
+  // Returns {0,0} when statistics is not enabled.
+  virtual WriteStats GetWriteStats() { return {}; }
 };
 
 std::unique_ptr<Binding> CreateBinding(const std::string& name);

@@ -1,6 +1,8 @@
 #pragma once
 #include "binding.h"
 #include "si_benchmark_common.h"
+#include <memory>
+#include <rocksdb/statistics.h>
 #include <string>
 
 namespace experiment {
@@ -10,6 +12,7 @@ class SICKBinding : public Binding {
   BitLSMOptions options_;
   benchmark::SIStrategy strategy_ = benchmark::SIStrategy::kIndexMerge;
   rocksdb::WriteOptions wo_;
+  std::shared_ptr<rocksdb::Statistics> stats_;
   static constexpr uint32_t idx_no_prefix_size_ = 4;
   static constexpr uint32_t si_prefix_length_ = 16;
 
@@ -20,6 +23,7 @@ class SICKBinding : public Binding {
            const std::string& payload) override;
   ScanResult Scan(BitLSMQuery& query) override;
   void Close() override;
+  WriteStats GetWriteStats() override;
   std::string Name() const override { return "si-ck"; }
   std::string ParamSuffix() const override;
 };

@@ -14,9 +14,12 @@ void BitLSMBinding::Open(int argc, char* argv[], const std::string& db_path,
   cxx.add_options()("rho", "BitLSM rho threshold",
                     cxxopts::value<double>()->default_value("0.1"))
                    ("max_background_jobs", "",
-                    cxxopts::value<int>()->default_value("6"));
+                    cxxopts::value<int>()->default_value("6"))
+                   ("exp_type", "",
+                    cxxopts::value<std::string>()->default_value("write_seq"));
   auto result = cxx.parse(argc, argv);
   rho_ = result["rho"].as<double>();
+  bool wa_mode = (result["exp_type"].as<std::string>() == "write_seq_wa");
 
   rocksdb::Options rocksdb_options;
   rocksdb_options.create_if_missing = true;
@@ -24,6 +27,10 @@ void BitLSMBinding::Open(int argc, char* argv[], const std::string& db_path,
   rocksdb_options.bytes_per_sync = 1048576;
   rocksdb_options.compaction_pri = rocksdb::kMinOverlappingRatio;
   rocksdb_options.max_write_buffer_number = 5;
+  if (wa_mode) {
+    stats_ = rocksdb::CreateDBStatistics();
+    rocksdb_options.statistics = stats_;
+  }
   rocksdb::BlockBasedTableOptions table_options;
   table_options.block_size = 4 * 1024;
 
@@ -48,6 +55,16 @@ ScanResult BitLSMBinding::Scan(BitLSMQuery& query) {
                      std::chrono::high_resolution_clock::now() - start)
                      .count();
   return {static_cast<uint64_t>(elapsed), matched};
+}
+
+WriteStats BitLSMBinding::GetWriteStats() {
+  if (!db_ || !stats_) return {};
+  rocksdb::WaitForCompactOptions wfco;
+  wfco.flush = true;
+  wfco.wait_for_purge = true;
+  db_->WaitForCompact(wfco);
+  return {stats_->getTickerCount(rocksdb::Tickers::FLUSH_WRITE_BYTES),
+          stats_->getTickerCount(rocksdb::Tickers::COMPACT_WRITE_BYTES)};
 }
 
 void BitLSMBinding::Close() { db_.reset(); }

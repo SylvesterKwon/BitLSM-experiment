@@ -20,11 +20,15 @@ void SICKBinding::Open(int argc, char* argv[], const string& db_path,
   cxx.add_options()("read_strategy", "im or pf",
                     cxxopts::value<string>()->default_value("im"))
                    ("max_background_jobs", "",
-                    cxxopts::value<int>()->default_value("6"));
+                    cxxopts::value<int>()->default_value("6"))
+                   ("exp_type", "",
+                    cxxopts::value<string>()->default_value("write_seq"));
   auto result = cxx.parse(argc, argv);
   strategy_ =
       benchmark::ParseSIStrategy(result["read_strategy"].as<string>());
   int max_bg_jobs = result["max_background_jobs"].as<int>();
+  bool wa_mode = (result["exp_type"].as<string>() == "write_seq_wa");
+  if (wa_mode) stats_ = rocksdb::CreateDBStatistics();
 
   ColumnFamilyOptions si_cf_opts;
   BlockBasedTableOptions si_table_options;
@@ -35,7 +39,7 @@ void SICKBinding::Open(int argc, char* argv[], const string& db_path,
   si_cf_opts.prefix_extractor.reset(
       NewCappedPrefixTransform(idx_no_prefix_size_ + si_prefix_length_));
 
-  db_ = benchmark::OpenSITransactionDB(db_path, si_cf_opts, max_bg_jobs);
+  db_ = benchmark::OpenSITransactionDB(db_path, si_cf_opts, max_bg_jobs, stats_);
 }
 
 void SICKBinding::Put(const string& pk, const vector<Attr>& attrs,
@@ -170,6 +174,16 @@ ScanResult SICKBinding::Scan(BitLSMQuery& query) {
                                         query, options_, 0, GetPKList);
   }
   return {r.time_elapsed_ms, r.records_matched};
+}
+
+WriteStats SICKBinding::GetWriteStats() {
+  if (!db_.txn_db || !stats_) return {};
+  WaitForCompactOptions wfco;
+  wfco.flush = true;
+  wfco.wait_for_purge = true;
+  db_.txn_db->WaitForCompact(wfco);
+  return {stats_->getTickerCount(rocksdb::Tickers::FLUSH_WRITE_BYTES),
+          stats_->getTickerCount(rocksdb::Tickers::COMPACT_WRITE_BYTES)};
 }
 
 void SICKBinding::Close() { benchmark::CloseSITransactionDB(db_); }

@@ -16,8 +16,12 @@ void NoIndexBinding::Open(int argc, char* argv[], const std::string& db_path,
   cxxopts::Options cxx("no-index", "");
   cxx.allow_unrecognised_options();
   cxx.add_options()("max_background_jobs", "",
-                    cxxopts::value<int>()->default_value("6"));
+                    cxxopts::value<int>()->default_value("6"))
+                   ("exp_type", "",
+                    cxxopts::value<std::string>()->default_value("write_seq"));
   auto result = cxx.parse(argc, argv);
+
+  bool wa_mode = (result["exp_type"].as<std::string>() == "write_seq_wa");
 
   Options rocksdb_options;
   rocksdb_options.create_if_missing = true;
@@ -25,6 +29,10 @@ void NoIndexBinding::Open(int argc, char* argv[], const std::string& db_path,
   rocksdb_options.bytes_per_sync = 1048576;
   rocksdb_options.compaction_pri = kMinOverlappingRatio;
   rocksdb_options.max_write_buffer_number = 5;
+  if (wa_mode) {
+    stats_ = CreateDBStatistics();
+    rocksdb_options.statistics = stats_;
+  }
   BlockBasedTableOptions table_options;
   table_options.block_size = 4 * 1024;
   rocksdb_options.table_factory.reset(
@@ -69,6 +77,16 @@ ScanResult NoIndexBinding::Scan(BitLSMQuery& query) {
   std::cout << "scan done: " << matched << "/" << total << " matched, "
             << elapsed << "ms\n";
   return {static_cast<uint64_t>(elapsed), matched};
+}
+
+WriteStats NoIndexBinding::GetWriteStats() {
+  if (!db_ || !stats_) return {};
+  WaitForCompactOptions wfco;
+  wfco.flush = true;
+  wfco.wait_for_purge = true;
+  db_->WaitForCompact(wfco);
+  return {stats_->getTickerCount(Tickers::FLUSH_WRITE_BYTES),
+          stats_->getTickerCount(Tickers::COMPACT_WRITE_BYTES)};
 }
 
 void NoIndexBinding::Close() {

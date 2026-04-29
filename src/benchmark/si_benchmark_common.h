@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <optional>
 #include <rocksdb/merge_operator.h>
+#include <rocksdb/statistics.h>
 #include <rocksdb/table.h>
 #include <rocksdb/utilities/transaction_db.h>
 #include <unordered_map>
@@ -164,7 +165,8 @@ struct SIDBHandles {
 inline SIDBHandles OpenSITransactionDB(
     const std::string& db_path,
     rocksdb::ColumnFamilyOptions si_cf_opts_override = {},
-    int max_background_jobs = 6) {
+    int max_background_jobs = 6,
+    std::shared_ptr<rocksdb::Statistics> statistics = nullptr) {
   SIDBHandles h;
 
   rocksdb::Options opts;
@@ -174,6 +176,8 @@ inline SIDBHandles OpenSITransactionDB(
   opts.bytes_per_sync = 1048576;
   opts.compaction_pri = rocksdb::kMinOverlappingRatio;
   opts.max_write_buffer_number = 5;
+  if (statistics)
+    opts.statistics = statistics;
 
   rocksdb::BlockBasedTableOptions table_options;
   table_options.block_size = 4 * 1024;

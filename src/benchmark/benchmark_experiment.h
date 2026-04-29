@@ -140,6 +140,7 @@ class BenchmarkExperiment {
     Schema schema = load_schema(schema_path);
     string s_name = schema_stem(schema_path);
     bool read_mode = (exp_type == "read_seq");
+    bool wa_mode = (exp_type == "write_seq_wa");
 
     binding_->Open(argc, argv, db_path, schema.options);
 
@@ -172,7 +173,12 @@ class BenchmarkExperiment {
       cout << "RESULT:" << sr.elapsed_ms << "," << sr.matched
            << "," << sel_actual << "\n";
     } else {
-      FillKVP(schema, n);
+      uint64_t user_bytes = FillKVP(schema, n, wa_mode);
+      if (wa_mode) {
+        auto ws = binding_->GetWriteStats();
+        cout << "WA_RESULT:" << user_bytes << "," << ws.flush_bytes << ","
+             << ws.compact_bytes << "\n";
+      }
       binding_->Close();
     }
 
@@ -182,7 +188,24 @@ class BenchmarkExperiment {
  private:
   std::unique_ptr<experiment::Binding> binding_;
 
-  void FillKVP(const Schema& schema, uint64_t n) {
+  // Mirrors EncodeValue size formula in third_party/BitLSM/.../bit_lsm_utils.h.
+  // Header layout: attr_cnt + (attr_cnt offsets) + payload_offset, all uint32_t.
+  static inline uint64_t ComputeEncodedSize(
+      const bit_lsm::BitLSMOptions& opts, const vector<Attr>& attrs,
+      size_t payload_size) {
+    uint32_t attr_cnt = attrs.size();
+    uint64_t header = sizeof(uint32_t) * (attr_cnt + 2);
+    uint64_t data = 0;
+    for (uint32_t i = 0; i < attr_cnt; ++i) {
+      if (opts.attr_types[i] == AttrType::CONTINUOUS)
+        data += sizeof(double);
+      else
+        data += std::get<std::string>(attrs[i]).size();
+    }
+    return header + data + payload_size;
+  }
+
+  uint64_t FillKVP(const Schema& schema, uint64_t n, bool wa_mode = false) {
     cout << "creating " << n << " kvps into " << binding_->Name()
          << " using Put API...\n";
 
@@ -207,6 +230,7 @@ class BenchmarkExperiment {
     vector<Attr> attrs(schema.options.attr_num);
     string payload(schema.payload_bytes, '\0');
     string pk(8, '\0');
+    uint64_t user_bytes = 0;
 
     for (uint64_t i = 0; i < n; ++i) {
       for (uint32_t j = 0; j < schema.options.attr_num; ++j) {
@@ -221,6 +245,10 @@ class BenchmarkExperiment {
 
       for (size_t k = 0; k < 8; ++k)
         pk[k] = kCharSet[char_dist(gen)];
+
+      if (wa_mode)
+        user_bytes += pk.size() +
+                      ComputeEncodedSize(schema.options, attrs, payload.size());
 
       binding_->Put(pk, attrs, payload);
 
@@ -239,6 +267,7 @@ class BenchmarkExperiment {
                 std::chrono::high_resolution_clock::now() - start_time)
                 .count()
          << "ms elapsed)\n";
+    return user_bytes;
   }
 
 };
