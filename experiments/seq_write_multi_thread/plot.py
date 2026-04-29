@@ -318,10 +318,6 @@ def main():
         return
 
     plot_throughput_scaling(data, output_dir)
-    plot_speedup(data, output_dir)
-
-    progress_data = load_progress_csv(args.csv)
-    plot_progress_per_thread(progress_data, output_dir)
 
 
 if __name__ == "__main__":
