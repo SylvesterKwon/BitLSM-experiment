@@ -159,6 +159,12 @@ WriteStats SILUBinding::GetWriteStats() {
   wfco.flush = true;
   wfco.wait_for_purge = true;
   db_.txn_db->WaitForCompact(wfco);
+  CompactRangeOptions cro;
+  cro.bottommost_level_compaction = BottommostLevelCompaction::kForce;
+  cro.exclusive_manual_compaction = true;
+  for (auto* h : db_.cf_handles)
+    db_.txn_db->CompactRange(cro, h, nullptr, nullptr);
+  db_.txn_db->WaitForCompact(wfco);
   return {stats_->getTickerCount(rocksdb::Tickers::FLUSH_WRITE_BYTES),
           stats_->getTickerCount(rocksdb::Tickers::COMPACT_WRITE_BYTES)};
 }

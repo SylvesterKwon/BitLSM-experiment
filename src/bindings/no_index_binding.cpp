@@ -85,6 +85,11 @@ WriteStats NoIndexBinding::GetWriteStats() {
   wfco.flush = true;
   wfco.wait_for_purge = true;
   db_->WaitForCompact(wfco);
+  CompactRangeOptions cro;
+  cro.bottommost_level_compaction = BottommostLevelCompaction::kForce;
+  cro.exclusive_manual_compaction = true;
+  db_->CompactRange(cro, nullptr, nullptr);
+  db_->WaitForCompact(wfco);
   return {stats_->getTickerCount(Tickers::FLUSH_WRITE_BYTES),
           stats_->getTickerCount(Tickers::COMPACT_WRITE_BYTES)};
 }

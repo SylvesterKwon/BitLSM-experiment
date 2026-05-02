@@ -59,10 +59,17 @@ ScanResult BitLSMBinding::Scan(BitLSMQuery& query) {
 
 WriteStats BitLSMBinding::GetWriteStats() {
   if (!db_ || !stats_) return {};
+  auto* raw = db_->GetInternalDB();
   rocksdb::WaitForCompactOptions wfco;
   wfco.flush = true;
   wfco.wait_for_purge = true;
-  db_->WaitForCompact(wfco);
+  raw->WaitForCompact(wfco);
+  rocksdb::CompactRangeOptions cro;
+  cro.bottommost_level_compaction =
+      rocksdb::BottommostLevelCompaction::kForce;
+  cro.exclusive_manual_compaction = true;
+  raw->CompactRange(cro, nullptr, nullptr);
+  raw->WaitForCompact(wfco);
   return {stats_->getTickerCount(rocksdb::Tickers::FLUSH_WRITE_BYTES),
           stats_->getTickerCount(rocksdb::Tickers::COMPACT_WRITE_BYTES)};
 }
