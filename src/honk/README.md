@@ -65,8 +65,11 @@ Same `pk_mode` / `shuffle` are exposed as CLI flags:
 
 | Config | `pk_mode` | `shuffle` | Regime |
 |---|---|---|---|
-| `workloads/write_seq_2024-2025_all.json` | uuid | false | non-time-correlated (zone maps weak) |
-| `workloads/write_seq_2024-2025_all_ulid.json` | ulid | true | time-correlated (zone maps prune datetime ranges) |
+| `workloads/write_seq_2024-2025_all.json` | ulid | true | **default** — time-correlated (zone maps prune datetime ranges) |
+
+Set `"pk_mode": "uuid"`, `"shuffle": false` in a copy of that config for the
+non-time-correlated regime (random PK → zone maps cannot prune any continuous
+attribute).
 
 Run both, build a DB from each, and compare embedded (zone map) vs BitLSM across
 the two regimes. Read query workloads (`workloads/read_seq_*.json`) filter on

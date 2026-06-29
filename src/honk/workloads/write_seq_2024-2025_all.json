@@ -26,6 +26,8 @@
     "yellow_tripdata_2025-12.parquet"
   ],
   "seed": 42,
+  "pk_mode": "ulid",
+  "shuffle": true,
   "phases": [
     {
       "label": "write",
