@@ -36,7 +36,7 @@
     {
       "name": "embedded",
       "params": {
-        "bloom_bits": 100
+        "bloom_bits": 10
       }
     }
   ]
