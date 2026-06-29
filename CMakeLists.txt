@@ -22,20 +22,10 @@ message(STATUS "Current Build Type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "Active CXX Flags : ${CMAKE_CXX_FLAGS_${UPPER_BUILD_TYPE}}")
 message(STATUS "=======================================================")
 
-# Folly (코어 라이브러리보다 먼저 설정해야 상위 scope에서 접근 가능)
-set(DEPS_ROOT "/opt/BitLSM/installed")
-set(FOLLY_DIR "${DEPS_ROOT}/folly")
-file(GLOB FMT_DIR "${DEPS_ROOT}/fmt-*")
-file(GLOB GLOG_DIR "${DEPS_ROOT}/glog-*")
-list(APPEND CMAKE_PREFIX_PATH
-    "${FOLLY_DIR}"
-    "${FMT_DIR}"
-    "${GLOG_DIR}"
-)
-find_package(folly CONFIG REQUIRED)
+# gflags (RocksDB 도구류에서 사용)
 find_package(gflags REQUIRED)
 
-# 코어 라이브러리 (rocksdb, roaring, folly 포함)
+# 코어 라이브러리 (rocksdb, roaring 포함; folly TDigest는 BitLSM 내부에 vendoring)
 add_subdirectory(third_party/BitLSM)
 
 # 실험 전용 의존성
@@ -75,7 +65,6 @@ set(COMMON_LINK_LIBS
     bitlsm::bitlsm
     roaring
     rocksdb
-    Folly::folly
     dl
     Threads::Threads
     ${JEMALLOC_LIB}
