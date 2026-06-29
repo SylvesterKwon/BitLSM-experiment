@@ -16,3 +16,6 @@ __pycache__/
 *.pdf
 scratch
 workloads/
+
+# Superpowers plans/scratch (not tracked)
+docs/superpowers/

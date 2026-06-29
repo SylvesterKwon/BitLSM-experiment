@@ -77,12 +77,23 @@ set(COMMON_LINK_LIBS
 )
 
 # EXPERIMENT BINDINGS (정적 라이브러리)
-file(GLOB BINDING_SOURCES "src/bindings/*.cpp")
+file(GLOB BINDING_SOURCES "src/bindings/*.cpp" "src/bindings/embedded/*.cpp")
 add_library(experiment_bindings STATIC ${BINDING_SOURCES})
+
+# Path to the patched RocksDB vendored inside BitLSM. Referenced DIRECTLY so this
+# baseline does not depend on bitlsm::bitlsm exporting its internal include dirs
+# (those will be made private).
+set(EMBEDDED_ROCKSDB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/BitLSM/third_party/rocksdb)
+
 target_include_directories(experiment_bindings PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/bindings
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/bindings/embedded
     ${CMAKE_CURRENT_SOURCE_DIR}/src/benchmark
+    ${EMBEDDED_ROCKSDB_DIR}
+    ${EMBEDDED_ROCKSDB_DIR}/include
 )
+# RocksDB is built -fno-rtti; TUs including its internal headers must match.
+target_compile_options(experiment_bindings PRIVATE -fno-rtti)
 target_link_libraries(experiment_bindings PUBLIC
     ${COMMON_LINK_LIBS}
     simdjson
