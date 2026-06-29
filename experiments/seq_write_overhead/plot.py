@@ -244,9 +244,16 @@ def plot_cpu_breakdown(thread_data, output_dir):
                edgecolor="white", linewidth=0.3)
         bottoms += vals
 
+    y_max = bottoms.max() if len(bottoms) else 0
+    offset = y_max * 0.01
+    for xi, total in zip(x, bottoms):
+        ax.text(xi, total + offset, f"{total:.0f}s",
+                ha="center", va="bottom", fontsize=5)
+
     ax.set_xticks(x)
     ax.set_xticklabels([label_for(m) for m in methods], rotation=30, ha="right")
     ax.set_ylabel("Total CPU Time (s)")
+    ax.set_ylim(top=y_max * 1.12)
     ax.tick_params(axis="x", length=0)
     ax.tick_params(axis="y", length=2, width=0.3, direction="in")
     ax.legend(loc="upper right", frameon=False)
