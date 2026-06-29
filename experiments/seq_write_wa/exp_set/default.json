@@ -40,6 +40,13 @@
       "name": "si-ck",
       "binary": "build/bin/si-ck",
       "params": {}
+    },
+    {
+      "name": "embedded",
+      "binary": "build/bin/embedded",
+      "params": {
+        "bloom_bits": 100
+      }
     }
   ]
 }

@@ -41,6 +41,12 @@
           "pf"
         ]
       }
+    },
+    {
+      "name": "embedded",
+      "params": {
+        "bloom_bits": 100
+      }
     }
   ]
 }
