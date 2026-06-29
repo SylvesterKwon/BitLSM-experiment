@@ -60,6 +60,14 @@ class WorkloadConfig:
     dataset: list[str]
     seed: int
     phases: list[Phase]
+    # PK scheme: "uuid" (random, uncorrelated) or "ulid" (time-ordered from
+    # tpep_pickup_datetime -> PK-correlated with pickup time). Default keeps
+    # legacy behavior.
+    pk_mode: str = "uuid"
+    # Shuffle the dataset (seeded) before consuming, so insertion order is
+    # decoupled from the PK -> realistic random-write LSM stress regardless of
+    # pk_mode. Recommended True for the ulid variant.
+    shuffle: bool = False
 
     @property
     def total_write_rows(self) -> int:
@@ -216,7 +224,17 @@ def load_config(path: str) -> WorkloadConfig:
     seed = raw.get("seed", 42)
     phases = [_parse_phase(p) for p in raw.get("phases", [])]
 
-    return WorkloadConfig(dataset=dataset, seed=seed, phases=phases)
+    pk_mode = raw.get("pk_mode", "uuid")
+    if pk_mode not in ("uuid", "ulid"):
+        raise HonkConfigError(
+            f"'pk_mode' must be 'uuid' or 'ulid', got {pk_mode!r}"
+        )
+    shuffle = bool(raw.get("shuffle", False))
+
+    return WorkloadConfig(
+        dataset=dataset, seed=seed, phases=phases,
+        pk_mode=pk_mode, shuffle=shuffle,
+    )
 
 
 def resolve_rows(config: WorkloadConfig, available_rows: int) -> None:

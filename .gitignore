@@ -15,7 +15,9 @@ __pycache__/
 .venv/
 *.pdf
 scratch
-workloads/
+# Root workload TSV traces only (anchored) — keeps src/honk/workloads/*.json
+# configs tracked AND searchable in editors that honor .gitignore.
+/workloads/
 
 # Superpowers plans/scratch (not tracked)
 docs/superpowers/

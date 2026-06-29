@@ -14,6 +14,7 @@ from .config import ExpandedQueryBlock, HonkConfigError, WriteOnlyPhase, load_co
 from .dataset import DatasetCursor
 from .filters import GuidedTwoPointFilterGenerator, TwoPointFilterGenerator, UniformFilterGenerator
 from .phases import PKReservoir, execute_phases, _run_write_only, run_write_with_periodic_queries
+from .pk import PKGenerator
 from .schema import ALL_COLUMNS
 from .writer import TSVWriter
 
@@ -75,9 +76,11 @@ def cmd_run(args: argparse.Namespace) -> None:
     columns = ALL_COLUMNS
 
     # Load dataset
-    logger.info("Loading %d dataset file(s)...", len(file_paths))
+    logger.info("Loading %d dataset file(s)... (pk_mode=%s, shuffle=%s)",
+                len(file_paths), config.pk_mode, config.shuffle)
     t0 = time.time()
-    cursor = DatasetCursor(file_paths, columns=columns)
+    cursor = DatasetCursor(file_paths, columns=columns,
+                           shuffle=config.shuffle, seed=config.seed)
     logger.info("Loaded %d rows in %.1fs", cursor.total_rows, time.time() - t0)
 
     # Resolve unspecified rows to full dataset size
@@ -136,9 +139,11 @@ def cmd_ingestion(args: argparse.Namespace) -> None:
 
     # Load dataset
     columns = ALL_COLUMNS
-    logger.info("Loading dataset...")
+    pk_gen = PKGenerator(args.pk_mode)
+    logger.info("Loading dataset... (pk_mode=%s, shuffle=%s)", args.pk_mode, args.shuffle)
     t0 = time.time()
-    cursor = DatasetCursor(file_paths, columns=columns)
+    cursor = DatasetCursor(file_paths, columns=columns,
+                           shuffle=args.shuffle, seed=seed)
     logger.info("Loaded %d rows in %.1fs", cursor.total_rows, time.time() - t0)
 
     total_needed = preload_rows + interleave_rows
@@ -175,7 +180,7 @@ def cmd_ingestion(args: argparse.Namespace) -> None:
     with TSVWriter(tsv_path) as writer:
         # Phase 1: Pre-load (write only)
         preload_phase = WriteOnlyPhase(label="preload", rows=preload_rows)
-        _run_write_only(preload_phase, cursor, writer, rng, pk_buffer)
+        _run_write_only(preload_phase, cursor, writer, rng, pk_buffer, pk_gen)
 
         # Phase 2: Interleave (writes + periodic queries)
         run_write_with_periodic_queries(
@@ -191,6 +196,7 @@ def cmd_ingestion(args: argparse.Namespace) -> None:
             pk_buffer=pk_buffer,
             df=df,
             rows_already_written=preload_rows,
+            pk_gen=pk_gen,
         )
 
     elapsed = time.time() - t0
@@ -221,6 +227,8 @@ def main() -> None:
     ing_parser.add_argument("--query-interval", type=int, default=10_000, help="Insert 1 query every N writes (default: 10000)")
     ing_parser.add_argument("--query-k", type=int, default=2, help="Number of query attributes (default: 2)")
     ing_parser.add_argument("--target-selectivity", type=float, default=0.0001, help="Selectivity upper bound as ratio (default: 0.0001)")
+    ing_parser.add_argument("--pk_mode", choices=["uuid", "ulid"], default="uuid", help="Primary-key scheme (default: uuid)")
+    ing_parser.add_argument("--shuffle", action="store_true", help="Seeded shuffle of dataset before consuming (random write order)")
 
     args = parser.parse_args()
     if args.command is None:

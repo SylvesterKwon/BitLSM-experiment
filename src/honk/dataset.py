@@ -12,7 +12,8 @@ from .schema import Column
 class DatasetCursor:
     """Loads Parquet/CSV files and provides sequential row consumption."""
 
-    def __init__(self, file_paths: list[str], columns: list[Column] | None = None):
+    def __init__(self, file_paths: list[str], columns: list[Column] | None = None,
+                 shuffle: bool = False, seed: int = 42):
         dfs = []
         for path in file_paths:
             ext = os.path.splitext(path)[1].lower()
@@ -24,6 +25,15 @@ class DatasetCursor:
                 raise ValueError(f"Unsupported file format: {ext} ({path})")
 
         self._df = pd.concat(dfs, ignore_index=True)
+
+        # Seeded shuffle: decouple insertion (consume) order from the PK so the
+        # LSM sees random writes regardless of pk_mode. Note: sample(frac=1)
+        # copies the frame (~2x peak memory); acceptable for offline generation.
+        if shuffle:
+            self._df = (
+                self._df.sample(frac=1, random_state=seed)
+                .reset_index(drop=True)
+            )
 
         # Fill NA values: str columns → "null", numeric/datetime → -1
         if columns is not None:
