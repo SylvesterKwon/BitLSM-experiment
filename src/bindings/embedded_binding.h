@@ -8,7 +8,11 @@ namespace experiment {
 
 class EmbeddedBinding : public Binding {
   std::unique_ptr<embedded::EmbeddedDB> db_;
-  uint32_t bloom_bits_ = 100;
+  // de facto standard bits-per-key (~1% false positive), matching LevelDB/
+  // RocksDB and si_ck_binding's NewBloomFilterPolicy(10). FP depends on the
+  // bits-per-key ratio, not the set size, so this is set-size-independent.
+  // (Qader 2018 used 100, retained as a sweepable point via --bloom_bits.)
+  uint32_t bloom_bits_ = 10;
   std::shared_ptr<rocksdb::Statistics> stats_;
 
  public:

@@ -11,8 +11,8 @@ void EmbeddedBinding::Open(int argc, char* argv[], const std::string& db_path,
                             const BitLSMOptions& opts) {
   cxxopts::Options cxx("embedded", "");
   cxx.allow_unrecognised_options();
-  cxx.add_options()("bloom_bits", "Embedded index bloom bits",
-                    cxxopts::value<uint32_t>()->default_value("100"))
+  cxx.add_options()("bloom_bits", "Embedded index bloom bits per key",
+                    cxxopts::value<uint32_t>()->default_value("10"))
                    ("max_background_jobs", "",
                     cxxopts::value<int>()->default_value("6"))
                    ("exp_type", "",
