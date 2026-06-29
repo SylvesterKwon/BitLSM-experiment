@@ -33,7 +33,7 @@ from run_common import (
 EXP_DIR = os.path.dirname(os.path.abspath(__file__))
 BINARY = "build/bin/honk_player"
 
-DB_PARAMS = ["rho"]
+DB_PARAMS = ["rho", "bloom_bits"]
 
 
 def encode_method_params(params: dict) -> str:

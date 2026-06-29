@@ -25,7 +25,7 @@ class EmbeddedBinding : public Binding {
   WriteStats GetWriteStats() override;
   std::string Name() const override { return "embedded"; }
   std::string ParamSuffix() const override {
-    return "_bits" + std::to_string(bloom_bits_);
+    return "_bloom_bits" + std::to_string(bloom_bits_);
   }
 };
 

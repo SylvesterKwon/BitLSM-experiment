@@ -20,6 +20,7 @@ METHOD_ORDER = [
     "si-lu",
     "si-ck",
     "si-eager",
+    "embedded_bloom_bits10",
     "bitlsm_rho0.2",
     "bitlsm_rho0.1",
     "bitlsm_rho0.05",
@@ -29,6 +30,7 @@ METHOD_LABELS = {
     "si-lu": "Lazy",
     "si-ck": "Composite",
     "si-eager": "SI-Eager",
+    "embedded_bloom_bits10": "Bloom + Zone Map",
     "bitlsm_rho0.2": r"BitLSM ($\rho$=0.2)",
     "bitlsm_rho0.1": r"BitLSM ($\rho$=0.1)",
     "bitlsm_rho0.05": r"BitLSM ($\rho$=0.05)",
@@ -39,6 +41,7 @@ METHOD_COLORS = {
     "bitlsm_rho0.05": "#9B1B1B",
     "si-lu": "#4CC850",
     "si-ck": "#9888B8",
+    "embedded_bloom_bits10": "#1FA8A0",
 }
 
 _SCHEMA_RE = re.compile(r"_a(\d+)_")

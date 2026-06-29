@@ -44,7 +44,7 @@ from run_common import (
 
 EXP_DIR = os.path.dirname(os.path.abspath(__file__))
 
-DB_PARAMS = ["n", "schema", "rho"]
+DB_PARAMS = ["n", "schema", "rho", "bloom_bits"]
 
 MASTER_COLUMNS = [
     "method", "n", "schema",
