@@ -18,6 +18,7 @@ from .config import (
 )
 from .dataset import DatasetCursor
 from .config import HonkConfigError
+from .pk import PKGenerator, pickup_ms_from_value, PICKUP_COL
 from .filters import GuidedTwoPointFilterGenerator, TwoPointFilterGenerator, UniformFilterGenerator, compute_most_selective_attr, compute_selectivity_percent
 from .writer import TSVWriter
 
@@ -155,15 +156,16 @@ def execute_phases(
 ) -> None:
     """Execute all phases in sequence."""
     pk_buffer = PKReservoir()
+    pk_gen = PKGenerator(config.pk_mode)
     for phase in config.phases:
         if isinstance(phase, WriteOnlyPhase):
-            _run_write_only(phase, cursor, writer, rng, pk_buffer)
+            _run_write_only(phase, cursor, writer, rng, pk_buffer, pk_gen)
         elif isinstance(phase, PausePhase):
             _run_pause(phase, writer)
         elif isinstance(phase, ReadOnlyPhase):
             _run_read_only(phase, uniform_gen, two_point_gen, guided_gen, writer, rng, df)
         elif isinstance(phase, MixedPhase):
-            _run_mixed(phase, cursor, uniform_gen, two_point_gen, guided_gen, writer, rng, pk_buffer, df)
+            _run_mixed(phase, cursor, uniform_gen, two_point_gen, guided_gen, writer, rng, pk_buffer, df, pk_gen)
 
     logger.info(
         "Generation complete: %d writes, %d updates, %d reads, %d pauses",
@@ -180,6 +182,7 @@ def _run_write_only(
     writer: TSVWriter,
     rng: np.random.Generator,
     pk_buffer: PKReservoir,
+    pk_gen: PKGenerator,
 ) -> None:
     logger.info("Phase '%s': write_only, %d rows, update_ratio=%.2f", phase.label, phase.rows, phase.update_ratio)
     chunk = cursor.consume(phase.rows)
@@ -188,14 +191,14 @@ def _run_write_only(
         # Row-by-row path: interleaved updates require sequential processing
         records = chunk.to_dict("records")
         for record in records:
-            pk = _make_uuid(rng)
+            pk = pk_gen.one(pickup_ms_from_value(record.get(PICKUP_COL)), rng)
             writer.write_row(pk, record)
             pk_buffer.append(pk, rng)
             _emit_updates(phase.update_ratio, pk_buffer, cursor, writer, rng)
         return
 
     # Fast path: batch processing (no interleaved updates)
-    _write_batch(chunk, writer, rng, pk_buffer)
+    _write_batch(chunk, writer, rng, pk_buffer, pk_gen)
 
 
 def _write_batch(
@@ -203,6 +206,7 @@ def _write_batch(
     writer: TSVWriter,
     rng: np.random.Generator,
     pk_buffer: PKReservoir,
+    pk_gen: PKGenerator,
 ) -> None:
     """Write a DataFrame chunk using the fast batch path."""
     n = len(chunk)
@@ -211,8 +215,12 @@ def _write_batch(
         sub = chunk.iloc[start:end]
         batch_n = end - start
 
-        raw = rng.bytes(16 * batch_n)
-        pks = [uuid.UUID(bytes=raw[i * 16 : (i + 1) * 16], version=4) for i in range(batch_n)]
+        # Pickup epoch-ms for ULID PKs (no effect in uuid mode; pure data, so
+        # it does not perturb the RNG stream -> uuid output stays reproducible).
+        pickup_ms = (
+            sub[PICKUP_COL].astype("datetime64[ms]").astype("int64").to_numpy()
+        )
+        pks = pk_gen.many(pickup_ms, rng)
 
         dt_cols = sub.select_dtypes(include=["datetime64"]).columns
         if len(dt_cols) > 0:
@@ -245,6 +253,7 @@ def run_write_with_periodic_queries(
     pk_buffer: PKReservoir,
     df: pd.DataFrame,
     rows_already_written: int,
+    pk_gen: PKGenerator,
 ) -> None:
     """Write rows with a deterministic QUERY every *query_interval* PUTs.
 
@@ -260,7 +269,7 @@ def run_write_with_periodic_queries(
     while written < rows:
         batch_size = min(query_interval, rows - written)
         chunk = cursor.consume(batch_size)
-        _write_batch(chunk, writer, rng, pk_buffer)
+        _write_batch(chunk, writer, rng, pk_buffer, pk_gen)
         written += batch_size
 
         # Insert query after every full interval
@@ -310,6 +319,7 @@ def _run_mixed(
     rng: np.random.Generator,
     pk_buffer: PKReservoir,
     df: pd.DataFrame,
+    pk_gen: PKGenerator,
 ) -> None:
     logger.info(
         "Phase '%s': mixed, %d rows, read_ratio=%.2f, update_ratio=%.2f, %d query blocks",
@@ -326,7 +336,7 @@ def _run_mixed(
     records = chunk.to_dict("records")
     for record in records:
         # Write
-        pk = _make_uuid(rng)
+        pk = pk_gen.one(pickup_ms_from_value(record.get(PICKUP_COL)), rng)
         writer.write_row(pk, record)
         pk_buffer.append(pk, rng)
 
