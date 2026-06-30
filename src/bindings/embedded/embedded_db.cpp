@@ -63,10 +63,12 @@ Status EmbeddedDB::Put(const string& pk, const vector<Attr>& attrs,
         "The number of attrs does not match with db configuration.");
   }
 
-  // 2. Use EmbeddedCodec::Encode instead of BitLSM's EncodeValue/PutBatch
-  std::string v;
-  EmbeddedCodec::Encode(bit_lsm_options_, attrs, payload, v);
-  return db_->Put(WriteOptions(), pk, v);
+  // 2. Use EmbeddedCodec::Encode instead of BitLSM's EncodeValue/PutBatch.
+  //    Reuse the buffer across calls (thread_local for concurrent Put safety) so
+  //    the hot path stays allocation-free, matching BitLSM::Put.
+  thread_local std::string serialized_value_buf;
+  EmbeddedCodec::Encode(bit_lsm_options_, attrs, payload, serialized_value_buf);
+  return db_->Put(WriteOptions(), pk, serialized_value_buf);
 }
 
 unique_ptr<EmbeddedIterator> EmbeddedDB::NewIterator(
