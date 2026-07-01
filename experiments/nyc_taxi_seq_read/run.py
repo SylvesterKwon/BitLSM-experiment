@@ -65,7 +65,7 @@ def build_command(method_name: str, workload: str, db_path: str,
 
 
 def run(config_path: str, dry_run: bool, method_filter: list,
-        cooldown: int, hw_reset: bool, warmup: bool = False,
+        cooldown: int, hw_reset: bool, pk_mode: str, warmup: bool = False,
         start_from: int = 1):
     with open(config_path) as f:
         config = json.load(f)
@@ -130,7 +130,7 @@ def run(config_path: str, dry_run: bool, method_filter: list,
                         continue
 
                     wl_stem = workload_stem(workload)
-                    db_path = f"{db_path_base}/{name}/{encode_method_params(combo)}"
+                    db_path = f"{db_path_base}/{pk_mode}/{name}/{encode_method_params(combo)}"
                     cmd = build_command(name, workload, db_path, output_dir,
                                         combo, common_params, query_limit)
 
@@ -182,6 +182,8 @@ def main():
         description="NYC Taxi sequential read experiment"
     )
     add_common_args(parser)
+    parser.add_argument("--pk_mode", choices=["uuid", "ulid"], required=True,
+                        help="PK regime; selects which DB namespace to read (REQUIRED)")
     parser.add_argument("--warmup", action="store_true",
                         help="Run one warmup query per DB before measuring")
     args = parser.parse_args()
@@ -191,7 +193,7 @@ def main():
     method_filter = parse_method_filter(args)
     run(args.config, dry_run=args.dry_run, method_filter=method_filter,
         cooldown=args.cooldown, hw_reset=args.hw_reset,
-        warmup=args.warmup, start_from=args.start_from)
+        pk_mode=args.pk_mode, warmup=args.warmup, start_from=args.start_from)
 
 
 if __name__ == "__main__":

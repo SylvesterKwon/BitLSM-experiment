@@ -23,14 +23,14 @@ Download the source parquet first: `python3 src/honk/download.py --year 2024-202
 {
   "dataset": ["yellow_tripdata_2024-01.parquet", ...],  // consumed in this order
   "seed": 42,                                           // RNG seed (reproducible)
-  "pk_mode": "uuid",                                    // "uuid" | "ulid"  (see below)
-  "shuffle": false,                                     // seeded dataset shuffle (see below)
+  "pk_mode": "ulid",                                    // "uuid" | "ulid" — REQUIRED (no default)
+  "shuffle": true,                                      // seeded dataset shuffle (see below)
   "phases": [ { "label": "write", "type": "write_only" /* , "rows", "update_ratio" */ } ]
 }
 ```
 
-`pk_mode` and `shuffle` default to `"uuid"` / `false`, so configs that omit them
-behave exactly as before.
+`pk_mode` is **required** — there is no default, because the two regimes build
+different DBs and the choice should be explicit. `shuffle` defaults to `false`.
 
 ### `pk_mode` — primary-key scheme (controls zone-map / time-correlation regime)
 
@@ -65,12 +65,21 @@ Same `pk_mode` / `shuffle` are exposed as CLI flags:
 
 | Config | `pk_mode` | `shuffle` | Regime |
 |---|---|---|---|
-| `workloads/write_seq_2024-2025_all.json` | ulid | true | **default** — time-correlated (zone maps prune datetime ranges) |
+| `workloads/write_seq_2024-2025_all_ulid.json` | ulid | true | time-correlated (zone maps prune datetime ranges) |
+| `workloads/write_seq_2024-2025_all_uuid.json` | uuid | true | non-time-correlated (random PK → zone maps cannot prune) |
 
-Set `"pk_mode": "uuid"`, `"shuffle": false` in a copy of that config for the
-non-time-correlated regime (random PK → zone maps cannot prune any continuous
-attribute).
+Each config generates `write_seq_2024-2025_all_<pk_mode>.tsv`.
 
-Run both, build a DB from each, and compare embedded (zone map) vs BitLSM across
-the two regimes. Read query workloads (`workloads/read_seq_*.json`) filter on
+**Experiment runners are `--pk_mode`-aware (and require it).** The taxi runners
+(`nyc_taxi_seq_write`, `nyc_taxi_seq_read`, `nyc_taxi_interleave`) take a
+**required** `--pk_mode {uuid,ulid}` flag that namespaces the DB path as
+`{db_path_base}/{pk_mode}/{method}/{params}`, so the two regimes' DBs never mix.
+Example: build ULID DBs, then read them:
+
+```bash
+python3 experiments/nyc_taxi_seq_write/run.py .../exp_set/write_seq_all_ulid.json --pk_mode ulid
+python3 experiments/nyc_taxi_seq_read/run.py  .../exp_set/read_seq_sel0.01_r300.json --pk_mode ulid
+```
+
+Run both regimes and compare embedded (zone map) vs BitLSM across them. Read query workloads (`workloads/read_seq_*.json`) filter on
 attributes only and are PK-agnostic, so the same query traces apply to both DBs.

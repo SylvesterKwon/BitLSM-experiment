@@ -61,9 +61,9 @@ class WorkloadConfig:
     seed: int
     phases: list[Phase]
     # PK scheme: "uuid" (random, uncorrelated) or "ulid" (time-ordered from
-    # tpep_pickup_datetime -> PK-correlated with pickup time). Default keeps
-    # legacy behavior.
-    pk_mode: str = "uuid"
+    # tpep_pickup_datetime -> PK-correlated with pickup time). REQUIRED — no
+    # default; the two regimes build different DBs.
+    pk_mode: str
     # Shuffle the dataset (seeded) before consuming, so insertion order is
     # decoupled from the PK -> realistic random-write LSM stress regardless of
     # pk_mode. Recommended True for the ulid variant.
@@ -224,7 +224,12 @@ def load_config(path: str) -> WorkloadConfig:
     seed = raw.get("seed", 42)
     phases = [_parse_phase(p) for p in raw.get("phases", [])]
 
-    pk_mode = raw.get("pk_mode", "uuid")
+    if "pk_mode" not in raw:
+        raise HonkConfigError(
+            "'pk_mode' is required and must be explicitly set to \"uuid\" or "
+            "\"ulid\" (no default — the two regimes build different DBs)"
+        )
+    pk_mode = raw["pk_mode"]
     if pk_mode not in ("uuid", "ulid"):
         raise HonkConfigError(
             f"'pk_mode' must be 'uuid' or 'ulid', got {pk_mode!r}"
