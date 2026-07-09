@@ -4,6 +4,7 @@
 #include "si_index_utils.h"
 #include <algorithm>
 #include <optional>
+#include <rocksdb/filter_policy.h>
 #include <rocksdb/merge_operator.h>
 #include <rocksdb/statistics.h>
 #include <rocksdb/table.h>
@@ -185,6 +186,17 @@ inline SIDBHandles OpenSITransactionDB(
 
   rocksdb::ColumnFamilyOptions primary_cf_opts(opts);
   primary_cf_opts.level_compaction_dynamic_level_bytes = true;
+  // Whole-key Bloom filter on the primary/record CF only, matching the record
+  // CF config used across all methods (no-index, bitlsm). Accelerates the PK
+  // MultiGet path of the index-merge read strategy. Applied to primary_cf_opts
+  // (not the base opts) so the secondary CF does NOT inherit it: si-ck keeps
+  // its prefix Bloom via override, si-lu/eager keep no secondary filter.
+  rocksdb::BlockBasedTableOptions primary_table_options;
+  primary_table_options.block_size = 4 * 1024;
+  primary_table_options.filter_policy.reset(
+      rocksdb::NewBloomFilterPolicy(10, false));
+  primary_cf_opts.table_factory.reset(
+      rocksdb::NewBlockBasedTableFactory(primary_table_options));
 
   // Merge SI CF options with base
   rocksdb::ColumnFamilyOptions si_cf_opts(opts);
