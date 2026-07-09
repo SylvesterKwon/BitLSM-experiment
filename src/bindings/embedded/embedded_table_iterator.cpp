@@ -82,20 +82,20 @@ void EmbeddedTableIterator::SelectCandidateBlocks() {
       if (f.attr_idx == attr_idx) return &f;
     return nullptr;
   };
-  // cont_ordinal of an attr = number of CONTINUOUS attrs with index < attr_idx
+  // cont_ordinal of an attr = number of ORDERED attrs with index < attr_idx
   // (matches the builder's file-level zone-map ordering).
   auto cont_ordinal_of = [&](uint32_t attr_idx) -> uint32_t {
     uint32_t ord = 0;
     for (uint32_t i = 0; i < attr_idx; ++i)
-      if (options_.attr_types[i] == bit_lsm::AttrType::CONTINUOUS) ++ord;
+      if (options_.attr_specs[i].role == bit_lsm::AttrRole::ORDERED) ++ord;
     return ord;
   };
 
   for (const auto& clause : query_.clause_groups) {
     if (clause.size() != 1) continue;  // OR / non-single shapes do not prune.
     const bit_lsm::QueryCondition& c = clause[0];
-    if (c.attr_idx >= options_.attr_types.size()) continue;
-    if (options_.attr_types[c.attr_idx] == bit_lsm::AttrType::CATEGORICAL) {
+    if (c.attr_idx >= options_.attr_specs.size()) continue;
+    if (options_.attr_specs[c.attr_idx].role == bit_lsm::AttrRole::UNORDERED) {
       // Single categorical EQUAL condition only.
       if (c.op != bit_lsm::CompareOp::EQUAL) continue;
       cat_facts.push_back({c.attr_idx, std::get<std::string>(c.value)});
@@ -154,8 +154,8 @@ void EmbeddedTableIterator::SelectCandidateBlocks() {
     bool block_ok = true;
     // Walk attrs in index order, advancing the read cursor regardless of
     // whether this attr has a query fact, so offsets stay aligned.
-    for (uint32_t ai = 0; ai < options_.attr_types.size() && block_ok; ++ai) {
-      if (options_.attr_types[ai] == bit_lsm::AttrType::CATEGORICAL) {
+    for (uint32_t ai = 0; ai < options_.attr_specs.size() && block_ok; ++ai) {
+      if (options_.attr_specs[ai].role == bit_lsm::AttrRole::UNORDERED) {
         // [u32 nbits][ceil(nbits/8) bytes]
         uint32_t nbits = DecodeFixed32(p);
         p += sizeof(uint32_t);

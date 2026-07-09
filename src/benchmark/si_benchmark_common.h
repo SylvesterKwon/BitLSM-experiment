@@ -31,13 +31,13 @@ enum class SILookupType { kPointLookup, kRangeScan };
 struct SILookup {
   uint32_t attr_idx;
   SILookupType type;
-  bit_lsm::AttrType attr_type;
+  bit_lsm::AttrRole attr_type;
 
-  // For kPointLookup (CATEGORICAL + EQUAL):
+  // For kPointLookup (UNORDERED + EQUAL):
   // Multiple values represent OR within a clause (e.g., attr=1 OR attr=3).
   std::vector<std::string> sk_values;
 
-  // For kRangeScan (CONTINUOUS + range ops):
+  // For kRangeScan (ORDERED + range ops):
   std::optional<double> lower_bound;
   bool lower_inclusive = true; // >= vs >
   std::optional<double> upper_bound;
@@ -53,7 +53,7 @@ inline SIQueryPlan MapQueryToSILookups(const bit_lsm::BitLSMQuery& query,
                                        const bit_lsm::BitLSMOptions& options) {
   SIQueryPlan plan;
 
-  // Group CONTINUOUS conditions by attr_idx to coalesce bounds.
+  // Group ORDERED conditions by attr_idx to coalesce bounds.
   // Reserve a slot in si_lookups on first encounter so that clause_groups
   // ordering (e.g. hint-based reorder) is preserved.
   std::unordered_map<uint32_t, size_t> range_slot; // attr_idx → si_lookups index
@@ -67,7 +67,7 @@ inline SIQueryPlan MapQueryToSILookups(const bit_lsm::BitLSMQuery& query,
     for (const auto& cond : clause) {
       if (cond.attr_idx != cat_attr ||
           cond.op != bit_lsm::CompareOp::EQUAL ||
-          options.attr_types[cond.attr_idx] != bit_lsm::AttrType::CATEGORICAL) {
+          options.attr_specs[cond.attr_idx].role != bit_lsm::AttrRole::UNORDERED) {
         pure_cat_or = false;
         break;
       }
@@ -78,14 +78,14 @@ inline SIQueryPlan MapQueryToSILookups(const bit_lsm::BitLSMQuery& query,
       SILookup lk;
       lk.attr_idx = cat_attr;
       lk.type = SILookupType::kPointLookup;
-      lk.attr_type = bit_lsm::AttrType::CATEGORICAL;
+      lk.attr_type = bit_lsm::AttrRole::UNORDERED;
       for (const auto& cond : clause)
         lk.sk_values.push_back(std::get<std::string>(cond.value));
       plan.si_lookups.push_back(std::move(lk));
     } else if (clause.size() == 1) {
       // Single-condition clause (common case: AND-only queries)
       const auto& cond = clause[0];
-      if (options.attr_types[cond.attr_idx] == bit_lsm::AttrType::CONTINUOUS) {
+      if (options.attr_specs[cond.attr_idx].role == bit_lsm::AttrRole::ORDERED) {
         // Reserve a slot on first encounter to preserve clause ordering
         auto [it, inserted] = range_slot.emplace(cond.attr_idx,
                                                   plan.si_lookups.size());
@@ -93,7 +93,7 @@ inline SIQueryPlan MapQueryToSILookups(const bit_lsm::BitLSMQuery& query,
           SILookup lk;
           lk.attr_idx = cond.attr_idx;
           lk.type = SILookupType::kRangeScan;
-          lk.attr_type = bit_lsm::AttrType::CONTINUOUS;
+          lk.attr_type = bit_lsm::AttrRole::ORDERED;
           plan.si_lookups.push_back(std::move(lk));
         }
         auto& lk = plan.si_lookups[it->second];
@@ -115,7 +115,7 @@ inline SIQueryPlan MapQueryToSILookups(const bit_lsm::BitLSMQuery& query,
         SILookup lk;
         lk.attr_idx = cond.attr_idx;
         lk.type = SILookupType::kPointLookup;
-        lk.attr_type = bit_lsm::AttrType::CATEGORICAL;
+        lk.attr_type = bit_lsm::AttrRole::UNORDERED;
         lk.sk_values.push_back(std::get<std::string>(cond.value));
         plan.si_lookups.push_back(std::move(lk));
       } else {

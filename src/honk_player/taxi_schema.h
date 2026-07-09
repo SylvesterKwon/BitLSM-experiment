@@ -10,31 +10,31 @@ using namespace bit_lsm;
 
 struct TaxiColumn {
   std::string name;
-  AttrType type;
+  AttrRole type;
 };
 
 inline std::vector<TaxiColumn> GetTaxiColumns() {
   return {
-      /* 0  */ {"VendorID", AttrType::CATEGORICAL},
-      /* 1  */ {"tpep_pickup_datetime", AttrType::CONTINUOUS},
-      /* 2  */ {"tpep_dropoff_datetime", AttrType::CONTINUOUS},
-      /* 3  */ {"passenger_count", AttrType::CONTINUOUS},
-      /* 4  */ {"trip_distance", AttrType::CONTINUOUS},
-      /* 5  */ {"RatecodeID", AttrType::CATEGORICAL},
-      /* 6  */ {"store_and_fwd_flag", AttrType::CATEGORICAL},
-      /* 7  */ {"PULocationID", AttrType::CATEGORICAL},
-      /* 8  */ {"DOLocationID", AttrType::CATEGORICAL},
-      /* 9  */ {"payment_type", AttrType::CATEGORICAL},
-      /* 10 */ {"fare_amount", AttrType::CONTINUOUS},
-      /* 11 */ {"extra", AttrType::CONTINUOUS},
-      /* 12 */ {"mta_tax", AttrType::CONTINUOUS},
-      /* 13 */ {"tip_amount", AttrType::CONTINUOUS},
-      /* 14 */ {"tolls_amount", AttrType::CONTINUOUS},
-      /* 15 */ {"improvement_surcharge", AttrType::CONTINUOUS},
-      /* 16 */ {"total_amount", AttrType::CONTINUOUS},
-      /* 17 */ {"congestion_surcharge", AttrType::CONTINUOUS},
-      /* 18 */ {"Airport_fee", AttrType::CONTINUOUS},
-      /* 19 */ {"cbd_congestion_fee", AttrType::CONTINUOUS},
+      /* 0  */ {"VendorID", AttrRole::UNORDERED},
+      /* 1  */ {"tpep_pickup_datetime", AttrRole::ORDERED},
+      /* 2  */ {"tpep_dropoff_datetime", AttrRole::ORDERED},
+      /* 3  */ {"passenger_count", AttrRole::ORDERED},
+      /* 4  */ {"trip_distance", AttrRole::ORDERED},
+      /* 5  */ {"RatecodeID", AttrRole::UNORDERED},
+      /* 6  */ {"store_and_fwd_flag", AttrRole::UNORDERED},
+      /* 7  */ {"PULocationID", AttrRole::UNORDERED},
+      /* 8  */ {"DOLocationID", AttrRole::UNORDERED},
+      /* 9  */ {"payment_type", AttrRole::UNORDERED},
+      /* 10 */ {"fare_amount", AttrRole::ORDERED},
+      /* 11 */ {"extra", AttrRole::ORDERED},
+      /* 12 */ {"mta_tax", AttrRole::ORDERED},
+      /* 13 */ {"tip_amount", AttrRole::ORDERED},
+      /* 14 */ {"tolls_amount", AttrRole::ORDERED},
+      /* 15 */ {"improvement_surcharge", AttrRole::ORDERED},
+      /* 16 */ {"total_amount", AttrRole::ORDERED},
+      /* 17 */ {"congestion_surcharge", AttrRole::ORDERED},
+      /* 18 */ {"Airport_fee", AttrRole::ORDERED},
+      /* 19 */ {"cbd_congestion_fee", AttrRole::ORDERED},
   };
 }
 
@@ -55,11 +55,11 @@ BuildTaxiBitLSMOptions(const std::vector<uint32_t>& indexed_indices = {}) {
   if (indexed_indices.empty()) {
     opts.attr_num = cols.size();
     for (auto& c : cols)
-      opts.attr_types.push_back(c.type);
+      opts.attr_specs.push_back(AttrSpec(c.type));
   } else {
     opts.attr_num = indexed_indices.size();
     for (auto idx : indexed_indices)
-      opts.attr_types.push_back(cols[idx].type);
+      opts.attr_specs.push_back(AttrSpec(cols[idx].type));
   }
   return opts;
 }

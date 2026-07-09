@@ -7,7 +7,7 @@
 #include <string>
 
 struct Schema {
-  bit_lsm::BitLSMOptions options; // attr_num, attr_types populated
+  bit_lsm::BitLSMOptions options; // attr_num, attr_specs populated
   uint32_t payload_bytes;
 
   // Per-attr metadata for data generation
@@ -32,12 +32,12 @@ inline Schema load_schema(const std::string& path) {
   for (auto& attr : attrs) {
     std::string type = attr.at("type").get<std::string>();
     if (type == "categorical") {
-      schema.options.attr_types.push_back(bit_lsm::AttrType::CATEGORICAL);
+      schema.options.attr_specs.push_back(bit_lsm::AttrSpec(bit_lsm::AttrRole::UNORDERED));
       schema.cardinalities.push_back(attr.value("cardinality", 100));
       schema.range_min.push_back(0.0);
       schema.range_max.push_back(0.0);
     } else if (type == "continuous") {
-      schema.options.attr_types.push_back(bit_lsm::AttrType::CONTINUOUS);
+      schema.options.attr_specs.push_back(bit_lsm::AttrSpec(bit_lsm::AttrRole::ORDERED));
       schema.cardinalities.push_back(0);
       schema.range_min.push_back(attr.value("min", 0.0));
       schema.range_max.push_back(attr.value("max", 100.0));

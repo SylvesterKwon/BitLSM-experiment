@@ -8,7 +8,7 @@
 namespace experiment {
 
 using ::Attr;  // global scope (bit_lsm.h)
-using bit_lsm::AttrType;
+using bit_lsm::AttrRole;
 using bit_lsm::BitLSMOptions;
 using bit_lsm::BitLSMQuery;
 

@@ -14,7 +14,8 @@
 #include "bit_lsm_query.h"
 #include "embedded_iterator.h"
 
-using Attr = std::variant<double, std::string>;
+using Attr =
+    std::variant<std::monostate, int64_t, uint64_t, double, std::string>;
 
 namespace experiment::embedded {
 

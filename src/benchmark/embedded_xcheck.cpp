@@ -24,7 +24,8 @@
 #include "bit_lsm_query.h"
 #include "rocksdb/types.h"
 
-using bit_lsm::AttrType;
+using bit_lsm::AttrRole;
+using bit_lsm::AttrSpec;
 using bit_lsm::BitLSMOptions;
 using bit_lsm::BitLSMQuery;
 using bit_lsm::CompareOp;
@@ -114,8 +115,8 @@ int main(int argc, char** argv) {
   // ---- Schema / options ----
   BitLSMOptions opts;
   opts.attr_num = 3;
-  opts.attr_types = {AttrType::CATEGORICAL, AttrType::CONTINUOUS,
-                     AttrType::CATEGORICAL};
+  opts.attr_specs = {AttrSpec(AttrRole::UNORDERED), AttrSpec(AttrRole::ORDERED),
+                     AttrSpec(AttrRole::UNORDERED)};
   opts.rho = 0.1;
   // read_seqno left at default for the write phase.
 

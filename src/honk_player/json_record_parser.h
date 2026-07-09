@@ -11,7 +11,7 @@
 namespace honk {
 
 using ::Attr;  // global scope (bit_lsm.h)
-using bit_lsm::AttrType;
+using bit_lsm::AttrRole;
 using bit_lsm::BitLSMQuery;
 using bit_lsm::CompareOp;
 using bit_lsm::QueryCondition;
@@ -57,7 +57,7 @@ class RecordParser {
     // Set defaults
     if (indexed_indices_.empty()) {
       for (uint32_t i = 0; i < attr_num_; i++) {
-        if (columns_[i].type == AttrType::CATEGORICAL)
+        if (columns_[i].type == AttrRole::UNORDERED)
           attrs[i] = std::string("Null");
         else
           attrs[i] = -1.0;
@@ -65,7 +65,7 @@ class RecordParser {
     } else {
       for (uint32_t i = 0; i < attr_num_; i++) {
         uint32_t orig = indexed_indices_[i];
-        if (columns_[orig].type == AttrType::CATEGORICAL)
+        if (columns_[orig].type == AttrRole::UNORDERED)
           attrs[i] = std::string("Null");
         else
           attrs[i] = -1.0;
@@ -87,13 +87,13 @@ class RecordParser {
       bool is_null = (val.type() == simdjson::ondemand::json_type::null);
 
       // Extract the value (sentinel for null)
-      AttrType atype = columns_[orig_idx].type;
+      AttrRole atype = columns_[orig_idx].type;
       std::string str_val;
       double dbl_val = -1.0;
       if (is_null) {
-        if (atype == AttrType::CATEGORICAL)
+        if (atype == AttrRole::UNORDERED)
           str_val = "Null";
-      } else if (atype == AttrType::CATEGORICAL) {
+      } else if (atype == AttrRole::UNORDERED) {
         if (val.type() == simdjson::ondemand::json_type::string) {
           str_val = std::string(val.get_string().value());
         } else {
@@ -110,7 +110,7 @@ class RecordParser {
       // Route to attrs (indexed) or payload (non-indexed)
       if (indexed_indices_.empty()) {
         // All indexed
-        if (atype == AttrType::CATEGORICAL)
+        if (atype == AttrRole::UNORDERED)
           attrs[orig_idx] = str_val;
         else
           attrs[orig_idx] = dbl_val;
@@ -118,13 +118,13 @@ class RecordParser {
         auto it = reverse_map_.find(orig_idx);
         if (it != reverse_map_.end()) {
           // Indexed attr
-          if (atype == AttrType::CATEGORICAL)
+          if (atype == AttrRole::UNORDERED)
             attrs[it->second] = str_val;
           else
             attrs[it->second] = dbl_val;
         } else {
           // Non-indexed → length-prefixed payload
-          if (atype == AttrType::CATEGORICAL) {
+          if (atype == AttrRole::UNORDERED) {
             AppendPayloadField(payload, orig_idx,
                                str_val.data(), str_val.size());
           } else {
@@ -144,9 +144,13 @@ struct FilterResult {
   uint32_t hint_most_selective_attr = UINT32_MAX;  // oracle hint (UINT32_MAX = none)
 };
 
-/// Helper: extract a value as Attr from a simdjson value, given the attr type.
-inline Attr ExtractValue(simdjson::ondemand::value val, AttrType atype) {
-  if (atype == AttrType::CATEGORICAL) {
+/// Helper: extract a query comparand from a simdjson value, given the attr
+/// role. Returns the QueryCondition::value variant (int64/uint64/double/string,
+/// no monostate), not Attr — the drivers only produce double (ORDERED) and
+/// string (UNORDERED) comparands.
+inline decltype(QueryCondition::value) ExtractValue(
+    simdjson::ondemand::value val, AttrRole atype) {
+  if (atype == AttrRole::UNORDERED) {
     if (val.type() == simdjson::ondemand::json_type::string)
       return std::string(val.get_string().value());
     auto i64 = val.get_int64();
@@ -176,7 +180,7 @@ inline FilterResult ParseFilters(
     if (it == col_map.end())
       throw std::runtime_error("Unknown filter attr: " + attr_name);
     uint32_t attr_idx = it->second;
-    AttrType atype = columns[attr_idx].type;
+    AttrRole atype = columns[attr_idx].type;
 
     if (seen_attrs.insert(attr_name).second)
       attr_name_list.push_back(attr_name);
