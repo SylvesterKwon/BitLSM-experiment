@@ -1,0 +1,2467 @@
+diff --git a/rocksdb-7.7.3/db/builder.cc b/rocksdb-7.7.3/db/builder.cc
+index b0ec4e00f1545d10ecc52deaa7db306578608b40..980326ab5c507e516a75aaea698767fe962b92b1 100644
+--- a/rocksdb-7.7.3/db/builder.cc
++++ b/rocksdb-7.7.3/db/builder.cc
+@@ -272,7 +272,8 @@ Status BuildTable(
+               : meta->oldest_ancester_time);
+       s = builder->Finish();
+ 
+-      std::vector<std::pair<std::string, BlockHandle>> secondary_index_entries;
++      // NEXT (Task 2.3): N sets, one per attribute (outer index = attribute i).
++      std::vector<std::vector<std::pair<std::string, BlockHandle>>> secondary_index_entries;
+       builder->GetSecondaryEntries(&secondary_index_entries);
+       s = meta->UpdateSecEntries(secondary_index_entries);
+       secondary_index_entries.clear();
+diff --git a/rocksdb-7.7.3/db/compaction/compaction_outputs.cc b/rocksdb-7.7.3/db/compaction/compaction_outputs.cc
+index d22f76ea69d1223c9b0f1c3c0b8ad5637784a545..e27a3c26ffd5513ef7d3745c2c5ac461b0bac025 100644
+--- a/rocksdb-7.7.3/db/compaction/compaction_outputs.cc
++++ b/rocksdb-7.7.3/db/compaction/compaction_outputs.cc
+@@ -31,7 +31,8 @@ Status CompactionOutputs::Finish(const Status& intput_status,
+                                           meta->oldest_ancester_time);
+     s = builder_->Finish();
+ 
+-    std::vector<std::pair<std::string, BlockHandle>> secondary_index_entries;
++    // NEXT (Task 2.3): N sets, one per attribute (outer index = attribute i).
++    std::vector<std::vector<std::pair<std::string, BlockHandle>>> secondary_index_entries;
+     builder_->GetSecondaryEntries(&secondary_index_entries);
+     s = meta->UpdateSecEntries(secondary_index_entries);
+     secondary_index_entries.clear();
+diff --git a/rocksdb-7.7.3/db/version_builder.cc b/rocksdb-7.7.3/db/version_builder.cc
+index 8e9c713b331174e4b9616eafa0897019af3bfcab..808ae638425be36ba6a5cfcd4f49c2d1cbde83d6 100644
+--- a/rocksdb-7.7.3/db/version_builder.cc
++++ b/rocksdb-7.7.3/db/version_builder.cc
+@@ -724,7 +724,10 @@ class VersionBuilder::Rep {
+     return meta->SecondaryEntries;
+   }  
+ 
+-  std::vector<std::pair<ValueRange, BlockHandle>> GetSecValRangeForTableFile(int level,
++  // NEXT (Task 2.3): returns N sets (outer index = attribute i). Consumers
++  // in this file currently only route [0] through the single global_rtee_p;
++  // Task 2.4 generalizes to N global R-trees over all sets.
++  std::vector<std::vector<std::pair<ValueRange, BlockHandle>>> GetSecValRangeForTableFile(int level,
+                         uint64_t file_number) const {
+     assert(level < num_levels_);
+ 
+@@ -744,7 +747,7 @@ class VersionBuilder::Rep {
+     assert(meta);
+ 
+     return meta->SecValrange;
+-  }  
++  }
+ 
+   Status ApplyFileDeletion(int level, uint64_t file_number) {
+     assert(level != VersionStorageInfo::FileLocation::Invalid().GetLevel());
+@@ -1073,7 +1076,8 @@ class VersionBuilder::Rep {
+   }
+ 
+     // Apply all of the edits in *edit to the current state.
+-  Status Apply(const VersionEdit* edit, GlobalSecRtree* global_rtee_p) {
++  Status Apply(const VersionEdit* edit,
++               std::vector<GlobalSecRtree>* global_rtrees_p) {
+     // std::cout << "apply" << std::endl;
+     {
+       const Status s = CheckConsistency(base_vstorage_);
+@@ -1115,15 +1119,28 @@ class VersionBuilder::Rep {
+           // Rect1D filerect(valrange.range.min, valrange.range.max);
+           // global_rtree.Remove(filerect.min, filerect.max, std::make_pair(level, file_number));
+ 
+-          const std::vector<std::pair<ValueRange, BlockHandle>> file_secentries_num = GetSecValRangeForTableFile(level, file_number);
+-          int globla_sec_id = 0;
+-          for (const std::pair<ValueRange, BlockHandle>& entry: file_secentries_num) {
+-            ValueRange entryvalrange = entry.first;
+-            Rect1D tuplerect_num(entryvalrange.range.min, entryvalrange.range.max);
+-            BlockHandle entryblkhandle_num = entry.second;
+-            GlobalSecIndexValue sec_index_val_num(globla_sec_id, file_number, entryblkhandle_num);
+-            global_rtee_p->Remove(tuplerect_num.min, tuplerect_num.max, sec_index_val_num);
+-            globla_sec_id++;
++          // NEXT (Task 2.4): SecValrange is now N sets (one per attribute);
++          // loop all N sets into N global R-trees (global_rtrees_p),
++          // resetting the per-block id for each attribute. global_rtrees_p
++          // is lazily grown to N here in case this is the first file whose
++          // deletion this VersionSet has processed.
++          const std::vector<std::vector<std::pair<ValueRange, BlockHandle>>> file_secentries_num_sets = GetSecValRangeForTableFile(level, file_number);
++          if (!file_secentries_num_sets.empty()) {
++            if (global_rtrees_p->size() < file_secentries_num_sets.size()) {
++              global_rtrees_p->resize(file_secentries_num_sets.size());
++            }
++            for (size_t attr_i = 0; attr_i < file_secentries_num_sets.size(); ++attr_i) {
++              const std::vector<std::pair<ValueRange, BlockHandle>>& file_secentries_num = file_secentries_num_sets[attr_i];
++              int globla_sec_id = 0;
++              for (const std::pair<ValueRange, BlockHandle>& entry: file_secentries_num) {
++                ValueRange entryvalrange = entry.first;
++                Rect1D tuplerect_num(entryvalrange.range.min, entryvalrange.range.max);
++                BlockHandle entryblkhandle_num = entry.second;
++                GlobalSecIndexValue sec_index_val_num(globla_sec_id, file_number, entryblkhandle_num);
++                (*global_rtrees_p)[attr_i].Remove(tuplerect_num.min, tuplerect_num.max, sec_index_val_num);
++                globla_sec_id++;
++              }
++            }
+           }
+         } else {
+           // // global index @ tuple level
+@@ -1135,18 +1152,23 @@ class VersionBuilder::Rep {
+           //   global_rtree.Remove(tuplerect.min, tuplerect.max, std::make_pair(tupleid, file_number));
+           // }
+ 
+-          // global index @ block level
+-          const std::vector<std::pair<Mbr, BlockHandle>> file_secentries = GetSecEntriesForTableFile(level, file_number);         
++          // global index @ block level. Spatial mode is not part of the
++          // N-attribute generalization (SecondaryEntries stays a single,
++          // un-split field), so it keeps routing into a single tree (index 0).
++          const std::vector<std::pair<Mbr, BlockHandle>> file_secentries = GetSecEntriesForTableFile(level, file_number);
+           // std::cout << "delete: " <<  file_number << "; filetuple_entries.size: " << static_cast<int>(file_secentries.size()) << std::endl;
++          if (global_rtrees_p->empty()) {
++            global_rtrees_p->resize(1);
++          }
+           int glosecid = 0;
+-          for (const std::pair<Mbr, BlockHandle>& entry: file_secentries) {    
++          for (const std::pair<Mbr, BlockHandle>& entry: file_secentries) {
+             Mbr entrymbr = entry.first;
+             BlockHandle entryblkhandle = entry.second;
+             GlobalSecIndexValue sec_index_val(glosecid, file_number, entryblkhandle);
+             Rect tuplerect(entrymbr.first.min, entrymbr.second.min, entrymbr.first.max, entrymbr.second.max);
+-            global_rtee_p->Remove(tuplerect.min, tuplerect.max, sec_index_val);
++            (*global_rtrees_p)[0].Remove(tuplerect.min, tuplerect.max, sec_index_val);
+             glosecid++;
+-          }   
++          }
+         }
+       }
+ 
+@@ -1171,16 +1193,28 @@ class VersionBuilder::Rep {
+           // Rect1D filerect(filevalrange.range.min, filevalrange.range.max);
+           // global_rtree.Insert(filerect.min, filerect.max, std::make_pair(level, filenumber));
+ 
+-          std::vector<std::pair<ValueRange, BlockHandle>> filetuple_entries_num = meta.SecValrange;
+-
+-          int rtree_id_num = 0;
+-          for (const std::pair<ValueRange, BlockHandle>& entry: filetuple_entries_num) {
+-            ValueRange entryvalrange = entry.first;
+-            BlockHandle entryblkhandle_num = entry.second;
+-            GlobalSecIndexValue sec_indexvalnum(rtree_id_num, filenumber, entryblkhandle_num);
+-            Rect1D tuplerect_num(entryvalrange.range.min, entryvalrange.range.max);
+-            global_rtee_p->Insert(tuplerect_num.min, tuplerect_num.max, sec_indexvalnum);
+-            rtree_id_num++;
++          // NEXT (Task 2.4): meta.SecValrange is now N sets (one per
++          // attribute); loop all N sets into N global R-trees
++          // (global_rtrees_p), resetting the per-block id for each
++          // attribute. global_rtrees_p is lazily grown to N here on the
++          // first file this VersionSet has seen with N sets.
++          if (!meta.SecValrange.empty()) {
++            if (global_rtrees_p->size() < meta.SecValrange.size()) {
++              global_rtrees_p->resize(meta.SecValrange.size());
++            }
++            for (size_t attr_i = 0; attr_i < meta.SecValrange.size(); ++attr_i) {
++              const std::vector<std::pair<ValueRange, BlockHandle>>& filetuple_entries_num = meta.SecValrange[attr_i];
++
++              int rtree_id_num = 0;
++              for (const std::pair<ValueRange, BlockHandle>& entry: filetuple_entries_num) {
++                ValueRange entryvalrange = entry.first;
++                BlockHandle entryblkhandle_num = entry.second;
++                GlobalSecIndexValue sec_indexvalnum(rtree_id_num, filenumber, entryblkhandle_num);
++                Rect1D tuplerect_num(entryvalrange.range.min, entryvalrange.range.max);
++                (*global_rtrees_p)[attr_i].Insert(tuplerect_num.min, tuplerect_num.max, sec_indexvalnum);
++                rtree_id_num++;
++              }
++            }
+           }
+         } else {
+           // // For global index @ tuple level
+@@ -1192,17 +1226,23 @@ class VersionBuilder::Rep {
+           //   global_rtree.Insert(tuplerect.min, tuplerect.max, std::make_pair(tupleid, filenumber));
+           // }
+ 
+-          // For global index @ file group level
++          // For global index @ file group level. Spatial mode is not part
++          // of the N-attribute generalization (SecondaryEntries stays a
++          // single, un-split field), so it keeps routing into a single tree
++          // (index 0).
+           std::vector<std::pair<Mbr, BlockHandle>> filetuple_entries = meta.SecondaryEntries;
+           // std::cout << "insert: " << filenumber << "; filetuple_entries.size: " << static_cast<int>(filetuple_entries.size()) << std::endl;
+-         
+-          int rtree_id = 0;         
+-          for (const std::pair<Mbr, BlockHandle>& entry: filetuple_entries) { 
++
++          if (global_rtrees_p->empty()) {
++            global_rtrees_p->resize(1);
++          }
++          int rtree_id = 0;
++          for (const std::pair<Mbr, BlockHandle>& entry: filetuple_entries) {
+             Mbr entrymbr = entry.first;
+             BlockHandle entryblkhandle = entry.second;
+             GlobalSecIndexValue sec_indexval(rtree_id, filenumber, entryblkhandle);
+             Rect tuplerect(entrymbr.first.min, entrymbr.second.min, entrymbr.first.max, entrymbr.second.max);
+-            global_rtee_p->Insert(tuplerect.min, tuplerect.max, sec_indexval);
++            (*global_rtrees_p)[0].Insert(tuplerect.min, tuplerect.max, sec_indexval);
+             rtree_id++;
+           }
+         }
+@@ -1669,8 +1709,9 @@ Status VersionBuilder::Apply(const VersionEdit* edit) {
+   return rep_->Apply(edit);
+ }
+ 
+-Status VersionBuilder::Apply(const VersionEdit* edit, GlobalSecRtree* global_rtree_p) {
+-  return rep_->Apply(edit, global_rtree_p);
++Status VersionBuilder::Apply(const VersionEdit* edit,
++                             std::vector<GlobalSecRtree>* global_rtrees_p) {
++  return rep_->Apply(edit, global_rtrees_p);
+ }
+ 
+ Status VersionBuilder::SaveTo(VersionStorageInfo* vstorage) const {
+diff --git a/rocksdb-7.7.3/db/version_builder.h b/rocksdb-7.7.3/db/version_builder.h
+index 64d4c93950cc326e86717cb7fad3645fd94858bb..a8e2eb8a2a564f825ab5c91204eb8e6677fd8ec5 100644
+--- a/rocksdb-7.7.3/db/version_builder.h
++++ b/rocksdb-7.7.3/db/version_builder.h
+@@ -10,6 +10,7 @@
+ #pragma once
+ 
+ #include <memory>
++#include <vector>
+ 
+ #include "rocksdb/file_system.h"
+ #include "rocksdb/slice_transform.h"
+@@ -44,7 +45,12 @@ class VersionBuilder {
+ 
+   bool CheckConsistencyForNumLevels();
+   Status Apply(const VersionEdit* edit);
+-  Status Apply(const VersionEdit* edit, GlobalSecRtree* global_rtree_p);
++  // NEXT (Task 2.4): threads a pointer to VersionSet::global_rtrees_ (N
++  // in-RAM global R-trees, one per indexed attribute) so the insert/remove
++  // paths below can lazily grow it to N and route each attribute's entries
++  // into its own tree.
++  Status Apply(const VersionEdit* edit,
++               std::vector<GlobalSecRtree>* global_rtrees_p);
+   Status SaveTo(VersionStorageInfo* vstorage) const;
+   Status LoadTableHandlers(
+       InternalStats* internal_stats, int max_threads,
+diff --git a/rocksdb-7.7.3/db/version_edit.cc b/rocksdb-7.7.3/db/version_edit.cc
+index 4de0ab9b7263cd9a20134bfcbf88684b574b57a4..f0c92b366d57bb92ad15dc23eb85a4c9118317e2 100644
+--- a/rocksdb-7.7.3/db/version_edit.cc
++++ b/rocksdb-7.7.3/db/version_edit.cc
+@@ -29,21 +29,29 @@ uint64_t PackFileNumberAndPathId(uint64_t number, uint64_t path_id) {
+   return number | (path_id * (kFileNumberMask + 1));
+ }
+ 
+-Status FileMetaData::UpdateSecEntries(std::vector<std::pair<std::string, BlockHandle>>& SecEntries) {
+-
+-  for(const std::pair<std::string, BlockHandle>& se : SecEntries){
+-    // std::cout << "sec entries size: " << se.first.size() << std::endl;
+-    BlockHandle blkhandle = se.second;
+-    if (se.first.size() == 16) {
+-      // std::cout << "update value range" << std::endl;
+-      ValueRange blockvalrange = ReadValueRange(se.first);
+-      SecValrange.emplace_back(std::make_pair(blockvalrange, blkhandle));
+-    } else {
+-      Mbr blockmbr = ReadValueMbr(se.first);
+-      SecondaryEntries.emplace_back(std::make_pair(blockmbr, blkhandle));      
++Status FileMetaData::UpdateSecEntries(std::vector<std::vector<std::pair<std::string, BlockHandle>>>& SecEntriesSets) {
++  // NEXT (Task 2.3): SecEntriesSets[i] holds attribute i's raw entries.
++  // SecValrange is resized to match so SecValrange[i] always corresponds to
++  // sec-index builder i (Task 2.2's attr_offset = 8*i), even if a given
++  // attribute happens to contribute zero ValueRange entries.
++  SecValrange.clear();
++  SecValrange.resize(SecEntriesSets.size());
++
++  for (size_t i = 0; i < SecEntriesSets.size(); i++) {
++    for (const std::pair<std::string, BlockHandle>& se : SecEntriesSets[i]) {
++      // std::cout << "sec entries size: " << se.first.size() << std::endl;
++      BlockHandle blkhandle = se.second;
++      if (se.first.size() == 16) {
++        // std::cout << "update value range" << std::endl;
++        ValueRange blockvalrange = ReadValueRange(se.first);
++        SecValrange[i].emplace_back(std::make_pair(blockvalrange, blkhandle));
++      } else {
++        Mbr blockmbr = ReadValueMbr(se.first);
++        SecondaryEntries.emplace_back(std::make_pair(blockmbr, blkhandle));
++      }
+     }
+   }
+-  
++
+   return Status::OK();
+ }
+ 
+@@ -263,6 +271,25 @@ bool VersionEdit::EncodeTo(std::string* dst) const {
+       std::string unique_id_str = EncodeUniqueIdBytes(&unique_id);
+       PutLengthPrefixedSlice(dst, Slice(unique_id_str));
+     }
++    // NEXT (Task 2.3): per-attribute FileMetaData::SecValrange entry sets.
++    // Payload: varint32 N (num attributes), then per attribute: varint32
++    // entry count, then per entry: 16 raw bytes (ValueRange min/max doubles)
++    // + BlockHandle::EncodeTo. Fresh-DB-only -- no old-MANIFEST back-compat.
++    if (!f.SecValrange.empty()) {
++      PutVarint32(dst, NewFileCustomTag::kSecValrange);
++      std::string sec_valrange_payload;
++      PutVarint32(&sec_valrange_payload,
++                  static_cast<uint32_t>(f.SecValrange.size()));
++      for (const auto& attr_entries : f.SecValrange) {
++        PutVarint32(&sec_valrange_payload,
++                    static_cast<uint32_t>(attr_entries.size()));
++        for (const auto& entry : attr_entries) {
++          sec_valrange_payload.append(serializeValueRange(entry.first));
++          entry.second.EncodeTo(&sec_valrange_payload);
++        }
++      }
++      PutLengthPrefixedSlice(dst, Slice(sec_valrange_payload));
++    }
+ 
+     TEST_SYNC_POINT_CALLBACK("VersionEdit::EncodeTo:NewFile4:CustomizeFields",
+                              dst);
+@@ -431,6 +458,51 @@ const char* VersionEdit::DecodeNewFile4From(Slice* input) {
+             return "invalid unique id";
+           }
+           break;
++        case kSecValrange: {
++          // NEXT (Task 2.3): mirrors the EncodeTo payload above -- varint32
++          // N, then per attribute: varint32 entry count, then per entry: 16
++          // raw bytes (ValueRange) + BlockHandle::DecodeFrom.
++          uint32_t num_sets = 0;
++          if (!GetVarint32(&field, &num_sets)) {
++            return "invalid sec valrange (num attribute sets)";
++          }
++          // Each attribute set needs at least a 1-byte entry-count varint,
++          // so num_sets can never legitimately exceed the remaining bytes.
++          // Bound before resize() to avoid a corrupted/truncated MANIFEST
++          // driving an unbounded allocation.
++          if (num_sets > field.size()) {
++            return "invalid sec valrange (num attribute sets too large)";
++          }
++          f.SecValrange.clear();
++          f.SecValrange.resize(num_sets);
++          for (uint32_t i = 0; i < num_sets; i++) {
++            uint32_t num_entries = 0;
++            if (!GetVarint32(&field, &num_entries)) {
++              return "invalid sec valrange (entry count)";
++            }
++            // Each entry is at least 16 raw bytes (ValueRange) plus a
++            // BlockHandle, so num_entries can never legitimately exceed
++            // remaining_bytes / 16. Bound before reserve() to avoid an
++            // unbounded allocation from a corrupted/truncated MANIFEST.
++            if (num_entries > field.size() / 16) {
++              return "invalid sec valrange (entry count too large)";
++            }
++            f.SecValrange[i].reserve(num_entries);
++            for (uint32_t j = 0; j < num_entries; j++) {
++              if (field.size() < 16) {
++                return "invalid sec valrange (value range bytes)";
++              }
++              ValueRange vr = ReadValueRange(Slice(field.data(), 16));
++              field.remove_prefix(16);
++              BlockHandle bh;
++              if (!bh.DecodeFrom(&field).ok()) {
++                return "invalid sec valrange (block handle)";
++              }
++              f.SecValrange[i].emplace_back(std::make_pair(vr, bh));
++            }
++          }
++          break;
++        }
+         default:
+           if ((custom_tag & kCustomTagNonSafeIgnoreMask) != 0) {
+             // Should not proceed if cannot understand it
+diff --git a/rocksdb-7.7.3/db/version_edit.h b/rocksdb-7.7.3/db/version_edit.h
+index 84500525ba89ae69a8d777c2e085272a5759232f..22e0f4e4aab9247f3dad0143a7a4caaa8a66298d 100644
+--- a/rocksdb-7.7.3/db/version_edit.h
++++ b/rocksdb-7.7.3/db/version_edit.h
+@@ -89,6 +89,11 @@ enum NewFileCustomTag : uint32_t {
+   kMinTimestamp = 10,
+   kMaxTimestamp = 11,
+   kUniqueId = 12,
++  // NEXT (Task 2.3): per-attribute FileMetaData::SecValrange entry sets
++  // (outer index = attribute i). Fresh-DB-only encode/decode -- no old-
++  // MANIFEST back-compat is provided (or required, per the experiment's
++  // always-fresh-DB write path).
++  kSecValrange = 13,
+ 
+   // If this bit for the custom tag is set, opening DB should fail if
+   // we don't know this field.
+@@ -173,7 +178,10 @@ struct FileMetaData {
+   // jing
+   Mbr mbr;                         // MBR of the SST file
+   SpatialSketch sketch;            // spatial sketch of the SST file for cost estimation
+-  std::vector<std::pair<ValueRange, BlockHandle>> SecValrange;             // numerical value range of SST file for secondary attribute
++  // NEXT (Task 2.3): outer index = attribute i (0..num_sec_indexes-1), inner
++  // = per-block (ValueRange,BlockHandle) entries for that attribute's 1D
++  // sec-index. Was a single flat set pre-Task-2.3 (index 0's entries only).
++  std::vector<std::vector<std::pair<ValueRange, BlockHandle>>> SecValrange;             // numerical value range of SST file for secondary attribute
+   std::vector<std::pair<Mbr, BlockHandle>> SecondaryEntries;  // MBR of the leaf nodes of the per file secondary index
+  
+   // Needs to be disposed when refs becomes 0.
+@@ -281,7 +289,7 @@ struct FileMetaData {
+   FileMetaData(uint64_t file, uint32_t file_path_id, uint64_t file_size,
+                const InternalKey& smallest_key, const InternalKey& largest_key,
+                const Mbr& _mbr, const SpatialSketch& _sketch, 
+-               const std::vector<std::pair<ValueRange, BlockHandle>>& _SecValrange, 
++               const std::vector<std::vector<std::pair<ValueRange, BlockHandle>>>& _SecValrange,
+                const std::vector<std::pair<Mbr, BlockHandle>>& _SecondaryEntries, 
+                const SequenceNumber& smallest_seq,
+                const SequenceNumber& largest_seq, bool marked_for_compact,
+@@ -313,7 +321,12 @@ struct FileMetaData {
+   Status UpdateBoundaries(const Slice& key, const Slice& value,
+                           SequenceNumber seqno, ValueType value_type);
+ 
+-  Status UpdateSecEntries(std::vector<std::pair<std::string, BlockHandle>>& SecEntries);
++  // NEXT (Task 2.3): SecEntriesSets is N sets (outer index = attribute i),
++  // each a flat (raw-bytes-key, BlockHandle) list from that attribute's
++  // sec-index builder. ValueRange entries (16-byte raw min/max) populate
++  // SecValrange[i]; Mbr entries (spatial) still fall into the shared,
++  // un-widened SecondaryEntries.
++  Status UpdateSecEntries(std::vector<std::vector<std::pair<std::string, BlockHandle>>>& SecEntriesSets);
+ 
+   // Unlike UpdateBoundaries, ranges do not need to be presented in any
+   // particular order.
+@@ -538,7 +551,7 @@ class VersionEdit {
+                const std::string& file_checksum,
+                const std::string& file_checksum_func_name,
+                const UniqueId64x2& unique_id, Mbr mbr, SpatialSketch sketch,
+-               std::vector<std::pair<ValueRange, BlockHandle>> SecValrange, 
++               std::vector<std::vector<std::pair<ValueRange, BlockHandle>>> SecValrange,
+                std::vector<std::pair<Mbr, BlockHandle>> SecondaryEntries) {
+     assert(smallest_seqno <= largest_seqno);
+     new_files_.emplace_back(
+diff --git a/rocksdb-7.7.3/db/version_edit_handler.cc b/rocksdb-7.7.3/db/version_edit_handler.cc
+index c322808e1f237912c5559be48c402546ec467911..7f3ca2eb34364c4f2d6cde8dddcf2b76fbdea381 100644
+--- a/rocksdb-7.7.3/db/version_edit_handler.cc
++++ b/rocksdb-7.7.3/db/version_edit_handler.cc
+@@ -307,9 +307,18 @@ Status VersionEditHandler::OnNonCfOperation(VersionEdit& edit,
+       assert(tmp_cfd != nullptr);
+       s = MaybeCreateVersion(edit, tmp_cfd, /*force_create_version=*/false);
+       if (s.ok()) {
+-        s = builder_iter->second->version_builder()->Apply(&edit);
+-        // std::cout << "version handle apply" << std::endl;
+-        // s = builder_iter->second->version_builder()->Apply(&edit, &version_set_->global_rtree_);
++        // NEXT (Task 3.1): use the two-arg Apply so MANIFEST replay (DB
++        // reopen, possibly in a separate process) repopulates
++        // VersionSet::global_rtrees_ (the N in-RAM global R-trees) exactly
++        // like the live LogAndApply path (VersionSet::LogAndApplyHelper,
++        // :6174) does. Apply() is invoked exactly once per version edit as
++        // VersionEditHandlerBase::Iterate() reads the (single) current
++        // MANIFEST forward in order (see version_edit_handler.cc:22-64) --
++        // each file's SecValrange is inserted on its one "add file" edit and
++        // removed on its one "delete file" edit, so replay reconstructs the
++        // same tree state the writer process had, with no double-insert.
++        s = builder_iter->second->version_builder()->Apply(
++            &edit, &version_set_->global_rtrees_);
+       }
+     }
+     *cfd = tmp_cfd;
+diff --git a/rocksdb-7.7.3/db/version_set.cc b/rocksdb-7.7.3/db/version_set.cc
+index 586aa137ca564b82c6bed7962aa2c414e0de8cb5..02a34723ca5560d0a88fa3ebe827488f2ad89f17 100644
+--- a/rocksdb-7.7.3/db/version_set.cc
++++ b/rocksdb-7.7.3/db/version_set.cc
+@@ -57,6 +57,8 @@
+ #include "rocksdb/env.h"
+ #include "rocksdb/merge_operator.h"
+ #include "rocksdb/write_buffer_manager.h"
++#include "table/block_based/block_based_table_iterator.h"
++#include "table/block_based/block_based_table_reader.h"
+ #include "table/format.h"
+ #include "table/get_context.h"
+ #include "table/internal_iterator.h"
+@@ -1906,6 +1908,89 @@ double VersionStorageInfo::GetEstimatedCompressionRatioAtLevel(
+   return static_cast<double>(sum_data_size_bytes) / sum_file_size_bytes;
+ }
+ 
++namespace {
++
++// NEXT (Phase 4, Task 4.1): a minimal InternalIteratorBase<IndexValue> that
++// walks a FIXED, already-intersected list of PRIMARY data-block handles for
++// one SST file. Fed into a real BlockBasedTableIterator in place of the
++// normal per-SST index/sec-index reader, so the IM final scan reuses the
++// EXISTING data-block-reading machinery (InitDataBlock ->
++// NewDataBlockIterator<kData>) completely unchanged -- only WHICH blocks
++// get visited differs from PF.
++//
++// Only the methods exercised by a SeekToFirst()+Next() full-scan (this
++// project's only access pattern for secondary-index scans -- see the
++// `for (it->SeekToFirst(); it->Valid(); it->Next())` loop in
++// src/next_driver/next_honk.cpp) are meaningfully implemented. The others
++// mirror OneDRtreeSecIndexIterator's own stubs (table/block_based/
++// onedrtree_sec_index_iterator.h): never called on this path, since the
++// driver never sets ReadOptions::iterate_upper_bound and never calls
++// Seek()/SeekForPrev()/Prev() on the returned rocksdb::Iterator.
++class IMBlockHandleIndexIterator : public InternalIteratorBase<IndexValue> {
++ public:
++  explicit IMBlockHandleIndexIterator(std::vector<BlockHandle> handles)
++      : handles_(std::move(handles)) {}
++
++  bool Valid() const override { return pos_ < handles_.size(); }
++  void SeekToFirst() override { pos_ = 0; }
++  void SeekToLast() override {
++    pos_ = handles_.empty() ? 0 : handles_.size() - 1;
++  }
++  void Seek(const Slice& /*target*/) override { assert(false); }
++  void SeekForPrev(const Slice& /*target*/) override { assert(false); }
++  void Next() override {
++    assert(Valid());
++    pos_++;
++  }
++  void Prev() override {
++    assert(Valid());
++    if (pos_ == 0) {
++      pos_ = handles_.size();
++    } else {
++      pos_--;
++    }
++  }
++  Slice key() const override {
++    assert(false);
++    return Slice();
++  }
++  Slice user_key() const override {
++    assert(false);
++    return Slice();
++  }
++  IndexValue value() const override {
++    assert(Valid());
++    return IndexValue(handles_[pos_], Slice());
++  }
++  Status status() const override { return Status::OK(); }
++
++ private:
++  std::vector<BlockHandle> handles_;
++  size_t pos_ = 0;
++};
++
++// Cleanup callback (Cleanable::RegisterCleanup) that releases a TableCache
++// Cache::Handle acquired via TableCache::FindTable when this Version's
++// FileMetaData didn't already have a live fd.table_reader. Mirrors
++// TableCache::NewIterator's own RegisterCleanup(&UnrefEntry, ...) pattern
++// (db/table_cache.cc), using the public TableCache::ReleaseHandle instead of
++// the private UnrefEntry.
++void ReleaseIMTableCacheHandle(void* arg1, void* arg2) {
++  TableCache* table_cache = reinterpret_cast<TableCache*>(arg1);
++  Cache::Handle* handle = reinterpret_cast<Cache::Handle*>(arg2);
++  table_cache->ReleaseHandle(handle);
++}
++
++// Cleanup callback that frees the heap-allocated "sanitized" ReadOptions
++// copy AddIteratorsForLevelIndexMerge attaches to each per-file
++// BlockBasedTableIterator it builds (see the design note there for why the
++// copy -- rather than the caller's own read_options -- must be used).
++void DeleteHeapReadOptions(void* arg1, void* /*arg2*/) {
++  delete reinterpret_cast<ReadOptions*>(arg1);
++}
++
++}  // namespace
++
+ void Version::AddIterators(const ReadOptions& read_options,
+                            const FileOptions& soptions,
+                            MergeIteratorBuilder* merge_iter_builder,
+@@ -1946,18 +2031,43 @@ void Version::AddIteratorsForLevel(const ReadOptions& read_options,
+   if(mutable_cf_options_.create_global_sec_index) {
+     
+     // getting the search range
+-    RtreeIteratorContext* context = 
++    RtreeIteratorContext* context =
+         reinterpret_cast<RtreeIteratorContext*>(read_options.iterator_context);
++
++    // NEXT (Phase 4, Task 4.1): IM (index merge) -- mutually exclusive with
++    // the single-attribute PF path below. Enumerates EACH attribute in
++    // context->im_predicates' own candidate PRIMARY data-block set,
++    // intersects them by (filenum, offset), and scans ONLY the
++    // intersection. Defaults (is_index_merge=false) keep the PF path below
++    // byte-identical.
++    if (read_options.is_index_merge && context != nullptr &&
++        context->is_index_merge && !context->im_predicates.empty()) {
++      AddIteratorsForLevelIndexMerge(read_options, soptions, merge_iter_builder,
++                                     context);
++      return;
++    }
++
+     Slice query_slice(context->query_mbr);
+     std::vector<GlobalSecIndexValue> hittedFiles;
+-    if (mutable_cf_options_.global_sec_index_is_spatial) {
+-      Mbr query_mbr = ReadSecQueryMbr(query_slice);
+-      Rect query_rect(query_mbr.first.min, query_mbr.second.min, query_mbr.first.max, query_mbr.second.max);
+-      hittedFiles = global_rtree_->Search(query_rect.min, query_rect.max, GlobalRTreeCallback);
+-    } else {
+-      ValueRange query_valrange = ReadValueRange(query_slice);
+-      Rect1D query_rect1D(query_valrange.range.min, query_valrange.range.max);
+-      hittedFiles = global_rtree_->Search(query_rect1D.min, query_rect1D.max, GlobalRTreeCallback);
++    // NEXT (Task 2.4/3.2): global_rtrees_ is N in-RAM global R-trees (one
++    // per indexed attribute). read_options.sec_attr_index (default 0)
++    // selects which one this scan targets end-to-end (paired with the
++    // per-SST sec-index reader and the per-tuple value-range filter, which
++    // must agree on the same index -- see block_based_table_reader.cc /
++    // block.cc). Bounds-guarded: if sec_attr_index is out of range (or no
++    // trees have been populated yet), hittedFiles stays empty -- no
++    // candidates, not a crash.
++    uint32_t sec_attr_idx = read_options.sec_attr_index;
++    if (global_rtrees_ != nullptr && sec_attr_idx < global_rtrees_->size()) {
++      if (mutable_cf_options_.global_sec_index_is_spatial) {
++        Mbr query_mbr = ReadSecQueryMbr(query_slice);
++        Rect query_rect(query_mbr.first.min, query_mbr.second.min, query_mbr.first.max, query_mbr.second.max);
++        hittedFiles = (*global_rtrees_)[sec_attr_idx].Search(query_rect.min, query_rect.max, GlobalRTreeCallback);
++      } else {
++        ValueRange query_valrange = ReadValueRange(query_slice);
++        Rect1D query_rect1D(query_valrange.range.min, query_valrange.range.max);
++        hittedFiles = (*global_rtrees_)[sec_attr_idx].Search(query_rect1D.min, query_rect1D.max, GlobalRTreeCallback);
++      }
+     }
+ 
+     // iterating through the return vector
+@@ -2088,7 +2198,248 @@ void Version::AddIteratorsForLevel(const ReadOptions& read_options,
+     }
+   }
+ 
+-  
++
++}
++
++BlockBasedTable* Version::GetBlockBasedTableForIM(
++    const ReadOptions& read_options, const FileOptions& soptions,
++    const FileMetaData& file_meta, Cache::Handle** cache_handle) {
++  *cache_handle = nullptr;
++  TableReader* table_reader = file_meta.fd.table_reader;
++  if (table_reader == nullptr) {
++    Status s = cfd_->table_cache()->FindTable(
++        read_options, soptions, cfd_->internal_sec_comparator(), file_meta,
++        cache_handle, mutable_cf_options_.prefix_extractor);
++    if (!s.ok()) {
++      return nullptr;
++    }
++    table_reader = cfd_->table_cache()->GetTableReaderFromHandle(*cache_handle);
++  }
++  return static_cast<BlockBasedTable*>(table_reader);
++}
++
++std::map<uint64_t, std::map<uint64_t, uint64_t>>
++Version::EnumerateIMCandidateDataBlocks(uint32_t attr_id,
++                                        const Slice& query_slice,
++                                        const ReadOptions& read_options,
++                                        const FileOptions& soptions) {
++  // result[filenum][data_block_offset] = data_block_size.
++  std::map<uint64_t, std::map<uint64_t, uint64_t>> result;
++
++  if (global_rtrees_ == nullptr || attr_id >= global_rtrees_->size()) {
++    return result;  // no candidates -- bounds-guarded, not a crash.
++  }
++
++  // Step 1: global R-tree search for attr_id -- identical to the PF path's
++  // own search (version_set.cc AddIteratorsForLevel), just parameterized on
++  // attr_id instead of read_options.sec_attr_index. Yields candidate
++  // SEC-INDEX BLOCK handles (GlobalSecIndexValue::blkhandle), grouped by
++  // file.
++  ValueRange query_valrange = ReadValueRange(query_slice);
++  Rect1D query_rect1D(query_valrange.range.min, query_valrange.range.max);
++  std::vector<GlobalSecIndexValue> hittedFiles =
++      (*global_rtrees_)[attr_id].Search(query_rect1D.min, query_rect1D.max,
++                                        GlobalRTreeCallback);
++
++  std::map<uint64_t, std::vector<BlockHandle>> filenum_2_secblkhandle;
++  std::set<std::pair<uint64_t, uint64_t>> seen_file_offset;
++  for (const GlobalSecIndexValue& hf : hittedFiles) {
++    auto key = std::make_pair(hf.filenum, hf.blkhandle.offset());
++    if (seen_file_offset.insert(key).second) {
++      filenum_2_secblkhandle[hf.filenum].emplace_back(hf.blkhandle);
++    }
++  }
++
++  // Step 2: per file, walk attr_id's own per-SST sec-index scan (via
++  // BlockBasedTable::NewIndexIterator, is_secondary_index_scan=true --
++  // dispatches to OneDRtreeSecIndexReader::NewIterator, which builds a
++  // OneDRtreeSecIndexIterator over exactly the SEC-INDEX blocks named by
++  // found_sec_blkhandle below), collecting index_iter_->value().handle (the
++  // PRIMARY data-block handle each sec-index entry points to). This NEVER
++  // reads a kData block -- NewIndexIterator only touches BlockType::kIndex
++  // (sec-index) blocks; we stop at the sec-index entry's handle field
++  // without ever calling NewDataBlockIterator<..., BlockType::kData, ...>.
++  for (const auto& fkv : filenum_2_secblkhandle) {
++    uint64_t filenum = fkv.first;
++    auto floc = storage_info_.GetFileLocation(filenum);
++    if (floc.GetLevel() == -1) {
++      continue;
++    }
++    const auto& file =
++        storage_info_.LevelFilesBrief(floc.GetLevel()).files[floc.GetPosition()];
++
++    Cache::Handle* cache_handle = nullptr;
++    BlockBasedTable* bbt = GetBlockBasedTableForIM(
++        read_options, soptions, *file.file_metadata, &cache_handle);
++    if (bbt == nullptr) {
++      continue;
++    }
++
++    std::vector<std::pair<uint64_t, uint64_t>> local_found_sec_blkhandle;
++    local_found_sec_blkhandle.reserve(fkv.second.size());
++    for (const BlockHandle& bh : fkv.second) {
++      local_found_sec_blkhandle.emplace_back(bh.offset(), bh.size());
++    }
++
++    RtreeIteratorContext local_ctx;
++    local_ctx.query_mbr = query_slice.ToString();
++    local_ctx.sec_attr_index = attr_id;
++
++    ReadOptions local_ro = read_options;
++    local_ro.iterator_context = &local_ctx;
++    local_ro.is_secondary_index_scan = true;
++    local_ro.is_secondary_index_spatial = false;
++    local_ro.sec_attr_index = attr_id;
++    local_ro.found_sec_blkhandle = &local_found_sec_blkhandle;
++    local_ro.is_index_merge = false;
++
++    BlockCacheLookupContext lookup_context{TableReaderCaller::kUserIterator};
++    auto& file_result = result[filenum];
++    {
++      std::unique_ptr<InternalIteratorBase<IndexValue>> idx_iter(
++          bbt->NewIndexIterator(local_ro, /*need_upper_bound_check=*/false,
++                                /*input_iter=*/nullptr, /*get_context=*/nullptr,
++                                &lookup_context));
++      for (idx_iter->SeekToFirst(); idx_iter->Valid(); idx_iter->Next()) {
++        const BlockHandle& dbh = idx_iter->value().handle;
++        file_result[dbh.offset()] = dbh.size();
++      }
++    }
++
++    if (cache_handle != nullptr) {
++      cfd_->table_cache()->ReleaseHandle(cache_handle);
++    }
++  }
++
++  return result;
++}
++
++void Version::AddIteratorsForLevelIndexMerge(
++    const ReadOptions& read_options, const FileOptions& soptions,
++    MergeIteratorBuilder* merge_iter_builder, RtreeIteratorContext* context) {
++  auto* arena = merge_iter_builder->GetArena();
++
++  // Enumerate each predicate's own candidate set, then intersect by
++  // (filenum, offset). Starting from the first predicate and narrowing
++  // keeps this O(sum of candidate sizes) rather than materializing every
++  // set before intersecting.
++  std::map<uint64_t, std::map<uint64_t, uint64_t>> intersected;
++  bool first = true;
++  for (const auto& pred : context->im_predicates) {
++    uint32_t attr_id = pred.first;
++    Slice query_slice(pred.second);
++    std::map<uint64_t, std::map<uint64_t, uint64_t>> candidates =
++        EnumerateIMCandidateDataBlocks(attr_id, query_slice, read_options,
++                                      soptions);
++    if (first) {
++      intersected = std::move(candidates);
++      first = false;
++      continue;
++    }
++    for (auto it = intersected.begin(); it != intersected.end();) {
++      auto other_it = candidates.find(it->first);
++      if (other_it == candidates.end()) {
++        it = intersected.erase(it);
++        continue;
++      }
++      auto& mine = it->second;
++      const auto& theirs = other_it->second;
++      for (auto mit = mine.begin(); mit != mine.end();) {
++        if (theirs.find(mit->first) == theirs.end()) {
++          mit = mine.erase(mit);
++        } else {
++          ++mit;
++        }
++      }
++      if (mine.empty()) {
++        it = intersected.erase(it);
++      } else {
++        ++it;
++      }
++    }
++    if (intersected.empty()) {
++      break;
++    }
++  }
++
++  // Scan ONLY the intersected data blocks per file. No single-attribute
++  // per-tuple filter here (unlike the PF path's block.cc value-range
++  // filter) -- the driver (src/next_driver/next_honk.cpp) re-checks every
++  // predicate via Matches() on every tuple this returns.
++  TruncatedRangeDelIterator* tombstone_iter = nullptr;
++  for (const auto& file_entry : intersected) {
++    uint64_t hfile_number = file_entry.first;
++    if (file_entry.second.empty()) {
++      continue;
++    }
++    auto hfile_loc = storage_info_.GetFileLocation(hfile_number);
++    if (hfile_loc.GetLevel() == -1) {
++      continue;
++    }
++    const auto& file = storage_info_.LevelFilesBrief(hfile_loc.GetLevel())
++                           .files[hfile_loc.GetPosition()];
++
++    Cache::Handle* cache_handle = nullptr;
++    BlockBasedTable* bbt = GetBlockBasedTableForIM(
++        read_options, soptions, *file.file_metadata, &cache_handle);
++    if (bbt == nullptr) {
++      continue;
++    }
++
++    std::vector<BlockHandle> handles;
++    handles.reserve(file_entry.second.size());
++    for (const auto& kv : file_entry.second) {
++      handles.emplace_back(kv.first, kv.second);
++    }
++
++    std::unique_ptr<InternalIteratorBase<IndexValue>> index_iter(
++        new IMBlockHandleIndexIterator(std::move(handles)));
++
++    // IMPORTANT: BlockBasedTableIterator's data-block read
++    // (InitDataBlock -> NewDataBlockIterator<kData>, see
++    // table/block_based/block_based_table_reader_impl.h) dispatches on
++    // ro.iterator_context: non-null routes into the secondary-index
++    // per-tuple filter machinery (NewSecondaryIndexDataIterator1D /
++    // NewSpatialDataIterator depending on ro.is_secondary_index_scan/
++    // is_secondary_index_spatial) -- i.e. exactly the single-attribute
++    // filter IM must NOT apply. A heap copy of read_options with
++    // iterator_context nulled out routes into the plain, unfiltered
++    // Block::NewDataIterator instead, so every tuple in the intersected
++    // blocks comes back for the driver to post-filter. Heap (not arena)
++    // allocated so its lifetime is independent of table_iter's, and freed
++    // via RegisterCleanup below regardless of which allocator table_iter
++    // itself used.
++    ReadOptions* scan_ro = new ReadOptions(read_options);
++    scan_ro->iterator_context = nullptr;
++
++    InternalIterator* table_iter;
++    if (arena == nullptr) {
++      table_iter = new BlockBasedTableIterator(
++          bbt, *scan_ro, cfd_->internal_sec_comparator(),
++          std::move(index_iter), /*check_filter=*/false,
++          /*need_upper_bound_check=*/false, /*prefix_extractor=*/nullptr,
++          TableReaderCaller::kUserIterator);
++    } else {
++      void* mem = arena->AllocateAligned(sizeof(BlockBasedTableIterator));
++      table_iter = new (mem) BlockBasedTableIterator(
++          bbt, *scan_ro, cfd_->internal_sec_comparator(),
++          std::move(index_iter), /*check_filter=*/false,
++          /*need_upper_bound_check=*/false, /*prefix_extractor=*/nullptr,
++          TableReaderCaller::kUserIterator);
++    }
++    table_iter->RegisterCleanup(&DeleteHeapReadOptions, scan_ro, nullptr);
++    if (cache_handle != nullptr) {
++      table_iter->RegisterCleanup(&ReleaseIMTableCacheHandle,
++                                  cfd_->table_cache(), cache_handle);
++    }
++
++    if (read_options.ignore_range_deletions) {
++      merge_iter_builder->AddIterator(table_iter);
++    } else {
++      merge_iter_builder->AddPointAndTombstoneIterator(table_iter,
++                                                       tombstone_iter);
++    }
++  }
+ }
+ 
+ Status Version::OverlapWithLevelIterator(const ReadOptions& read_options,
+@@ -2240,9 +2591,10 @@ Version::Version(ColumnFamilyData* column_family_data, VersionSet* vset,
+           // TODO(PepperBun) based on the secondary index type
+           // the global_sec_index shall load different files
+           // global_rtree_.Load(mutable_cf_options.global_sec_index_loc);
+-          global_rtree_ = &vset->global_rtree_;
+-          // global_rtree_(vset->global_rtree_);
+-          // global_rtree_.Load(vset->global_rtree_loc_);
++          // NEXT (Task 2.4): bind to VersionSet's N global R-trees (one per
++          // indexed attribute) by pointer, so this Version always observes
++          // the VersionSet's current sizing/contents.
++          global_rtrees_ = &vset->global_rtrees_;
+         }
+       }
+ 
+@@ -5373,7 +5725,21 @@ VersionSet::VersionSet(const std::string& dbname,
+       block_cache_tracer_(block_cache_tracer),
+       io_tracer_(io_tracer),
+       db_session_id_(db_session_id) {
+-        global_rtree_.Load(global_rtree_loc_);
++        // NOTE (NEXT Task 3.1): global_rtrees_ is always size 0 here -- the
++        // ctor body runs strictly before MANIFEST replay (VersionSet::Recover
++        // -> VersionEditHandler::Iterate), so this Load loop remains a
++        // deliberate NO-OP for every num_sec_indexes. Reopen repopulation of
++        // the global R-trees now happens via replay: OnNonCfOperation feeds
++        // each version edit through the two-arg VersionBuilder::Apply, which
++        // lazily resizes + fills global_rtrees_ from MANIFEST-persisted
++        // SecValrange (same code path LogAndApplyHelper uses on the live
++        // write path). The on-disk global_sec_index_<i> files written by
++        // ~VersionSet()::Save() are kept as a redundant/optional on-disk
++        // artifact but are intentionally NOT loaded here, so this path can
++        // never race with or double-count against replay.
++        for (size_t i = 0; i < global_rtrees_.size(); ++i) {
++          global_rtrees_[i].Load(global_rtree_loc(i).c_str());
++        }
+       }
+ 
+ VersionSet::~VersionSet() {
+@@ -5390,7 +5756,17 @@ VersionSet::~VersionSet() {
+   obsolete_files_.clear();
+   io_status_.PermitUncheckedError();
+ 
+-  global_rtree_.Save(global_rtree_loc_);
++  // NEXT (Task 2.4): persist each of the N global R-trees under its own
++  // per-DB, per-attribute path (dbname_/global_sec_index_<i>) instead of
++  // the old single, cwd-relative "<<Global Index Component Directory>>".
++  // NOTE (NEXT Task 3.1): since MANIFEST replay now rebuilds global_rtrees_
++  // from SecValrange on reopen, these on-disk global_sec_index_<i> files are
++  // a redundant/optional artifact (nothing reads them back -- see the ctor
++  // and Reset() comments above/below). Left in place as a harmless no-op
++  // rather than removed, to keep this change minimal.
++  for (size_t i = 0; i < global_rtrees_.size(); ++i) {
++    global_rtrees_[i].Save(global_rtree_loc(i).c_str());
++  }
+ }
+ 
+ void VersionSet::Reset() {
+@@ -5422,7 +5798,24 @@ void VersionSet::Reset() {
+   obsolete_files_.clear();
+   obsolete_manifests_.clear();
+   wals_.Reset();
+-  global_rtree_.Load(global_rtree_loc_);
++  // NOTE (NEXT Task 3.1): Reset() is called by VersionSet::TryRecover()
++  // between retries when an earlier MANIFEST candidate failed replay
++  // partway through (version_set.cc TryRecover, ~:6380) -- by then the
++  // two-arg VersionBuilder::Apply (invoked from
++  // VersionEditHandler::OnNonCfOperation during that failed attempt) may
++  // already have lazily grown + partially populated global_rtrees_ from the
++  // aborted replay. Explicitly clear() it here (rather than relying on the
++  // now-generally-no-op Load loop below) so a retry on the next manifest
++  // candidate starts from an empty vector instead of double-counting
++  // leftover entries from the aborted attempt.
++  global_rtrees_.clear();
++  // The Load loop itself remains a deliberate NO-OP in the ordinary (single,
++  // successful-on-first-try) recovery path: see the ctor's comment above for
++  // why on-disk global_sec_index_<i> files are intentionally not reloaded
++  // here now that MANIFEST replay is the repopulation path.
++  for (size_t i = 0; i < global_rtrees_.size(); ++i) {
++    global_rtrees_[i].Load(global_rtree_loc(i).c_str());
++  }
+ }
+ 
+ void VersionSet::AppendVersion(ColumnFamilyData* column_family_data,
+@@ -6138,7 +6531,7 @@ Status VersionSet::LogAndApplyHelper(ColumnFamilyData* cfd,
+   assert(builder || edit->IsWalManipulation());
+   // return builder ? builder->Apply(edit) : Status::OK();
+   // std::cout << "log and apply" << std::endl;
+-  return builder ? builder->Apply(edit, &global_rtree_) : Status::OK();
++  return builder ? builder->Apply(edit, &global_rtrees_) : Status::OK();
+ }
+ 
+ Status VersionSet::GetCurrentManifestPath(const std::string& dbname,
+diff --git a/rocksdb-7.7.3/db/version_set.h b/rocksdb-7.7.3/db/version_set.h
+index 7ee63ceeaa62e60d6348ba673fb69bf78fd940d2..16db04cbc50ec42b97e45bcfd895e301baa7e3e9 100644
+--- a/rocksdb-7.7.3/db/version_set.h
++++ b/rocksdb-7.7.3/db/version_set.h
+@@ -84,6 +84,10 @@ class SystemClock;
+ class ManifestTailer;
+ class FilePickerMultiGet;
+ struct CompactionInputFiles;
++// NEXT (Phase 4, Task 4.1): forward-declared for GetBlockBasedTableForIM's
++// return type -- the full definition (table/block_based/
++// block_based_table_reader.h) is only needed in version_set.cc.
++class BlockBasedTable;
+ 
+ // VersionEdit is always supposed to be valid and it is used to point at
+ // entries in Manifest. Ideally it should not be used as a container to
+@@ -1005,8 +1009,11 @@ class Version {
+   // Currently this may be mannually adjusted
+   // (SecIndexType) Manually Changed is needed here
+   typedef RTree<GlobalSecIndexValue, double, 1, double> GlobalSecRtree;
+-  GlobalSecRtree* global_rtree_;
+-  // GlobalSecRtree global_rtree_;
++  // NEXT (Task 2.4): N global R-trees, one per indexed attribute. Owned by
++  // VersionSet::global_rtrees_; Version keeps a pointer to that vector
++  // (rather than copying it) so it always reflects VersionSet's current
++  // sizing, which is lazily grown to N at insert time.
++  std::vector<GlobalSecRtree>* global_rtrees_ = nullptr;
+ 
+  private:
+   Env* env_;
+@@ -1044,6 +1051,47 @@ class Version {
+     return true;
+   }
+ 
++  // NEXT (Phase 4, Task 4.1): IM (index merge). AddIteratorsForLevel
++  // delegates here when read_options.is_index_merge is set -- see
++  // db/version_set.cc for the full design note.
++  //
++  // For ONE (attr_id, serialized 1D ValueRange) predicate, enumerates the
++  // candidate PRIMARY data-block set {(filenum, offset) -> size} by running
++  // attr_id's OWN global R-tree search + per-SST sec-index scan, collecting
++  // index_iter_->value().handle (the sec-index entry's PRIMARY data-block
++  // handle) WITHOUT ever reading the kData block (NewDataBlockIterator is
++  // never called with BlockType::kData here).
++  std::map<uint64_t, std::map<uint64_t, uint64_t>> EnumerateIMCandidateDataBlocks(
++      uint32_t attr_id, const Slice& query_slice,
++      const ReadOptions& read_options, const FileOptions& soptions);
++
++  // Builds the actual IM scan: intersects EnumerateIMCandidateDataBlocks()'s
++  // output across every context->im_predicates entry by (filenum, offset),
++  // then feeds ONLY the intersected data-block handles per file through a
++  // real BlockBasedTableIterator (via a synthetic index iterator over just
++  // that handle list) so the existing data-block-reading machinery
++  // (InitDataBlock/NewDataBlockIterator<kData>) is reused unchanged. No
++  // single-attribute per-tuple filter is applied -- the driver
++  // (src/next_driver/next_honk.cpp) post-filters every predicate.
++  void AddIteratorsForLevelIndexMerge(const ReadOptions& read_options,
++                                      const FileOptions& soptions,
++                                      MergeIteratorBuilder* merge_iter_builder,
++                                      RtreeIteratorContext* context);
++
++  // Shared by both IM helpers above: returns the file's already-open
++  // TableReader (FileMetaData::fd.table_reader) if live, else acquires one
++  // via TableCache::FindTable (mirrors TableCache::NewIterator's own
++  // fd.table_reader-or-FindTable fallback, db/table_cache.cc). On the
++  // FindTable path, *cache_handle is set to the acquired Cache::Handle
++  // (caller must eventually release it -- directly for a short-lived
++  // enumeration, or via RegisterCleanup(&ReleaseIMTableCacheHandle, ...) on
++  // an iterator that outlives this call); nullptr otherwise. Returns nullptr
++  // (with *cache_handle untouched) on lookup failure.
++  BlockBasedTable* GetBlockBasedTableForIM(const ReadOptions& read_options,
++                                           const FileOptions& soptions,
++                                           const FileMetaData& file_meta,
++                                           Cache::Handle** cache_handle);
++
+   DECLARE_SYNC_AND_ASYNC(
+       /* ret_type */ Status, /* func_name */ MultiGetFromSST,
+       const ReadOptions& read_options, MultiGetRange file_range,
+@@ -1507,8 +1555,15 @@ class VersionSet {
+   // Currently this may be mannually adjusted
+   // (SecIndexType) Manually Changed is needed here
+   typedef RTree<GlobalSecIndexValue, double, 1, double> GlobalSecRtree;
+-  GlobalSecRtree global_rtree_;
+-  const char* global_rtree_loc_ = "<<Global Index Component Directory>>";
++  // NEXT (Task 2.4): N in-RAM global R-trees, one per indexed attribute.
++  // Lazily grown to N the first time a file carrying N SecValrange sets is
++  // applied (see VersionBuilder::Apply). Persisted per-attribute under
++  // dbname_/global_sec_index_<i> -- see global_rtree_loc() below (replaces
++  // the old fixed, cwd-relative global_rtree_loc_).
++  std::vector<GlobalSecRtree> global_rtrees_;
++  std::string global_rtree_loc(size_t i) const {
++    return dbname_ + "/global_sec_index_" + std::to_string(i);
++  }
+ 
+  protected:
+   using VersionBuilderMap =
+diff --git a/rocksdb-7.7.3/include/rocksdb/options.h b/rocksdb-7.7.3/include/rocksdb/options.h
+index 1fc71a58e8f4007f0bcfb49fecca7a0f5e6b7ec2..8f72ca759d1c047db6975cdae796c4f23288750c 100644
+--- a/rocksdb-7.7.3/include/rocksdb/options.h
++++ b/rocksdb-7.7.3/include/rocksdb/options.h
+@@ -1712,6 +1712,26 @@ struct ReadOptions {
+   bool is_secondary_index_spatial=true;
+   std::vector<std::pair<uint64_t, uint64_t>>* found_sec_blkhandle = new std::vector<std::pair<uint64_t, uint64_t>>();
+ 
++  // NEXT (Phase 3, Task 3.2): selects which of the N co-resident 1D
++  // secondary indexes (Phase 2) a secondary-index scan targets end-to-end --
++  // the global R-tree (db/version_set.cc), the per-SST sec-index reader
++  // (table/block_based/block_based_table_reader.cc), and the per-tuple
++  // value-range filter (table/block_based/block.cc, value offset
++  // 8*sec_attr_index) all key off this same field. Defaults to 0 so
++  // existing single-index (N=1) reads are byte-identical to before this was
++  // added.
++  uint32_t sec_attr_index = 0;
++
++  // NEXT (Phase 4, Task 4.1): enables IM (index merge). When true, the
++  // secondary-index scan (db/version_set.cc AddIteratorsForLevel) enumerates
++  // EACH predicate in RtreeIteratorContext::im_predicates' candidate PRIMARY
++  // data-block set from ITS OWN per-SST 1D sec-index, intersects the sets by
++  // (filenum, offset), and scans ONLY the intersection -- no
++  // single-attribute per-tuple filter is applied (the driver post-filters
++  // every predicate via Matches). Defaults to false so the PF path
++  // (sec_attr_index-driven, Phase 3) stays byte-identical when IM is off.
++  bool is_index_merge = false;
++
+   ReadOptions();
+   ReadOptions(bool cksum, bool cache);
+ };
+diff --git a/rocksdb-7.7.3/include/rocksdb/table.h b/rocksdb-7.7.3/include/rocksdb/table.h
+index f575b37609e54cf0e3813cd680507f0ee211db9c..808401d8a9aa6749da0d4f47b65bb897a670abde 100644
+--- a/rocksdb-7.7.3/include/rocksdb/table.h
++++ b/rocksdb-7.7.3/include/rocksdb/table.h
+@@ -21,6 +21,7 @@
+ #include <memory>
+ #include <string>
+ #include <unordered_map>
++#include <vector>
+ 
+ #include "rocksdb/cache.h"
+ #include "rocksdb/customizable.h"
+@@ -247,6 +248,16 @@ struct BlockBasedTableOptions {
+   };
+   SecondaryIndexType sec_index_type = kRtreeSec;
+ 
++  // NEXT: N co-resident 1D indexes; value carries N doubles at offsets 0,8,...
++  uint32_t num_sec_indexes = 1;
++
++  // NEXT (Phase 5): per-attribute gap threshold delta_i for the value-aware
++  // secondary-index split. Element i is the threshold for the sec-index over
++  // attribute i (routed by attr_offset = 8*i). A per-file sec-index value
++  // range is cut when the gap to the previous sorted value exceeds delta_i.
++  // Empty (the default) => per-index fallback of 0.005 (unchanged behavior).
++  std::vector<double> sec_index_deltas;
++
+   // The index type that will be used for the data block.
+   enum DataBlockIndexType : char {
+     kDataBlockBinarySearch = 0,   // traditional block type
+diff --git a/rocksdb-7.7.3/memtable/skiplistrep.cc b/rocksdb-7.7.3/memtable/skiplistrep.cc
+index a0998d8b9db092f74500ad5e9a9b2c7d4d7adb36..f990dce037f6746f1b9519ab9fe67bdc07a76e6a 100644
+--- a/rocksdb-7.7.3/memtable/skiplistrep.cc
++++ b/rocksdb-7.7.3/memtable/skiplistrep.cc
+@@ -450,10 +450,19 @@ class SkipListSecRep : public SkipListRep {
+                 IteratorContext* iterator_context)
+                 : SkipListRep::Iterator(list) {
+             if (iterator_context != nullptr){
+-          
++
+                 RtreeIteratorContext* context =
+                     reinterpret_cast<RtreeIteratorContext*>(iterator_context);
+                 Slice query_slice = Slice(context->query_mbr);
++                // NEXT (Task 3.2): which co-resident 1D index this scan
++                // targets; the per-tuple value filter reads offset
++                // 8*sec_attr_index_. Defaults to 0 (single-index behavior).
++                sec_attr_index_ = context->sec_attr_index;
++                // NEXT (Phase 4, Task 4.1): IM -- this Iterator never sees
++                // ReadOptions, only IteratorContext, so is_index_merge is
++                // mirrored onto RtreeIteratorContext (see util/rtree.h) for
++                // NextIfDisjoint() below to read.
++                is_index_merge_ = context->is_index_merge;
+ 
+                 // TODO(PepperBun): auto change type of secondary query attribute
+                 // Futurework: options for different sec value type
+@@ -494,27 +503,43 @@ class SkipListSecRep : public SkipListRep {
+         
+         Mbr query_mbr_;
+         ValueRange query_valrange_;
++        // NEXT (Task 3.2): which co-resident 1D index this scan targets;
++        // the per-tuple value filter reads offset 8*sec_attr_index_.
++        uint32_t sec_attr_index_ = 0;
++        // NEXT (Phase 4, Task 4.1): when true, skip the single-attribute
++        // per-tuple filter entirely -- the memtable has no SST data blocks
++        // to intersect, so under IM it must be scanned in FULL (every
++        // tuple), letting the driver's post-filter (Matches) catch a
++        // memtable record matching a non-driving attribute that this filter
++        // would otherwise have dropped.
++        bool is_index_merge_ = false;
+ 
+         // The NextIfDisjoint skip key if it does not intersect with the query mbr
+         void NextIfDisjoint() {
++          if (is_index_merge_) {
++            return;
++          }
+           if (Valid()) {
+             // Getting value and check the value
+             // If value is not intersected or equal, skip
+             Slice internal_key_slice = GetLengthPrefixedSlice(key());
+             Slice val_slice = GetLengthPrefixedSlice(internal_key_slice.data() + internal_key_slice.size());
+-            if (query_valrange_.empty()) {        
+-              // std::cout << "skip list mbr" << std::endl;     
++            if (query_valrange_.empty()) {
++              // std::cout << "skip list mbr" << std::endl;
+               Mbr mbr = ReadValueMbr(val_slice);
+               if (!IntersectMbrExcludeIID(mbr, query_mbr_)) {
+                 Next();
+               }
+             } else {
+-              double val_num = *reinterpret_cast<const double*>(val_slice.data());
++              // NEXT (Task 3.2): read the double for sec_attr_index_'s index
++              // (value layout [8B d_0]...[8B d_{N-1}][payload], index i <->
++              // offset 8*i), not always offset 0.
++              double val_num = *reinterpret_cast<const double*>(val_slice.data() + 8 * sec_attr_index_);
+               if (!IntersectValRangePoint(query_valrange_, val_num)) {
+                 Next();
+               }
+             }
+-          }  
++          }
+         }
+     };
+ 
+diff --git a/rocksdb-7.7.3/table/block_based/block.cc b/rocksdb-7.7.3/table/block_based/block.cc
+index 48363970c354994c86554af35b1c4c07b606a73e..6bdee5aa5de80fd30c146516f3388fefe2c1274e 100644
+--- a/rocksdb-7.7.3/table/block_based/block.cc
++++ b/rocksdb-7.7.3/table/block_based/block.cc
+@@ -1236,7 +1236,8 @@ DataBlockIter* Block::NewSecondaryIndexDataIterator1D(const Comparator* raw_ucmp
+                                       bool block_contents_pinned,
+                                       RtreeIteratorContext* context,
+                                       bool is_secondary_index_scan,
+-                                      bool is_secondary_index_spatial) {
++                                      bool is_secondary_index_spatial,
++                                      uint32_t sec_attr_index) {
+   // std::cout << "created new spatial data iterator" << std::endl;
+   DataBlockIter* ret_iter;
+   if (iter != nullptr) {
+@@ -1269,7 +1270,7 @@ DataBlockIter* Block::NewSecondaryIndexDataIterator1D(const Comparator* raw_ucmp
+           raw_ucmp, data_, restart_offset_, num_restarts_, global_seqno,
+           read_amp_bitmap_.get(), block_contents_pinned,
+           data_block_hash_index_.Valid() ? &data_block_hash_index_ : nullptr, context->query_mbr,
+-          is_secondary_index_scan, is_secondary_index_spatial);       
++          is_secondary_index_scan, is_secondary_index_spatial, sec_attr_index);
+     }
+ 
+     if (read_amp_bitmap_) {
+@@ -1449,7 +1450,11 @@ bool DataBlockIter::IntersectValueRangePoint(
+ 
+     double aa_val;
+ 
+-    aa_val = *reinterpret_cast<const double*>(aa.data());
++    // NEXT (Task 3.2): read the double belonging to sec_attr_index_'s
++    // co-resident 1D index (value layout: [8B d_0]...[8B d_{N-1}][payload],
++    // index i <-> offset 8*i -- Phase 2), not always offset 0. Defaults to
++    // sec_attr_index_==0 so N=1 callers are unaffected.
++    aa_val = *reinterpret_cast<const double*>(aa.data() + 8 * sec_attr_index_);
+     if (aa_val > bb.range.max || bb.range.min > aa_val) {
+       return false;
+     }
+diff --git a/rocksdb-7.7.3/table/block_based/block.h b/rocksdb-7.7.3/table/block_based/block.h
+index e8487398f9a4f1dc41b16afe7ac3ef3814447bd0..e91ea894f326caccb3bf8a0d6e8f8c23d5e8fe6f 100644
+--- a/rocksdb-7.7.3/table/block_based/block.h
++++ b/rocksdb-7.7.3/table/block_based/block.h
+@@ -219,7 +219,8 @@ class Block {
+                                  bool block_contents_pinned,
+                                  RtreeIteratorContext* context,
+                                  bool is_secondary_index_scan,
+-                                 bool is_secondary_index_spatial);
++                                 bool is_secondary_index_spatial,
++                                 uint32_t sec_attr_index);
+ 
+   // Returns an MetaBlockIter for iterating over blocks containing metadata
+   // (like Properties blocks).  Unlike data blocks, the keys for these blocks
+@@ -626,7 +627,8 @@ class DataBlockIter : public BlockIter<Slice> {
+                   DataBlockHashIndex* data_block_hash_index,
+                   const std::string& query,
+                   bool is_secondary_index_scan,
+-                  bool is_secondary_index_spatial) {
++                  bool is_secondary_index_spatial,
++                  uint32_t sec_attr_index = 0) {
+     InitializeBase(raw_ucmp, data, restarts, num_restarts, global_seqno,
+                    block_contents_pinned);
+     raw_key_.SetIsUserKey(false);
+@@ -637,8 +639,13 @@ class DataBlockIter : public BlockIter<Slice> {
+     query_valrange_ = ReadValueRange(query_slice);
+     is_spatial_ = is_secondary_index_spatial;
+     is_sec_index_scan_ = is_secondary_index_scan;
++    // NEXT (Task 3.2): selects which of the N co-resident 1D indexes'
++    // value (offset 8*sec_attr_index) this iterator's per-tuple filter
++    // (IntersectValueRangePoint) reads. Defaults to 0 (byte-identical to
++    // pre-Task-3.2 behavior for N=1 / unset callers).
++    sec_attr_index_ = sec_attr_index;
+     // std::cout << "query_valrange_: " << query_valrange_ << std::endl;
+-  }  
++  }
+ 
+   Slice value() const override {
+     assert(Valid());
+@@ -718,6 +725,9 @@ class DataBlockIter : public BlockIter<Slice> {
+   bool is_sec_index_scan_;
+   Mbr query_mbr_;
+   ValueRange query_valrange_;
++  // NEXT (Task 3.2): which of the N co-resident 1D indexes' value (offset
++  // 8*sec_attr_index_ in the record value) IntersectValueRangePoint reads.
++  uint32_t sec_attr_index_ = 0;
+ 
+   bool IntersectMbr(
+         const Slice& aa_orig,
+diff --git a/rocksdb-7.7.3/table/block_based/block_based_table_builder.cc b/rocksdb-7.7.3/table/block_based/block_based_table_builder.cc
+index ffc7ec585ac68c92bbc630873421717710067034..4d92fa6cc426f0f2749f14006c687cf968aeea3b 100644
+--- a/rocksdb-7.7.3/table/block_based/block_based_table_builder.cc
++++ b/rocksdb-7.7.3/table/block_based/block_based_table_builder.cc
+@@ -272,7 +272,11 @@ struct BlockBasedTableBuilder::Rep {
+ 
+   InternalKeySliceTransform internal_prefix_transform;
+   std::unique_ptr<IndexBuilder> index_builder;
+-  std::unique_ptr<SecondaryIndexBuilder> sec_index_builder;
++  // NEXT: N co-resident 1D sec-index builders, one per indexed attribute
++  // (builder i reads the double at value byte-offset 8*i). With
++  // num_sec_indexes == 1 (default) this holds exactly the single builder
++  // unmodified NEXT would have built, under index 0.
++  std::vector<std::unique_ptr<SecondaryIndexBuilder>> sec_index_builders;
+   PartitionedIndexBuilder* p_index_builder_ = nullptr;
+ 
+   std::string last_key;
+@@ -489,10 +493,18 @@ struct BlockBasedTableBuilder::Rep {
+           table_options));
+     }
+     if (table_options.create_secondary_index == true) {
+-      sec_index_builder.reset(SecondaryIndexBuilder::CreateSecIndexBuilder(
+-        table_options.sec_index_type, &internal_comparator,
+-        &this->internal_prefix_transform, use_delta_encoding_for_index_values,
+-        table_options));
++      // NEXT: build one OneD sec-index builder per co-resident attribute;
++      // builder i reads the double at value byte-offset 8*i. Defaults to
++      // num_sec_indexes == 1, i.e. exactly the single builder unmodified
++      // NEXT would have built.
++      sec_index_builders.clear();
++      sec_index_builders.reserve(table_options.num_sec_indexes);
++      for (uint32_t i = 0; i < table_options.num_sec_indexes; i++) {
++        sec_index_builders.emplace_back(SecondaryIndexBuilder::CreateSecIndexBuilder(
++          table_options.sec_index_type, &internal_comparator,
++          &this->internal_prefix_transform, use_delta_encoding_for_index_values,
++          table_options, /* attr_offset */ 8 * static_cast<size_t>(i)));
++      }
+         // std::cout << "sec index builder success" << std::endl;
+         // sec_index_builder.reset(RtreeSecondaryIndexBuilder::CreateIndexBuilder());
+     }
+@@ -976,7 +988,12 @@ void BlockBasedTableBuilder::Add(const Slice& key, const Slice& value) {
+           r->index_builder->AddIndexEntry(&r->last_key, &key,
+                                           r->pending_handle);
+           if (r->table_options.create_secondary_index) {
+-            r->sec_index_builder->AddIndexEntry(&r->last_key, &key, r->pending_handle);
++            // NEXT: all N sec-index builders get the SAME pending_handle —
++            // this shared-handle invariant is what makes Phase-4 block
++            // intersection exact.
++            for (auto& b : r->sec_index_builders) {
++              b->AddIndexEntry(&r->last_key, &key, r->pending_handle);
++            }
+           }
+         }
+       }
+@@ -1005,7 +1022,9 @@ void BlockBasedTableBuilder::Add(const Slice& key, const Slice& value) {
+       if (!r->IsParallelCompressionEnabled()) {
+         r->index_builder->OnKeyAdded(key);
+         if (r->table_options.create_secondary_index) {
+-          r->sec_index_builder->OnKeyAdded(value);
++          for (auto& b : r->sec_index_builders) {
++            b->OnKeyAdded(value);
++          }
+         }
+       }
+     }
+@@ -1388,8 +1407,12 @@ void BlockBasedTableBuilder::BGWorkWriteRawBlock() {
+       r->index_builder->AddIndexEntry(&(block_rep->keys->Back()), nullptr,
+                                       r->pending_handle);
+       if (r->table_options.create_secondary_index) {
+-        r->sec_index_builder->AddIndexEntry(&(block_rep->keys->Back()), nullptr,
+-                                        r->pending_handle);
++        // NEXT: same pending_handle fed to all N builders (shared-handle
++        // invariant).
++        for (auto& b : r->sec_index_builders) {
++          b->AddIndexEntry(&(block_rep->keys->Back()), nullptr,
++                            r->pending_handle);
++        }
+       }
+     } else {
+       Slice first_key_in_next_block =
+@@ -1398,9 +1421,10 @@ void BlockBasedTableBuilder::BGWorkWriteRawBlock() {
+                                       &first_key_in_next_block,
+                                       r->pending_handle);
+       if (r->table_options.create_secondary_index) {
+-        r->sec_index_builder->AddIndexEntry(&(block_rep->keys->Back()),
+-                                      &first_key_in_next_block,
+-                                      r->pending_handle);
++        for (auto& b : r->sec_index_builders) {
++          b->AddIndexEntry(&(block_rep->keys->Back()),
++                            &first_key_in_next_block, r->pending_handle);
++        }
+       }
+     }
+ 
+@@ -1692,72 +1716,92 @@ void BlockBasedTableBuilder::WriteSecIndexBlock(
+   }
+   // std::cout << "enter writesecindexblock" << std::endl;
+   if (rep_->table_options.create_secondary_index == true) {
+-    SecondaryIndexBuilder::IndexBlocks sec_index_blocks; 
+-    BlockHandle sec_index_block_handle;
+-    auto sec_index_builder_status = rep_->sec_index_builder->Finish(&sec_index_blocks);
+-    if (sec_index_builder_status.IsIncomplete()) {
+-      // We we have more than one index partition then meta_blocks are not
+-      // supported for the index. Currently meta_blocks are used only by
+-      // HashIndexBuilder which is not multi-partition.
+-      assert(sec_index_blocks.meta_blocks.empty());
+-    } else if (ok() && !sec_index_builder_status.ok()) {
+-      rep_->SetStatus(sec_index_builder_status);
+-    }
+-    if (ok()) {
+-      // std::cout << "ok before write block" << std::endl;
+-      for (const auto& item : sec_index_blocks.meta_blocks) {
+-        BlockHandle block_handle;
+-        WriteBlock(item.second, &block_handle, BlockType::kIndex);
+-        if (!ok()) {
+-          break;
+-        }
+-        // std::cout << "Meta_index_builder Sec Index Block item.first: " << item.first << std::endl;
+-        meta_index_builder->Add(item.first, block_handle);
++    // NEXT: one metablock per co-resident index. Index 0 KEEPS the exact
++    // name "rocksdb.SecondaryIndexBlock" the unmodified reader looks up
++    // (FindMetaBlock by that literal name) -- required so the N=1 path is
++    // byte-identical to unmodified NEXT. Additional indexes (i>=1) get a
++    // distinct suffixed name; they are not yet consumed by the (unchanged)
++    // reader -- that lands in Phase 3+.
++    for (size_t i = 0; i < rep_->sec_index_builders.size(); i++) {
++      auto& sec_index_builder = rep_->sec_index_builders[i];
++      std::string sec_index_blk_name = "rocksdb.SecondaryIndexBlock";
++      if (i > 0) {
++        sec_index_blk_name += "." + std::to_string(i);
+       }
+-    }
+-    if (ok()) {
+-      // std::cout << "before write raw block" << std::endl;
+-      // secondary index does not support parallel compression at this state
+-      WriteRawBlock(sec_index_blocks.index_block_contents, kNoCompression,
+-                      &sec_index_block_handle, BlockType::kIndex);
+-    }
+-    // If there are more index partitions, finish them and write them out
+-    if (sec_index_builder_status.IsIncomplete()) {
+-      bool sec_index_building_finished = false;
+-      while (ok() && !sec_index_building_finished) {
+-        Status s =
+-            rep_->sec_index_builder->Finish(&sec_index_blocks, sec_index_block_handle);
+-        if (s.ok()) {
+-          sec_index_building_finished = true;
+-        } else if (s.IsIncomplete()) {
+-          // More partitioned index after this one
+-          assert(!sec_index_building_finished);
+-        } else {
+-          // Error
+-          rep_->SetStatus(s);
+-          return;
+-        }
+-
+-        // Secondary index does not support parallel compression 
+-        WriteRawBlock(sec_index_blocks.index_block_contents, kNoCompression,
+-                        &sec_index_block_handle, BlockType::kIndex);
+-        
+-        // The last index_block_handle will be for the partition index block
++      SecondaryIndexBuilder::IndexBlocks sec_index_blocks;
++      BlockHandle sec_index_block_handle;
++      auto sec_index_builder_status = sec_index_builder->Finish(&sec_index_blocks);
++      if (sec_index_builder_status.IsIncomplete()) {
++        // We we have more than one index partition then meta_blocks are not
++        // supported for the index. Currently meta_blocks are used only by
++        // HashIndexBuilder which is not multi-partition.
++        assert(sec_index_blocks.meta_blocks.empty());
++      } else if (ok() && !sec_index_builder_status.ok()) {
++        rep_->SetStatus(sec_index_builder_status);
+       }
+       if (ok()) {
++        // std::cout << "ok before write block" << std::endl;
+         for (const auto& item : sec_index_blocks.meta_blocks) {
+           BlockHandle block_handle;
+           WriteBlock(item.second, &block_handle, BlockType::kIndex);
+           if (!ok()) {
+             break;
+           }
++          std::string meta_blk_name = item.first;
++          if (i > 0) {
++            meta_blk_name += "." + std::to_string(i);
++          }
+           // std::cout << "Meta_index_builder Sec Index Block item.first: " << item.first << std::endl;
+-          meta_index_builder->Add(item.first, block_handle);
++          meta_index_builder->Add(meta_blk_name, block_handle);
+         }
+       }
+-      std::string sec_index_blk_name = "rocksdb.SecondaryIndexBlock";
+-      // std::cout << "meta_index_builder added" << std::endl;
+-      meta_index_builder->Add(sec_index_blk_name, sec_index_block_handle);
++      if (ok()) {
++        // std::cout << "before write raw block" << std::endl;
++        // secondary index does not support parallel compression at this state
++        WriteRawBlock(sec_index_blocks.index_block_contents, kNoCompression,
++                        &sec_index_block_handle, BlockType::kIndex);
++      }
++      // If there are more index partitions, finish them and write them out
++      if (sec_index_builder_status.IsIncomplete()) {
++        bool sec_index_building_finished = false;
++        while (ok() && !sec_index_building_finished) {
++          Status s =
++              sec_index_builder->Finish(&sec_index_blocks, sec_index_block_handle);
++          if (s.ok()) {
++            sec_index_building_finished = true;
++          } else if (s.IsIncomplete()) {
++            // More partitioned index after this one
++            assert(!sec_index_building_finished);
++          } else {
++            // Error
++            rep_->SetStatus(s);
++            return;
++          }
++
++          // Secondary index does not support parallel compression
++          WriteRawBlock(sec_index_blocks.index_block_contents, kNoCompression,
++                          &sec_index_block_handle, BlockType::kIndex);
++
++          // The last index_block_handle will be for the partition index block
++        }
++        if (ok()) {
++          for (const auto& item : sec_index_blocks.meta_blocks) {
++            BlockHandle block_handle;
++            WriteBlock(item.second, &block_handle, BlockType::kIndex);
++            if (!ok()) {
++              break;
++            }
++            std::string meta_blk_name = item.first;
++            if (i > 0) {
++              meta_blk_name += "." + std::to_string(i);
++            }
++            // std::cout << "Meta_index_builder Sec Index Block item.first: " << item.first << std::endl;
++            meta_index_builder->Add(meta_blk_name, block_handle);
++          }
++        }
++        // std::cout << "meta_index_builder added" << std::endl;
++        meta_index_builder->Add(sec_index_blk_name, sec_index_block_handle);
++      }
+     }
+   }
+ }
+@@ -2051,8 +2095,10 @@ void BlockBasedTableBuilder::EnterUnbuffered() {
+         }
+         r->index_builder->OnKeyAdded(key);
+         if (r->table_options.create_secondary_index) {
+-          r->sec_index_builder->OnKeyAdded(value);
+-        }  
++          for (auto& b : r->sec_index_builders) {
++            b->OnKeyAdded(value);
++          }
++        }
+       }
+       WriteBlock(Slice(data_block), &r->pending_handle, BlockType::kData);
+       if (ok() && i + 1 < r->data_block_buffers.size()) {
+@@ -2066,8 +2112,12 @@ void BlockBasedTableBuilder::EnterUnbuffered() {
+         r->index_builder->AddIndexEntry(&last_key, first_key_in_next_block_ptr,
+                                         r->pending_handle);
+         if (r->table_options.create_secondary_index) {
+-          r->sec_index_builder->AddIndexEntry(&last_key, first_key_in_next_block_ptr,
+-                                        r->pending_handle);
++          // NEXT: same pending_handle fed to all N builders (shared-handle
++          // invariant).
++          for (auto& b : r->sec_index_builders) {
++            b->AddIndexEntry(&last_key, first_key_in_next_block_ptr,
++                              r->pending_handle);
++          }
+         }
+       }
+     }
+@@ -2106,7 +2156,10 @@ Status BlockBasedTableBuilder::Finish() {
+       r->index_builder->AddIndexEntry(
+           &r->last_key, nullptr /* no next data block */, r->pending_handle);
+           if (r->table_options.create_secondary_index) {
+-            r->sec_index_builder->AddIndexEntry(&r->last_key, nullptr /* no next data block */, r->pending_handle);
++            for (auto& b : r->sec_index_builders) {
++              b->AddIndexEntry(&r->last_key, nullptr /* no next data block */,
++                                r->pending_handle);
++            }
+           }
+     }
+   }
+@@ -2223,11 +2276,19 @@ void BlockBasedTableBuilder::SetSeqnoTimeTableProperties(
+ }
+ 
+ void BlockBasedTableBuilder::GetSecondaryEntries(
+-  std::vector<std::pair<std::string, BlockHandle>>* sec_entries) {
+-  std::vector<std::pair<std::string, BlockHandle>> secondary_entries;
+-  rep_->sec_index_builder->get_Secondary_Entries(&secondary_entries);
+-  *sec_entries = secondary_entries;
+-  secondary_entries.clear();
++  std::vector<std::vector<std::pair<std::string, BlockHandle>>>* sec_entries) {
++  // NEXT (Task 2.3): return one entry-set per co-resident sec-index builder
++  // (outer index = attribute i, matching Task 2.2's attr_offset = 8*i). This
++  // feeds FileMetaData::SecValrange[i] via FileMetaData::UpdateSecEntries.
++  std::vector<std::vector<std::pair<std::string, BlockHandle>>> secondary_entries_sets;
++  secondary_entries_sets.reserve(rep_->sec_index_builders.size());
++  for (auto& b : rep_->sec_index_builders) {
++    std::vector<std::pair<std::string, BlockHandle>> secondary_entries;
++    b->get_Secondary_Entries(&secondary_entries);
++    secondary_entries_sets.emplace_back(std::move(secondary_entries));
++  }
++  *sec_entries = secondary_entries_sets;
++  secondary_entries_sets.clear();
+ }
+ 
+ const std::string BlockBasedTable::kObsoleteFilterBlockPrefix = "filter.";
+diff --git a/rocksdb-7.7.3/table/block_based/block_based_table_builder.h b/rocksdb-7.7.3/table/block_based/block_based_table_builder.h
+index 22ba51a6ceae1804a636595141260089c966aefa..e85735e2cefcf61c387dab1cdc055569a695e209 100644
+--- a/rocksdb-7.7.3/table/block_based/block_based_table_builder.h
++++ b/rocksdb-7.7.3/table/block_based/block_based_table_builder.h
+@@ -104,7 +104,7 @@ class BlockBasedTableBuilder : public TableBuilder {
+       const std::string& encoded_seqno_to_time_mapping,
+       uint64_t oldest_ancestor_time) override;
+ 
+-  void GetSecondaryEntries(std::vector<std::pair<std::string, BlockHandle>>* sec_entries) override;
++  void GetSecondaryEntries(std::vector<std::vector<std::pair<std::string, BlockHandle>>>* sec_entries) override;
+ 
+  private:
+   bool ok() const { return status().ok(); }
+diff --git a/rocksdb-7.7.3/table/block_based/block_based_table_reader.cc b/rocksdb-7.7.3/table/block_based/block_based_table_reader.cc
+index b43972adea22a150d8afa499aa69957718b774df..961e7c694135b23c46a57a4e025a7a32da2fa965 100644
+--- a/rocksdb-7.7.3/table/block_based/block_based_table_reader.cc
++++ b/rocksdb-7.7.3/table/block_based/block_based_table_reader.cc
+@@ -1141,21 +1141,47 @@ Status BlockBasedTable::PrefetchIndexAndFilterBlocks(
+ 
+   rep_->index_reader = std::move(index_reader);
+ 
+-  // create secondary index reader
+-  // to prevent contentionn with pk index reader, a separated reader is needed
++  // create secondary index reader(s)
++  // to prevent contentionn with pk index reader, separated reader(s) are
++  // needed.
++  // NEXT (Task 3.2): discover how many co-resident sec-index metablocks this
++  // SST actually has by probing "rocksdb.SecondaryIndexBlock" (attr 0,
++  // unsuffixed -- required so the N=1 path is byte-identical to unmodified
++  // NEXT), then ".1", ".2", ... until one is absent (Phase 2 write format).
++  // This makes rep_->sec_index_readers robust to whatever N the file was
++  // written with, rather than hardcoding N=1.
+   if (table_options.create_sec_index_reader) {
+-    std::unique_ptr<IndexReader> sec_index_reader;
+     bool is_sec_index_spatial = true;
+     if(table_options.sec_index_type == BlockBasedTableOptions::kOneDRtreeSec) {
+       is_sec_index_spatial = false;
+     }
+-    s = new_table->CreateSecIndexReader(ro, is_sec_index_spatial, prefetch_buffer, meta_iter, use_cache,
+-                                    prefetch_index, pin_index, lookup_context,
+-                                    &sec_index_reader);
+ 
+-    if (!s.ok()) {return s;}
++    std::vector<size_t> present_attr_indices;
++    for (size_t i = 0; ; i++) {
++      std::string blk_name = "rocksdb.SecondaryIndexBlock";
++      if (i > 0) {
++        blk_name += "." + std::to_string(i);
++      }
++      BlockHandle probe_handle;
++      Status probe_s = FindOptionalMetaBlock(meta_iter, blk_name, &probe_handle);
++      if (!probe_s.ok() || probe_handle.IsNull()) {
++        break;
++      }
++      present_attr_indices.push_back(i);
++    }
++
++    rep_->sec_index_readers.clear();
++    rep_->sec_index_readers.reserve(present_attr_indices.size());
++    for (size_t attr_index : present_attr_indices) {
++      std::unique_ptr<IndexReader> sec_index_reader;
++      s = new_table->CreateSecIndexReader(ro, is_sec_index_spatial, prefetch_buffer, meta_iter, use_cache,
++                                      prefetch_index, pin_index, lookup_context,
++                                      attr_index, &sec_index_reader);
+ 
+-    rep_->sec_index_reader = std::move(sec_index_reader);
++      if (!s.ok()) {return s;}
++
++      rep_->sec_index_readers.push_back(std::move(sec_index_reader));
++    }
+   }
+ 
+   // The partitions of partitioned index are always stored in cache. They
+@@ -1167,7 +1193,12 @@ Status BlockBasedTable::PrefetchIndexAndFilterBlocks(
+       if (!s.ok()) {
+         return s;
+       }
+-      s = rep_->sec_index_reader->CacheDependencies(ro, pin_partition);
++      for (auto& sec_index_reader : rep_->sec_index_readers) {
++        s = sec_index_reader->CacheDependencies(ro, pin_partition);
++        if (!s.ok()) {
++          return s;
++        }
++      }
+     }
+   }
+   if (!s.ok()) {
+@@ -1253,8 +1284,10 @@ size_t BlockBasedTable::ApproximateMemoryUsage() const {
+   if (rep_->index_reader) {
+     usage += rep_->index_reader->ApproximateMemoryUsage();
+   }
+-  if (rep_->sec_index_reader) {
+-    usage += rep_->sec_index_reader->ApproximateMemoryUsage();
++  for (const auto& sec_index_reader : rep_->sec_index_readers) {
++    if (sec_index_reader) {
++      usage += sec_index_reader->ApproximateMemoryUsage();
++    }
+   }
+   if (rep_->uncompression_dict_reader) {
+     usage += rep_->uncompression_dict_reader->ApproximateMemoryUsage();
+@@ -1576,10 +1609,21 @@ InternalIteratorBase<IndexValue>* BlockBasedTable::NewIndexIterator(
+   // We don't return pinned data from index blocks, so no need
+   // to set `block_contents_pinned`.
+   if (read_options.is_secondary_index_scan) {
+-    assert(rep_->sec_index_reader != nullptr);
+-    return rep_->sec_index_reader->NewIterator(read_options, disable_prefix_seek,
+-                                              input_iter, get_context,
+-                                              lookup_context);
++    assert(!rep_->sec_index_readers.empty());
++    // NEXT (Task 3.2): select which of the N co-resident per-SST sec-index
++    // readers to use. Bounds-guarded: an out-of-range sec_attr_index (should
++    // not happen when callers keep it consistent with the DB's N -- the
++    // global R-tree bounds guard in version_set.cc already screens most such
++    // cases before any per-SST iterator is even requested) yields an error
++    // iterator instead of an out-of-bounds access.
++    uint32_t attr_idx = read_options.sec_attr_index;
++    if (attr_idx >= rep_->sec_index_readers.size()) {
++      return NewErrorInternalIterator<IndexValue>(Status::InvalidArgument(
++          "sec_attr_index out of range for this SST's sec-index readers"));
++    }
++    return rep_->sec_index_readers[attr_idx]->NewIterator(
++        read_options, disable_prefix_seek, input_iter, get_context,
++        lookup_context);
+   } else {
+     return rep_->index_reader->NewIterator(read_options, disable_prefix_seek,
+                                           input_iter, get_context,
+@@ -1627,12 +1671,14 @@ DataBlockIter* BlockBasedTable::InitBlockIterator<DataBlockIter>(
+ template <>
+ DataBlockIter* BlockBasedTable::InitBlockIterator<DataBlockIter>(
+     bool is_secondary_index_scan, bool is_secondary_index_spatial,
++    uint32_t sec_attr_index,
+     const Rep* rep, Block* block, BlockType block_type,
+     DataBlockIter* input_iter, bool block_contents_pinned, RtreeIteratorContext* iterator_context) {
+   return block->NewSecondaryIndexDataIterator1D(rep->internal_comparator.user_comparator(),
+                                 rep->get_global_seqno(block_type), input_iter,
+                                 rep->ioptions.stats, block_contents_pinned, iterator_context,
+-                                is_secondary_index_scan, is_secondary_index_spatial);
++                                is_secondary_index_scan, is_secondary_index_spatial,
++                                sec_attr_index);
+ }
+ 
+ // template <>
+@@ -1648,13 +1694,15 @@ DataBlockIter* BlockBasedTable::InitBlockIterator<DataBlockIter>(
+ 
+ template <>
+ IndexBlockIter* BlockBasedTable::InitBlockIterator<IndexBlockIter>(
+-    bool is_secondary_index_scan, bool is_secondary_index_spatial, 
++    bool is_secondary_index_scan, bool is_secondary_index_spatial,
++    uint32_t sec_attr_index,
+     const Rep* rep, Block* block, BlockType block_type,
+-    IndexBlockIter* input_iter, bool block_contents_pinned, 
++    IndexBlockIter* input_iter, bool block_contents_pinned,
+     RtreeIteratorContext* iterator_context) {
+   (void)is_secondary_index_scan;
+   (void)iterator_context;
+   (void)is_secondary_index_spatial;
++  (void)sec_attr_index;
+   return block->NewIndexIterator(
+       rep->internal_comparator.user_comparator(),
+       rep->get_global_seqno(block_type), input_iter, rep->ioptions.stats,
+@@ -2797,9 +2845,11 @@ Status BlockBasedTable::CreateIndexReader(
+       //                                     index_reader);
+     }
+     case BlockBasedTableOptions::KRtreeSecSearch:{
++      // NEXT (Task 3.2): this is the *primary* index reader factory
++      // (CreateIndexReader), not the N-way sec-index path -- always attr 0.
+       return RtreeSecIndexReader::Create(this, ro, prefetch_buffer, meta_iter,
+                                           use_cache, prefetch, pin, lookup_context,
+-                                          index_reader);
++                                          /*attr_index=*/0, index_reader);
+     }
+     default: {
+       std::string error_message =
+@@ -2814,19 +2864,19 @@ Status BlockBasedTable::CreateSecIndexReader(
+     const ReadOptions& ro, bool is_sec_index_spatial,
+     FilePrefetchBuffer* prefetch_buffer,
+     InternalIterator* meta_iter, bool use_cache, bool prefetch, bool pin,
+-    BlockCacheLookupContext* lookup_context,
++    BlockCacheLookupContext* lookup_context, size_t sec_attr_index,
+     std::unique_ptr<IndexReader>* sec_index_reader) {
+   // std::cout << "start CreateSecIndexReader"  << std::endl;
+ 
+   if (is_sec_index_spatial) {
+     return RtreeSecIndexReader::Create(this, ro, prefetch_buffer, meta_iter,
+                                           use_cache, prefetch, pin, lookup_context,
+-                                          sec_index_reader);    
++                                          sec_attr_index, sec_index_reader);
+   } else {
+     // std::cout << "create onedrtreesecindexreader" << std::endl;
+     return OneDRtreeSecIndexReader::Create(this, ro, prefetch_buffer, meta_iter,
+                                           use_cache, prefetch, pin, lookup_context,
+-                                          sec_index_reader); 
++                                          sec_attr_index, sec_index_reader);
+   }
+ 
+ }
+diff --git a/rocksdb-7.7.3/table/block_based/block_based_table_reader.h b/rocksdb-7.7.3/table/block_based/block_based_table_reader.h
+index 30d953d6c2d7c9b8bb1a787613ca085b060c995e..34a00c825681d99904e084434d0e636133a1b334 100644
+--- a/rocksdb-7.7.3/table/block_based/block_based_table_reader.h
++++ b/rocksdb-7.7.3/table/block_based/block_based_table_reader.h
+@@ -358,8 +358,14 @@ class BlockBasedTable : public TableReader {
+                                        bool block_contents_pinned,
+                                        RtreeIteratorContext* iterator_context);
+ 
++  // NEXT (Task 3.2): sec_attr_index selects which of the N co-resident 1D
++  // indexes this data block iterator filters against (value offset
++  // 8*sec_attr_index in Block::NewSecondaryIndexDataIterator1D /
++  // DataBlockIter::IntersectValueRangePoint). Ignored by the IndexBlockIter
++  // specialization (index navigation doesn't need it).
+   template <typename TBlockIter>
+-  static TBlockIter* InitBlockIterator(bool is_secondary_index_scan, bool is_secondary_index_spatial, 
++  static TBlockIter* InitBlockIterator(bool is_secondary_index_scan, bool is_secondary_index_spatial,
++                                       uint32_t sec_attr_index,
+                                        const Rep* rep, Block* block,
+                                        BlockType block_type,
+                                        TBlockIter* input_iter,
+@@ -473,6 +479,12 @@ class BlockBasedTable : public TableReader {
+   // May not make such a call if filter policy says that key is not present.
+   friend class TableCache;
+   friend class BlockBasedTableBuilder;
++  // NEXT (Phase 4, Task 4.1): Version::EnumerateIMCandidateDataBlocks
++  // (db/version_set.cc) calls NewIndexIterator directly to enumerate a
++  // per-attribute candidate PRIMARY data-block set (via the per-SST
++  // sec-index reader) WITHOUT constructing a full BlockBasedTableIterator
++  // -- i.e. without ever touching a kData block.
++  friend class Version;
+ 
+   // Create a index reader based on the index type stored in the table.
+   // Optionally, user can pass a preloaded meta_index_iter for the index that
+@@ -485,11 +497,15 @@ class BlockBasedTable : public TableReader {
+                            BlockCacheLookupContext* lookup_context,
+                            std::unique_ptr<IndexReader>* index_reader);
+ 
++  // NEXT (Task 3.2): sec_attr_index selects which of the N co-resident
++  // per-SST sec-index metablocks (index 0 = "rocksdb.SecondaryIndexBlock",
++  // index i>=1 = ".<i>" suffixed, per Phase 2) this reader is built from.
+   Status CreateSecIndexReader(const ReadOptions& ro, bool is_sec_index_spatial,
+                            FilePrefetchBuffer* prefetch_buffer,
+                            InternalIterator* preloaded_meta_index_iter,
+                            bool use_cache, bool prefetch, bool pin,
+                            BlockCacheLookupContext* lookup_context,
++                           size_t sec_attr_index,
+                            std::unique_ptr<IndexReader>* sec_index_reader);
+ 
+   bool FullFilterKeyMayMatch(FilterBlockReader* filter, const Slice& user_key,
+@@ -622,7 +638,13 @@ struct BlockBasedTable::Rep {
+   Footer footer;
+ 
+   std::unique_ptr<IndexReader> index_reader;
+-  std::unique_ptr<IndexReader> sec_index_reader;
++  // NEXT (Task 3.2): one reader per co-resident 1D sec-index metablock
++  // present in this SST (index 0 = "rocksdb.SecondaryIndexBlock", index
++  // i>=1 = ".<i>" suffixed -- Phase 2). Populated in
++  // PrefetchIndexAndFilterBlocks by probing metablock names until one is
++  // absent, so this is robust to whatever N the SST was written with.
++  // ReadOptions::sec_attr_index selects the element used by NewIndexIterator.
++  std::vector<std::unique_ptr<IndexReader>> sec_index_readers;
+   std::unique_ptr<FilterBlockReader> filter;
+   std::unique_ptr<UncompressionDictReader> uncompression_dict_reader;
+ 
+diff --git a/rocksdb-7.7.3/table/block_based/block_based_table_reader_impl.h b/rocksdb-7.7.3/table/block_based/block_based_table_reader_impl.h
+index 935080172bc4ff6bb312c4401777ee12b742116e..e2282666e8a201290d3fd6aca23346b6d4cba07d 100644
+--- a/rocksdb-7.7.3/table/block_based/block_based_table_reader_impl.h
++++ b/rocksdb-7.7.3/table/block_based/block_based_table_reader_impl.h
+@@ -109,7 +109,8 @@ TBlockIter* BlockBasedTable::NewDataBlockIterator(
+       iter = InitBlockIterator(ro.is_secondary_index_scan, rep_, block.GetValue(), BlockType::kData, iter,
+                                         block_contents_pinned, iterator_context);      
+     } else {
+-      iter = InitBlockIterator(ro.is_secondary_index_scan, ro.is_secondary_index_spatial, 
++      iter = InitBlockIterator(ro.is_secondary_index_scan, ro.is_secondary_index_spatial,
++                                ro.sec_attr_index,
+                                 rep_, block.GetValue(), BlockType::kData, iter,
+                                 block_contents_pinned, iterator_context);
+     }
+@@ -191,9 +192,10 @@ TBlockIter* BlockBasedTable::NewDataBlockIterator(const ReadOptions& ro,
+       iter = InitBlockIterator(ro.is_secondary_index_scan, rep_, block.GetValue(), BlockType::kData, iter,
+                                         block_contents_pinned, iterator_context);      
+     } else {
+-      iter = InitBlockIterator(ro.is_secondary_index_scan, ro.is_secondary_index_spatial, 
++      iter = InitBlockIterator(ro.is_secondary_index_scan, ro.is_secondary_index_spatial,
++                                        ro.sec_attr_index,
+                                         rep_, block.GetValue(), BlockType::kData, iter,
+-                                        block_contents_pinned, iterator_context); 
++                                        block_contents_pinned, iterator_context);
+     }
+ 
+   }
+diff --git a/rocksdb-7.7.3/table/block_based/index_builder.cc b/rocksdb-7.7.3/table/block_based/index_builder.cc
+index 5632070e0dbd5658072960cc712e144f274d40d9..ea76863474474e428d3e2eca51eed021ee861e67 100644
+--- a/rocksdb-7.7.3/table/block_based/index_builder.cc
++++ b/rocksdb-7.7.3/table/block_based/index_builder.cc
+@@ -89,18 +89,20 @@ SecondaryIndexBuilder* SecondaryIndexBuilder::CreateSecIndexBuilder(
+     const InternalKeyComparator* comparator,
+     const InternalKeySliceTransform* int_key_slice_transform,
+     const bool use_value_delta_encoding,
+-    const BlockBasedTableOptions& table_opt) {
++    const BlockBasedTableOptions& table_opt,
++    size_t attr_offset) {
+   (void) int_key_slice_transform;
+   SecondaryIndexBuilder* result = nullptr;
+   switch (sec_index_type) {
+     case BlockBasedTableOptions::kRtreeSec: {
++      (void)attr_offset;  // 2D Rtree does not support N co-resident indexes.
+       result = RtreeSecondaryIndexBuilder::CreateIndexBuilder(
+           comparator, use_value_delta_encoding, table_opt);
+       break;
+     }
+     case BlockBasedTableOptions::kOneDRtreeSec: {
+       result = OneDRtreeSecondaryIndexBuilder::CreateIndexBuilder(
+-         comparator, use_value_delta_encoding, table_opt);
++         comparator, use_value_delta_encoding, table_opt, attr_offset);
+       break;
+     }
+     default: {
+@@ -902,15 +904,17 @@ void RtreeSecondaryIndexBuilder::get_Secondary_Entries(
+ OneDRtreeSecondaryIndexBuilder* OneDRtreeSecondaryIndexBuilder::CreateIndexBuilder(
+     const InternalKeyComparator* comparator,
+     const bool use_value_delta_encoding,
+-    const BlockBasedTableOptions& table_opt) {
++    const BlockBasedTableOptions& table_opt,
++    size_t attr_offset) {
+   return new OneDRtreeSecondaryIndexBuilder(comparator, table_opt,
+-                                     use_value_delta_encoding);
++                                     use_value_delta_encoding, attr_offset);
+ }
+ 
+ OneDRtreeSecondaryIndexBuilder::OneDRtreeSecondaryIndexBuilder(
+     const InternalKeyComparator* comparator,
+     const BlockBasedTableOptions& table_opt,
+-    const bool use_value_delta_encoding)
++    const bool use_value_delta_encoding,
++    size_t attr_offset)
+     : SecondaryIndexBuilder(comparator),
+       index_block_builder_(table_opt.index_block_restart_interval,
+                            true /*use_delta_encoding*/,
+@@ -918,7 +922,15 @@ OneDRtreeSecondaryIndexBuilder::OneDRtreeSecondaryIndexBuilder(
+       sub_index_builder_(nullptr),
+       table_opt_(table_opt),
+       use_value_delta_encoding_(use_value_delta_encoding),
+-      rtree_level_(1) {}
++      rtree_level_(1),
++      attr_offset_(attr_offset) {
++  // NEXT (Phase 5): resolve this index's per-attribute gap threshold delta_i.
++  // Attribute index i = attr_offset_ / 8; empty sec_index_deltas => 0.005.
++  size_t ai = attr_offset_ / 8;
++  sec_delta_ = (ai < table_opt_.sec_index_deltas.size())
++                   ? table_opt_.sec_index_deltas[ai]
++                   : 0.005;
++}
+ 
+ OneDRtreeSecondaryIndexBuilder::~OneDRtreeSecondaryIndexBuilder() {
+   delete sub_index_builder_;
+@@ -929,7 +941,8 @@ void OneDRtreeSecondaryIndexBuilder::MakeNewSubIndexBuilder() {
+   sub_index_builder_ = new OneDRtreeSecondaryIndexLevelBuilder(
+       comparator_, table_opt_.index_block_restart_interval,
+       table_opt_.format_version, use_value_delta_encoding_,
+-      table_opt_.index_shortening, /* include_first_key */ false);
++      table_opt_.index_shortening, /* include_first_key */ false,
++      attr_offset_);
+ 
+   flush_policy_.reset(FlushBlockBySizePolicyFactory::NewFlushBlockPolicy(
+       table_opt_.metadata_block_size, table_opt_.block_size_deviation,
+@@ -943,7 +956,8 @@ void OneDRtreeSecondaryIndexBuilder::RequestPartitionCut() {
+ 
+ void OneDRtreeSecondaryIndexBuilder::OnKeyAdded(const Slice& value){
+     Slice val_temp = Slice(value);
+-    double numerical_val = *reinterpret_cast<const double*>(val_temp.data());
++    double numerical_val =
++        *reinterpret_cast<const double*>(val_temp.data() + attr_offset_);
+     ValueRange temp_val_range;
+     temp_val_range.set_range(numerical_val, numerical_val);
+     // expandValrange(sub_index_enclosing_valrange_, temp_val_range);
+@@ -971,15 +985,21 @@ void OneDRtreeSecondaryIndexBuilder::AddIdxEntry(DataBlockEntry datablkentry, bo
+   // Note: to avoid two consecuitive flush in the same method call, we do not
+   // check flush policy when adding the last key
+ 
+-  expandValrange(temp_sec_valrange_, ReadValueRange(datablkentry.subindexenclosingvalrange));
+-  if (temp_sec_valrange_.range.max-temp_sec_valrange_.range.min > 0.005 && !sec_enclosing_valrange_.empty()) {
++  // NEXT (Phase 5): gap-based value-aware split. Entries arrive value-sorted
++  // (Finish sorts data_block_entries_ by interval centre) and each carries a
++  // degenerate range [v,v], so cur is this entry's value. Cut the current
++  // sec_enclosing_valrange_ when the gap to the previous sorted value exceeds
++  // delta_i (strict >), leaving large gaps un-indexed and each indexed range
++  // condensed. has_prev_ guards the first entry of a partition/flush segment.
++  double cur = ReadValueRange(datablkentry.subindexenclosingvalrange).range.min;
++  if (has_prev_ && (cur - prev_max_) > sec_delta_ && !sec_enclosing_valrange_.empty()) {
+     sec_valranges_.emplace_back(serializeValueRange(sec_enclosing_valrange_));
+     sec_enclosing_valrange_.clear();
+-    temp_sec_valrange_.clear();
+-    expandValrange(temp_sec_valrange_, ReadValueRange(datablkentry.subindexenclosingvalrange));
+   }
+ 
+   expandValrange(sec_enclosing_valrange_, ReadValueRange(datablkentry.subindexenclosingvalrange));
++  prev_max_ = cur;
++  has_prev_ = true;
+ 
+   if (UNLIKELY(last == true)) {  // no more keys
+     if (sub_index_builder_ == nullptr) {
+@@ -991,7 +1011,7 @@ void OneDRtreeSecondaryIndexBuilder::AddIdxEntry(DataBlockEntry datablkentry, bo
+ 
+     sec_valranges_.emplace_back(serializeValueRange(sec_enclosing_valrange_));
+     sec_enclosing_valrange_.clear();
+-    temp_sec_valrange_.clear();
++    has_prev_ = false;  // new segment: no carried-over previous value
+ 
+     entries_.push_back(
+         {serializeValueRange(enclosing_valrange_),
+@@ -1015,7 +1035,7 @@ void OneDRtreeSecondaryIndexBuilder::AddIdxEntry(DataBlockEntry datablkentry, bo
+ 
+         sec_valranges_.emplace_back(serializeValueRange(sec_enclosing_valrange_));
+         sec_enclosing_valrange_.clear();
+-        temp_sec_valrange_.clear();
++        has_prev_ = false;  // new segment: no carried-over previous value
+ 
+         // std::cout << "push_back a full sub_index builder" << std::endl;
+         // std::cout << "pushed valuerange: " << enclosing_valrange_ << std::endl;
+diff --git a/rocksdb-7.7.3/table/block_based/index_builder.h b/rocksdb-7.7.3/table/block_based/index_builder.h
+index 5fa604f67b04751745e2e141be8215b883144591..a38f2396521a05f709034b23ddb591e491624a7a 100644
+--- a/rocksdb-7.7.3/table/block_based/index_builder.h
++++ b/rocksdb-7.7.3/table/block_based/index_builder.h
+@@ -118,7 +118,11 @@ class SecondaryIndexBuilder {
+       const ROCKSDB_NAMESPACE::InternalKeyComparator* comparator,
+       const InternalKeySliceTransform* int_key_slice_transform,
+       const bool use_value_delta_encoding,
+-      const BlockBasedTableOptions& table_opt);
++      const BlockBasedTableOptions& table_opt,
++      // NEXT: byte offset into the value where this index's double lives
++      // (8*i for co-resident index i). Only consumed by the OneD (1D)
++      // builder; ignored for the 2D Rtree builder.
++      size_t attr_offset = 0);
+ 
+   // Index builder will construct a set of blocks which contain:
+   //  1. One primary index block.
+@@ -1048,20 +1052,24 @@ class OneDRtreeSecondaryIndexLevelBuilder : public SecondaryIndexBuilder {
+       const int index_block_restart_interval, const uint32_t format_version,
+       const bool use_value_delta_encoding,
+       BlockBasedTableOptions::IndexShorteningMode shortening_mode,
+-      bool include_first_key)
++      bool include_first_key,
++      // NEXT: byte offset into the value of this index's double (8*i).
++      size_t attr_offset = 0)
+       : SecondaryIndexBuilder(comparator),
+         index_block_builder_(index_block_restart_interval,
+                              true /*use_delta_encoding*/,
+                              use_value_delta_encoding),
+         use_value_delta_encoding_(use_value_delta_encoding),
+         include_first_key_(include_first_key),
+-        shortening_mode_(shortening_mode) {
++        shortening_mode_(shortening_mode),
++        attr_offset_(attr_offset) {
+     (void)format_version;
+   }
+ 
+   virtual void OnKeyAdded(const Slice& value) override {
+     Slice val_temp = Slice(value);
+-    double numerical_val = *reinterpret_cast<const double*>(val_temp.data());
++    double numerical_val =
++        *reinterpret_cast<const double*>(val_temp.data() + attr_offset_);
+     expandValrange(enclosing_valrange_, numerical_val);
+   }
+ 
+@@ -1147,6 +1155,8 @@ class OneDRtreeSecondaryIndexLevelBuilder : public SecondaryIndexBuilder {
+   BlockHandle last_encoded_handle_ = BlockHandle::NullBlockHandle();
+   std::string current_block_first_internal_key_;
+   ValueRange enclosing_valrange_;
++  // NEXT: byte offset into the value of this index's double (8*i).
++  size_t attr_offset_ = 0;
+   void expandValrange(ValueRange& to_expand, double expander) {
+     if (to_expand.empty()) {
+       to_expand.set_range(expander, expander);
+@@ -1166,11 +1176,14 @@ class OneDRtreeSecondaryIndexBuilder : public SecondaryIndexBuilder {
+   static OneDRtreeSecondaryIndexBuilder* CreateIndexBuilder(
+       const ROCKSDB_NAMESPACE::InternalKeyComparator* comparator,
+       const bool use_value_delta_encoding,
+-      const BlockBasedTableOptions& table_opt);
++      const BlockBasedTableOptions& table_opt,
++      // NEXT: byte offset into the value of this index's double (8*i).
++      size_t attr_offset = 0);
+ 
+   explicit OneDRtreeSecondaryIndexBuilder(const InternalKeyComparator* comparator,
+                                    const BlockBasedTableOptions& table_opt,
+-                                   const bool use_value_delta_encoding);
++                                   const bool use_value_delta_encoding,
++                                   size_t attr_offset = 0);
+ 
+   virtual ~OneDRtreeSecondaryIndexBuilder();
+ 
+@@ -1262,9 +1275,19 @@ class OneDRtreeSecondaryIndexBuilder : public SecondaryIndexBuilder {
+   ValueRange enclosing_valrange_;
+   ValueRange sec_enclosing_valrange_;
+   std::vector<std::string> sec_valranges_;
+-  ValueRange temp_sec_valrange_;
++  // NEXT (Phase 5): gap-based value-aware split. sec_delta_ is delta_i resolved
++  // once in the ctor from table_opt_.sec_index_deltas[attr_offset_/8] (fallback
++  // 0.005). prev_max_ is the previous sorted entry's value; has_prev_ guards the
++  // first entry of each partition/flush segment (reset at segment boundaries) so
++  // no gap is computed across a boundary.
++  double sec_delta_ = 0.005;
++  double prev_max_ = 0.0;
++  bool has_prev_ = false;
+   uint32_t rtree_level_;
+   std::string rtree_height_str_;
++  // NEXT: byte offset into the value of this index's double (8*i);
++  // propagated to each OneDRtreeSecondaryIndexLevelBuilder it creates.
++  size_t attr_offset_ = 0;
+   void expandValrange(ValueRange& to_expand, ValueRange expander) {
+     if (to_expand.empty()) {
+       to_expand = expander;
+diff --git a/rocksdb-7.7.3/table/block_based/index_reader_common.cc b/rocksdb-7.7.3/table/block_based/index_reader_common.cc
+index 8f40a76855148a3232aa89ad325b79e186b59a11..03cd2e971887d8ed4496943fee89f9c5e4694ca6 100644
+--- a/rocksdb-7.7.3/table/block_based/index_reader_common.cc
++++ b/rocksdb-7.7.3/table/block_based/index_reader_common.cc
+@@ -38,7 +38,8 @@ Status BlockBasedTable::IndexReaderCommon::ReadSecIndexBlock(
+     const BlockBasedTable* table, FilePrefetchBuffer* prefetch_buffer,
+     const ReadOptions& read_options, bool use_cache, GetContext* get_context,
+     BlockCacheLookupContext* lookup_context,
+-    CachableEntry<Block>* index_block, InternalIterator* meta_index_iter) {
++    CachableEntry<Block>* index_block, InternalIterator* meta_index_iter,
++    size_t sec_attr_index) {
+   PERF_TIMER_GUARD(read_index_block_nanos);
+ 
+   assert(table != nullptr);
+@@ -49,9 +50,18 @@ Status BlockBasedTable::IndexReaderCommon::ReadSecIndexBlock(
+   // assert(rep != nullptr);
+ 
+   BlockHandle secondary_index_handle;
++  // NEXT (Task 3.2): index 0 KEEPS the unsuffixed name (byte-identical N=1
++  // lookup); index i>=1 uses the ".<i>" suffix Phase 2's writer produces
++  // (block_based_table_builder.cc WriteSecIndexBlock).
+   std::string sec_index_blk_name = "rocksdb.SecondaryIndexBlock";
+-  Status meta_s = 
++  if (sec_attr_index > 0) {
++    sec_index_blk_name += "." + std::to_string(sec_attr_index);
++  }
++  Status meta_s =
+           FindMetaBlock(meta_index_iter, sec_index_blk_name, &secondary_index_handle);
++  if (!meta_s.ok()) {
++    return meta_s;
++  }
+ 
+   const Status s = table->RetrieveBlock(
+       prefetch_buffer, read_options, secondary_index_handle,
+@@ -87,7 +97,8 @@ Status BlockBasedTable::IndexReaderCommon::GetOrReadIndexBlock(
+ Status BlockBasedTable::IndexReaderCommon::GetOrReadSecIndexBlock(
+     bool no_io, Env::IOPriority rate_limiter_priority, GetContext* get_context,
+     BlockCacheLookupContext* lookup_context,
+-    CachableEntry<Block>* index_block, InternalIterator* meta_index_iter) const {
++    CachableEntry<Block>* index_block, InternalIterator* meta_index_iter,
++    size_t sec_attr_index) const {
+   assert(index_block != nullptr);
+ 
+   if (!index_block_.IsEmpty()) {
+@@ -103,7 +114,7 @@ Status BlockBasedTable::IndexReaderCommon::GetOrReadSecIndexBlock(
+ 
+   return ReadSecIndexBlock(table_, /*prefetch_buffer=*/nullptr, read_options,
+                         cache_index_blocks(), get_context, lookup_context,
+-                        index_block, meta_index_iter);
++                        index_block, meta_index_iter, sec_attr_index);
+ }
+ 
+ }  // namespace ROCKSDB_NAMESPACE
+diff --git a/rocksdb-7.7.3/table/block_based/index_reader_common.h b/rocksdb-7.7.3/table/block_based/index_reader_common.h
+index cbdbb309d9fdca7b06da846cc8123c5b5aa1b8a4..9d673fe269817f780a423ba1ea3644ed31aec409 100644
+--- a/rocksdb-7.7.3/table/block_based/index_reader_common.h
++++ b/rocksdb-7.7.3/table/block_based/index_reader_common.h
+@@ -33,13 +33,17 @@ class BlockBasedTable::IndexReaderCommon : public BlockBasedTable::IndexReader {
+                                BlockCacheLookupContext* lookup_context,
+                                CachableEntry<Block>* index_block);
+ 
++  // NEXT (Task 3.2): sec_attr_index selects which of the N co-resident
++  // per-SST sec-index metablocks to read (index 0 =
++  // "rocksdb.SecondaryIndexBlock", index i>=1 = ".<i>" suffixed).
+   static Status ReadSecIndexBlock(const BlockBasedTable* table,
+                                   FilePrefetchBuffer* prefetch_buffer,
+                                   const ReadOptions& read_options, bool use_cache,
+                                   GetContext* get_context,
+                                   BlockCacheLookupContext* lookup_context,
+                                   CachableEntry<Block>* index_block,
+-                                  InternalIterator* meta_index_iter);
++                                  InternalIterator* meta_index_iter,
++                                  size_t sec_attr_index);
+ 
+   const BlockBasedTable* table() const { return table_; }
+ 
+@@ -83,7 +87,8 @@ class BlockBasedTable::IndexReaderCommon : public BlockBasedTable::IndexReader {
+                              GetContext* get_context,
+                              BlockCacheLookupContext* lookup_context,
+                              CachableEntry<Block>* index_block,
+-                             InternalIterator* meta_index_iter) const;
++                             InternalIterator* meta_index_iter,
++                             size_t sec_attr_index) const;
+ 
+   size_t ApproximateIndexBlockMemoryUsage() const {
+     assert(!index_block_.GetOwnValue() || index_block_.GetValue() != nullptr);
+diff --git a/rocksdb-7.7.3/table/block_based/onedrtree_sec_index_reader.cc b/rocksdb-7.7.3/table/block_based/onedrtree_sec_index_reader.cc
+index ad1edf82a09f48c515da48660119ad51330ea1cd..f85cd60cea046b7655b0c16608042f1fbbaaa6fe 100644
+--- a/rocksdb-7.7.3/table/block_based/onedrtree_sec_index_reader.cc
++++ b/rocksdb-7.7.3/table/block_based/onedrtree_sec_index_reader.cc
+@@ -20,7 +20,7 @@ namespace ROCKSDB_NAMESPACE {
+ Status OneDRtreeSecIndexReader::Create(
+     const BlockBasedTable* table, const ReadOptions& ro,
+     FilePrefetchBuffer* prefetch_buffer, InternalIterator* meta_index_iter, bool use_cache, bool prefetch,
+-    bool pin, BlockCacheLookupContext* lookup_context,
++    bool pin, BlockCacheLookupContext* lookup_context, size_t attr_index,
+     std::unique_ptr<IndexReader>* index_reader) {
+   assert(table != nullptr);
+ 
+@@ -34,11 +34,11 @@ Status OneDRtreeSecIndexReader::Create(
+   if (prefetch || !use_cache) {
+     // std::cout << "start reading index block" << std::endl;
+ 
+-    const Status s = 
++    const Status s =
+           ReadSecIndexBlock(table, prefetch_buffer, ro, use_cache,
+                           /*get_context=*/nullptr, lookup_context, &index_block,
+-                          meta_index_iter);
+-    
++                          meta_index_iter, attr_index);
++
+ 
+     if (!s.ok()) {
+       return s;
+@@ -53,12 +53,18 @@ Status OneDRtreeSecIndexReader::Create(
+ 
+   // std::cout << "get rtree index meta block" << std::endl;
+ 
+-  // Get metadata block
++  // Get metadata block. NEXT (Task 3.2): index 0 keeps the unsuffixed name;
++  // index i>=1 uses the ".<i>" suffix (block_based_table_builder.cc
++  // WriteSecIndexBlock).
+   BlockHandle meta_handle;
++  std::string meta_block_name = kRtreeSecondaryIndexMetadataBlock;
++  if (attr_index > 0) {
++    meta_block_name += "." + std::to_string(attr_index);
++  }
+ 
+   Status s =
+-        FindMetaBlock(meta_index_iter, kRtreeSecondaryIndexMetadataBlock, &meta_handle);
+-  
++        FindMetaBlock(meta_index_iter, meta_block_name, &meta_handle);
++
+ 
+   // std::cout << s.ToString() << std::endl;
+   if (!s.ok()) {
+@@ -102,7 +108,8 @@ Status OneDRtreeSecIndexReader::Create(
+         static_cast<OneDRtreeSecIndexReader*>(index_reader->get());
+     onedrtree_index_reader->rtree_height_ = rtree_height;
+     onedrtree_index_reader->meta_index_iterator_ = meta_index_iter;
+-  
++    onedrtree_index_reader->attr_index_ = attr_index;
++
+   // std::cout << "Rtree_height: " << rtree_index_reader->rtree_height_ << std::endl;
+ 
+ 
+@@ -118,10 +125,10 @@ InternalIteratorBase<IndexValue>* OneDRtreeSecIndexReader::NewIterator(
+   // std::cout << "rtreesecindexreader::newiterator" << std::endl;
+   const bool no_io = (read_options.read_tier == kBlockCacheTier);
+   CachableEntry<Block> index_block;
+-  const Status s = 
++  const Status s =
+         GetOrReadSecIndexBlock(no_io, read_options.rate_limiter_priority,
+                             get_context, lookup_context, &index_block,
+-                            meta_index_iterator_);
++                            meta_index_iterator_, attr_index_);
+   if (!s.ok()) {
+     if (iter != nullptr) {
+       iter->Invalidate(s);
+@@ -161,6 +168,7 @@ InternalIteratorBase<IndexValue>* OneDRtreeSecIndexReader::NewIterator(
+     ro.iterator_context = read_options.iterator_context;
+     ro.is_secondary_index_scan = read_options.is_secondary_index_scan;
+     ro.is_secondary_index_spatial = read_options.is_secondary_index_spatial;
++    ro.sec_attr_index = attr_index_;
+     ro.found_sec_blkhandle = read_options.found_sec_blkhandle;
+     // std::cout << "rtree_sec_index_reader::" << (ro.iterator_context == nullptr) << std::endl;
+     // RtreeIteratorContext* context =
+@@ -216,8 +224,9 @@ Status OneDRtreeSecIndexReader::CacheDependencies(const ReadOptions& ro,
+   {
+     Status s = GetOrReadSecIndexBlock(false /* no_io */, ro.rate_limiter_priority,
+                                     nullptr /* get_context */, &lookup_context,
+-                                    &index_block, meta_index_iterator_);      
+-    
++                                    &index_block, meta_index_iterator_, attr_index_);
++
++
+ 
+     if (!s.ok()) {
+       return s;
+diff --git a/rocksdb-7.7.3/table/block_based/onedrtree_sec_index_reader.h b/rocksdb-7.7.3/table/block_based/onedrtree_sec_index_reader.h
+index 86ff4d51a90bb0e9c8e24b5667ccc2c11c8eb724..469f302047a09e4fbe84b2482bd6838f964cf441 100644
+--- a/rocksdb-7.7.3/table/block_based/onedrtree_sec_index_reader.h
++++ b/rocksdb-7.7.3/table/block_based/onedrtree_sec_index_reader.h
+@@ -18,10 +18,13 @@ class OneDRtreeSecIndexReader : public BlockBasedTable::IndexReaderCommon {
+   // `RtreeIndexReader`.
+   // On success, index_reader will be populated; otherwise it will remain
+   // unmodified.
++  // NEXT (Task 3.2): attr_index selects which co-resident 1D index's
++  // metablocks (data + rtree-height metadata) this reader is built from.
+   static Status Create(const BlockBasedTable* table, const ReadOptions& ro,
+-                       FilePrefetchBuffer* prefetch_buffer, InternalIterator* meta_index_iter, 
++                       FilePrefetchBuffer* prefetch_buffer, InternalIterator* meta_index_iter,
+                        bool use_cache, bool prefetch, bool pin,
+                        BlockCacheLookupContext* lookup_context,
++                       size_t attr_index,
+                        std::unique_ptr<IndexReader>* index_reader);
+ 
+   // return a two-level iterator: first level is on the partition index
+@@ -44,6 +47,10 @@ class OneDRtreeSecIndexReader : public BlockBasedTable::IndexReaderCommon {
+  protected:
+   uint32_t rtree_height_;
+   InternalIterator* meta_index_iterator_;
++  // NEXT (Task 3.2): which co-resident 1D index this reader was built for;
++  // threaded into GetOrReadSecIndexBlock so NewIterator/CacheDependencies
++  // read the right (possibly-suffixed) metablock on cache miss.
++  size_t attr_index_ = 0;
+ 
+  private:
+   OneDRtreeSecIndexReader(const BlockBasedTable* t,
+diff --git a/rocksdb-7.7.3/table/block_based/rtree_sec_index_reader.cc b/rocksdb-7.7.3/table/block_based/rtree_sec_index_reader.cc
+index 3bacd327a369ef36ca13cd802c3dc79ee6dbd35c..d1a3176fe636fd3a76cd92325e5c8ecd2a7e59af 100644
+--- a/rocksdb-7.7.3/table/block_based/rtree_sec_index_reader.cc
++++ b/rocksdb-7.7.3/table/block_based/rtree_sec_index_reader.cc
+@@ -20,7 +20,7 @@ namespace ROCKSDB_NAMESPACE {
+ Status RtreeSecIndexReader::Create(
+     const BlockBasedTable* table, const ReadOptions& ro,
+     FilePrefetchBuffer* prefetch_buffer, InternalIterator* meta_index_iter, bool use_cache, bool prefetch,
+-    bool pin, BlockCacheLookupContext* lookup_context,
++    bool pin, BlockCacheLookupContext* lookup_context, size_t attr_index,
+     std::unique_ptr<IndexReader>* index_reader) {
+   assert(table != nullptr);
+ 
+@@ -34,11 +34,11 @@ Status RtreeSecIndexReader::Create(
+   if (prefetch || !use_cache) {
+     // std::cout << "start reading index block" << std::endl;
+ 
+-    const Status s = 
++    const Status s =
+           ReadSecIndexBlock(table, prefetch_buffer, ro, use_cache,
+                           /*get_context=*/nullptr, lookup_context, &index_block,
+-                          meta_index_iter);
+-    
++                          meta_index_iter, attr_index);
++
+ 
+     if (!s.ok()) {
+       return s;
+@@ -53,12 +53,17 @@ Status RtreeSecIndexReader::Create(
+ 
+   // std::cout << "get rtree index meta block" << std::endl;
+ 
+-  // Get metadata block
++  // Get metadata block. NEXT (Task 3.2): index 0 keeps the unsuffixed name;
++  // index i>=1 uses the ".<i>" suffix.
+   BlockHandle meta_handle;
++  std::string meta_block_name = kRtreeSecondaryIndexMetadataBlock;
++  if (attr_index > 0) {
++    meta_block_name += "." + std::to_string(attr_index);
++  }
+ 
+   Status s =
+-        FindMetaBlock(meta_index_iter, kRtreeSecondaryIndexMetadataBlock, &meta_handle);
+-  
++        FindMetaBlock(meta_index_iter, meta_block_name, &meta_handle);
++
+ 
+   // std::cout << s.ToString() << std::endl;
+   if (!s.ok()) {
+@@ -102,7 +107,8 @@ Status RtreeSecIndexReader::Create(
+         static_cast<RtreeSecIndexReader*>(index_reader->get());
+     rtree_index_reader->rtree_height_ = rtree_height;
+     rtree_index_reader->meta_index_iterator_ = meta_index_iter;
+-  
++    rtree_index_reader->attr_index_ = attr_index;
++
+   // std::cout << "Rtree_height: " << rtree_index_reader->rtree_height_ << std::endl;
+ 
+ 
+@@ -118,10 +124,10 @@ InternalIteratorBase<IndexValue>* RtreeSecIndexReader::NewIterator(
+   // std::cout << "rtreesecindexreader::newiterator" << std::endl;
+   const bool no_io = (read_options.read_tier == kBlockCacheTier);
+   CachableEntry<Block> index_block;
+-  const Status s = 
++  const Status s =
+         GetOrReadSecIndexBlock(no_io, read_options.rate_limiter_priority,
+                             get_context, lookup_context, &index_block,
+-                            meta_index_iterator_);
++                            meta_index_iterator_, attr_index_);
+   if (!s.ok()) {
+     if (iter != nullptr) {
+       iter->Invalidate(s);
+@@ -160,6 +166,7 @@ InternalIteratorBase<IndexValue>* RtreeSecIndexReader::NewIterator(
+     // std::cout << "adding iterator context" << std::endl;
+     ro.iterator_context = read_options.iterator_context;
+     ro.is_secondary_index_scan = read_options.is_secondary_index_scan;
++    ro.sec_attr_index = attr_index_;
+     ro.found_sec_blkhandle = read_options.found_sec_blkhandle;
+     // std::cout << "rtree_sec_index_reader::" << (ro.iterator_context == nullptr) << std::endl;
+     // RtreeIteratorContext* context =
+@@ -215,8 +222,9 @@ Status RtreeSecIndexReader::CacheDependencies(const ReadOptions& ro,
+   {
+     Status s = GetOrReadSecIndexBlock(false /* no_io */, ro.rate_limiter_priority,
+                                     nullptr /* get_context */, &lookup_context,
+-                                    &index_block, meta_index_iterator_);      
+-    
++                                    &index_block, meta_index_iterator_, attr_index_);
++
++
+ 
+     if (!s.ok()) {
+       return s;
+diff --git a/rocksdb-7.7.3/table/block_based/rtree_sec_index_reader.h b/rocksdb-7.7.3/table/block_based/rtree_sec_index_reader.h
+index f302c2c1a70128ec6e87b5e99a453f699c700e4c..55c4d8c73ce57c198574ddf01aad1d2c1a7d860d 100644
+--- a/rocksdb-7.7.3/table/block_based/rtree_sec_index_reader.h
++++ b/rocksdb-7.7.3/table/block_based/rtree_sec_index_reader.h
+@@ -18,10 +18,13 @@ class RtreeSecIndexReader : public BlockBasedTable::IndexReaderCommon {
+   // `RtreeIndexReader`.
+   // On success, index_reader will be populated; otherwise it will remain
+   // unmodified.
++  // NEXT (Task 3.2): attr_index selects which co-resident index's
++  // metablocks (data + rtree-height metadata) this reader is built from.
+   static Status Create(const BlockBasedTable* table, const ReadOptions& ro,
+-                       FilePrefetchBuffer* prefetch_buffer, InternalIterator* meta_index_iter, 
++                       FilePrefetchBuffer* prefetch_buffer, InternalIterator* meta_index_iter,
+                        bool use_cache, bool prefetch, bool pin,
+                        BlockCacheLookupContext* lookup_context,
++                       size_t attr_index,
+                        std::unique_ptr<IndexReader>* index_reader);
+ 
+   // return a two-level iterator: first level is on the partition index
+@@ -44,6 +47,8 @@ class RtreeSecIndexReader : public BlockBasedTable::IndexReaderCommon {
+  protected:
+   uint32_t rtree_height_;
+   InternalIterator* meta_index_iterator_;
++  // NEXT (Task 3.2): which co-resident index this reader was built for.
++  size_t attr_index_ = 0;
+ 
+  private:
+   RtreeSecIndexReader(const BlockBasedTable* t,
+diff --git a/rocksdb-7.7.3/table/table_builder.h b/rocksdb-7.7.3/table/table_builder.h
+index e7a1f8b692136c9487cb8a4b88b79ebf1b76fb22..abb7114b7f5e8f6023175740b49effad8e689dc3 100644
+--- a/rocksdb-7.7.3/table/table_builder.h
++++ b/rocksdb-7.7.3/table/table_builder.h
+@@ -215,7 +215,9 @@ class TableBuilder {
+       const std::string& /*encoded_seqno_to_time_mapping*/,
+       uint64_t /*oldest_ancestor_time*/){};
+ 
+-  virtual void GetSecondaryEntries(std::vector<std::pair<std::string, BlockHandle>>* sec_entries) {
++  // NEXT (Task 2.3): N sets, one per co-resident sec-index (outer index =
++  // attribute i, matching Task 2.2's attr_offset = 8*i).
++  virtual void GetSecondaryEntries(std::vector<std::vector<std::pair<std::string, BlockHandle>>>* sec_entries) {
+     (void) sec_entries;
+   };
+ };
+diff --git a/rocksdb-7.7.3/util/rtree.cc b/rocksdb-7.7.3/util/rtree.cc
+index e00b4bd3738677b9a11a2cda7786bce43fff53b5..a6786162f69a003bb4b9135443ac453ce8570236 100644
+--- a/rocksdb-7.7.3/util/rtree.cc
++++ b/rocksdb-7.7.3/util/rtree.cc
+@@ -7,6 +7,7 @@
+ 
+ #include "util/rtree.h"
+ 
++// next-multiattr patch pipeline no-op marker (Task 2.1).
+ namespace rocksdb {
+ 
+     double GetMbrArea(Mbr aa) {
+diff --git a/rocksdb-7.7.3/util/rtree.h b/rocksdb-7.7.3/util/rtree.h
+index ee13192c8f34b6ac5649f6bfb371dda4944156ea..ba0a00377e4376fd21d45a76267c97c063da8326 100644
+--- a/rocksdb-7.7.3/util/rtree.h
++++ b/rocksdb-7.7.3/util/rtree.h
+@@ -101,6 +101,35 @@ namespace rocksdb {
+ 
+     struct RtreeIteratorContext: public IteratorContext {
+         std::string query_mbr;
++        // NEXT (Task 3.2): which of the N co-resident 1D indexes a secondary
++        // scan targets. The memtable secondary scan (memtable/skiplistrep.cc
++        // SkipListSecRep) receives only this IteratorContext (never
++        // ReadOptions), so sec_attr_index is carried here too -- it must
++        // agree with ReadOptions::sec_attr_index the SST path keys off. The
++        // memtable per-tuple filter reads the value double at offset
++        // 8*sec_attr_index. Defaults to 0 (byte-identical single-index path).
++        uint32_t sec_attr_index = 0;
++
++        // NEXT (Phase 4, Task 4.1): IM (index merge). is_index_merge mirrors
++        // ReadOptions::is_index_merge -- the memtable secondary scan
++        // (memtable/skiplistrep.cc SkipListSecRep::Iterator) only ever sees
++        // this IteratorContext, never ReadOptions, so it needs its own copy
++        // (same reason sec_attr_index is duplicated above). When true, the
++        // memtable per-tuple single-attribute filter is skipped entirely --
++        // the memtable is scanned in FULL, since correctness rests on the
++        // driver's post-filter (Matches), not any engine-side filter, and
++        // the SST-side intersection (db/version_set.cc) has no equivalent
++        // over memtable entries (there are no SST data blocks to intersect).
++        //
++        // im_predicates carries every queried indexed attribute's
++        // (attr_id, serialized 16-byte ValueRange) predicate -- consumed by
++        // Version::AddIteratorsForLevel/EnumerateIMCandidateDataBlocks
++        // (db/version_set.cc) to enumerate + intersect candidate PRIMARY
++        // data-block sets. Empty by default -- non-IM (PF, Phase 3) reads
++        // never populate it and are unaffected.
++        bool is_index_merge = false;
++        std::vector<std::pair<uint32_t, std::string>> im_predicates;
++
+         RtreeIteratorContext(): query_mbr() {};
+     };
+ 

@@ -32,7 +32,12 @@ from run_common import (
 EXP_DIR = os.path.dirname(os.path.abspath(__file__))
 BINARY = "build/bin/honk_player"
 
-DB_PARAMS = ["rho", "bloom_bits"]
+# DB-identity params: encoded into the db_path so a read reopens the SAME DB
+# the write built. "rho" (bitlsm), "bloom_bits" (embedded), and "m" (next,
+# Task 5.3) each change what is persisted on disk, so each must namespace the
+# db_path. "m" sets next's global-index granularity (E_i = N/(m*B)); a bigger m
+# builds a coarser index, so an m-sweep must live in separate db_paths.
+DB_PARAMS = ["rho", "bloom_bits", "m"]
 
 
 def encode_method_params(params: dict) -> str:
@@ -44,6 +49,29 @@ def encode_method_params(params: dict) -> str:
 
 def build_command(method_name: str, workload: str, db_path: str,
                   output_dir: str, combo: dict, common_params: dict) -> list:
+    if method_name == "next":
+        # NEXT (unmodified RocksDB 7.7.3 fork) uses its own driver, isolated
+        # from honk_player's RocksDB 10.10.0 build -- see src/next_driver/.
+        # --indexed_attrs (plural) takes a comma-joined list of N co-resident
+        # indexed attrs (continuous + categorical); --mode write is this
+        # runner's half of the write/read process split (Task 3.1/3.4).
+        params = {**common_params, **combo}
+        cmd = ["build/bin/next_honk",
+               "--workload", workload,
+               "--db_path", db_path,
+               "--output_dir", output_dir,
+               "--indexed_attrs", str(params["indexed_attrs"]),
+               "--mode", "write"]
+        # Task 5.2/5.3: --m is the single global-index granularity knob. In
+        # write mode the driver's stats pre-pass derives each attr's gap
+        # threshold delta_i to hit E_i = N/(m*B) entries, so --m shapes the DB
+        # built here. "m" is in DB_PARAMS, so it also namespaces db_path above.
+        if "m" in params:
+            cmd += ["--m", fmt(params["m"])]
+        if "max_background_jobs" in params:
+            cmd += ["--max_background_jobs", fmt(params["max_background_jobs"])]
+        return cmd
+
     cmd = [BINARY,
            "--binding", method_name,
            "--workload", workload,
@@ -123,6 +151,28 @@ def run(config_path: str, dry_run: bool, method_filter: list,
                     print(f"[{global_idx}/{total_runs}] [{name}] {' '.join(cmd)}")
 
                     if not dry_run:
+                        # next_honk --mode write builds each categorical
+                        # indexed column's dictionary ids FRESH, in first-seen
+                        # order, every run (Task 3.3-m4 carry-over). Re-running
+                        # write against a db_path that already holds records
+                        # would reassign ids and desync them from the
+                        # already-persisted values -- silently corrupting
+                        # categorical reads. This runner's "build DB for a
+                        # later read" mode intentionally does NOT pass
+                        # --clean-db (that deletes the DB AFTER the run,
+                        # which would defeat nyc_taxi_seq_read), so refuse
+                        # outright rather than risk a silent desync.
+                        if (name == "next" and os.path.isdir(db_path)
+                                and os.listdir(db_path)):
+                            sys.exit(
+                                f"REFUSING to run 'next' write against a "
+                                f"NON-FRESH db_path (already contains files): "
+                                f"{db_path}\nnext_honk's categorical "
+                                f"dictionary ids are assigned fresh on every "
+                                f"write pass; re-running write here would "
+                                f"desync ids from already-persisted records. "
+                                f"Remove the directory first (rm -rf "
+                                f"{db_path}).")
                         os.makedirs(db_path, exist_ok=True)
                         os.makedirs(output_dir, exist_ok=True)
 

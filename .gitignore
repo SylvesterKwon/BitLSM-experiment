@@ -21,3 +21,10 @@ scratch
 
 # Superpowers plans/scratch (not tracked)
 docs/superpowers/
+
+# NEXT isolated build artifacts
+third_party/NEXT/rocksdb-7.7.3/librocksdb.a
+third_party/NEXT/**/*.o
+build/bin/next_smoke
+build/bin/next_honk
+third_party/next_deps/

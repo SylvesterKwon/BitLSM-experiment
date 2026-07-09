@@ -33,7 +33,13 @@ from run_common import (
 EXP_DIR = os.path.dirname(os.path.abspath(__file__))
 BINARY = "build/bin/honk_player"
 
-DB_PARAMS = ["rho", "bloom_bits"]
+# DB-identity params: encoded into the db_path so this read reopens the SAME DB
+# nyc_taxi_seq_write built. "rho" (bitlsm), "bloom_bits" (embedded), and "m"
+# (next, Task 5.3) each change what is persisted on disk, so each namespaces the
+# db_path. "m" must be here (matching the write runner) so an m-swept read hits
+# the matching m-swept DB; read_strategy is NOT a DB-identity param (same DB,
+# different scan plan) so it stays out of DB_PARAMS.
+DB_PARAMS = ["rho", "bloom_bits", "m"]
 
 
 def encode_method_params(params: dict) -> str:
@@ -50,6 +56,42 @@ def workload_stem(path: str) -> str:
 def build_command(method_name: str, workload: str, db_path: str,
                   output_dir: str, combo: dict, common_params: dict,
                   query_limit: int = 0) -> list:
+    if method_name == "next":
+        # NEXT (unmodified RocksDB 7.7.3 fork) uses its own driver, isolated
+        # from honk_player's RocksDB 10.10.0 build -- see src/next_driver/.
+        # next_honk does not support --query_limit (Phase 1 scope).
+        # --indexed_attrs (plural) must match the SAME list nyc_taxi_seq_write
+        # used to build this db_path -- --mode read reopens the existing DB
+        # and loads the persisted categorical dict files by column name;
+        # a mismatched list either misses a dict file or misreads offsets.
+        # Phase 4 Task 4.2: --read_strategy selects PF (post-filter, drives
+        # ONE indexed attr + re-checks every other predicate per-tuple) vs
+        # IM (index merge, intersects ALL indexed predicates' candidate SST
+        # data-block sets before scanning -- see next_honk.cpp/
+        # db/version_set.cc). Default "im": it is next's own intended/fairest
+        # read mode (mirrors si-ck/si-lu/si-eager's own binary default of
+        # "im" -- see src/bindings/si_ck_binding.cpp), and the whole point
+        # of Phase 4 is to demonstrate IM's I/O advantage over PF, not to
+        # bury it behind an opt-in flag.
+        params = {**common_params, **combo}
+        cmd = ["build/bin/next_honk",
+               "--workload", workload,
+               "--db_path", db_path,
+               "--output_dir", output_dir,
+               "--indexed_attrs", str(params["indexed_attrs"]),
+               "--mode", "read",
+               "--read_strategy", str(params.get("read_strategy", "im"))]
+        # Task 5.2/5.3: --m is accepted-but-inert in read mode (the driver
+        # reopens the built DB and never recomputes delta), but we pass it so
+        # the read command is self-documenting and symmetric with the write
+        # command. db_path identity is carried by "m" in DB_PARAMS (above), so
+        # this read hits exactly the m-swept DB the write built.
+        if "m" in params:
+            cmd += ["--m", fmt(params["m"])]
+        if "max_background_jobs" in params:
+            cmd += ["--max_background_jobs", fmt(params["max_background_jobs"])]
+        return cmd
+
     cmd = [BINARY,
            "--binding", method_name,
            "--workload", workload,

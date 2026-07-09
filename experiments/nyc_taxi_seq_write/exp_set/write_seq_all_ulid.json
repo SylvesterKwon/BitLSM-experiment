@@ -32,6 +32,16 @@
       "params": {
         "bloom_bits": 10
       }
+    },
+    {
+      "name": "next",
+      "params": {
+        "m": [
+          4,
+          16,
+          64
+        ]
+      }
     }
   ]
 }

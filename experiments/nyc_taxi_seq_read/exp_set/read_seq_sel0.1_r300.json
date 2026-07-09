@@ -47,6 +47,20 @@
       "params": {
         "bloom_bits": 10
       }
+    },
+    {
+      "name": "next",
+      "params": {
+        "read_strategy": [
+          "im",
+          "pf"
+        ],
+        "m": [
+          4,
+          16,
+          64
+        ]
+      }
     }
   ]
 }
