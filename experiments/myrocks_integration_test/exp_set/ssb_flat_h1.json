@@ -1,0 +1,13 @@
+{
+  "workload": "ssbflat",
+  "sf": 1,
+  "build_kind": "debug",
+  "queries": "all",
+  "cells": [
+    {"engine": "bitlsm",  "index_layout": "bi_v1", "plans": ["auto", "force_bi", "ignore_bi"]},
+    {"engine": "myrocks", "index_layout": "sk_v1", "plans": ["auto"]},
+    {"engine": "innodb",  "index_layout": "sk_v1", "plans": ["auto"]},
+    {"engine": "myrocks", "index_layout": "std",   "plans": ["auto"]},
+    {"engine": "innodb",  "index_layout": "std",   "plans": ["auto"]}
+  ]
+}
