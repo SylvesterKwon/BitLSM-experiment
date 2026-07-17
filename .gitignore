@@ -1,5 +1,7 @@
 build/
+build-mysql/
 data/
+results/
 .vscode
 *.log
 *.pid
@@ -17,7 +19,9 @@ __pycache__/
 scratch
 # Root workload TSV traces only (anchored) — keeps src/honk/workloads/*.json
 # configs tracked AND searchable in editors that honor .gitignore.
-/workloads/
+# workloads/sql/ (vendored benchmark query sets + MANIFEST) IS tracked.
+/workloads/*
+!/workloads/sql/
 
 # Superpowers plans/scratch (not tracked)
 docs/superpowers/
