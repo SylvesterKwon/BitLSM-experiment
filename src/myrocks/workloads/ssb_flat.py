@@ -235,6 +235,14 @@ class SsbFlatWorkload(Workload):
     def bi_tables(self, index_layout):
         return {"lineorder_flat"} if index_layout == "bi_v1" else set()
 
+    def secondary_indexes(self, index_layout):
+        if index_layout == "sk_v1":
+            return {"lineorder_flat":
+                    [f"sk_{c.lower()}" for c in FILTER_COLUMNS]}
+        if index_layout == "bi_v1":
+            return {"lineorder_flat": ["bi"]}
+        return {}
+
     def queries(self):
         out = {}
         for fname in sorted(os.listdir(QUERY_DIR)):

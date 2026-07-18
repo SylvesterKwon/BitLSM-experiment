@@ -41,6 +41,13 @@ class Workload:
         rocksdb_bulk_load so bitmap build goes through the memtable path)."""
         return set()
 
+    def secondary_indexes(self, index_layout: str) -> dict:
+        """{table: [secondary index names]} under this layout, PK excluded.
+        Drives plan-hint resolution (fullscan ignores all of them,
+        index_merge needs >=2 mergeable ones); {} = PK-only layout, where
+        only unhinted plans are valid."""
+        return {}
+
     def data_file(self, table: str) -> str:
         raise NotImplementedError
 

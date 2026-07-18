@@ -5,8 +5,15 @@ Protocol per cell — always a FRESH session so no state leaks between cells:
   connect -> SET session vars -> EXPLAIN FORMAT=JSON -> optimizer_trace
   -> (optional) ground-truth COUNT -> one result row.
 
-Plan hints for join workloads are injected per bi-carrying table
-("title AS t" -> "title AS t FORCE INDEX (bi)"); `auto` runs unhinted.
+Plans resolve against the layout's secondary indexes (fail-loud: a plan
+that cannot bind to the layout is a config error, never a silent `auto`):
+  auto        unhinted — the optimizer's own choice
+  force_bi    FORCE INDEX (bi) per bi-carrying table
+  ignore_bi   IGNORE INDEX (bi) per bi-carrying table
+  fullscan    IGNORE INDEX (<all secondary>) — lower-bound baseline
+  index_merge /*+ INDEX_MERGE(t) */ — SK-intersection baseline
+Table hints are injected per FROM reference ("title AS t" -> "... t FORCE
+INDEX (bi)"); optimizer hints go after the first SELECT.
 Execution counters / wallclock (metrics.py) belong to perf-mode (H4).
 """
 
@@ -20,11 +27,41 @@ SESSION_SETUP = [
     "SET SESSION optimizer_trace_max_mem_size=67108864",
 ]
 
-PLAN_HINTS = {
-    "auto": None,
-    "force_bi": "FORCE INDEX (bi)",
-    "ignore_bi": "IGNORE INDEX (bi)",
-}
+PLANS = ("auto", "force_bi", "ignore_bi", "fullscan", "index_merge")
+
+
+def resolve_plan(plan: str, secondary_indexes: dict):
+    """Map a plan name to concrete hints for a layout, given
+    {table: [secondary index names]}. Returns (table_hints, select_hints)
+    where table_hints = {table: index-hint string} and select_hints =
+    [optimizer-hint bodies]. Raises when the plan cannot bind — a silently
+    un-hinted cell would be indistinguishable from `auto`."""
+    sec = secondary_indexes or {}
+    if plan == "auto":
+        return {}, []
+    if plan in ("force_bi", "ignore_bi"):
+        verb = "FORCE" if plan == "force_bi" else "IGNORE"
+        tabs = {t: f"{verb} INDEX (bi)"
+                for t, idxs in sec.items() if "bi" in idxs}
+        if not tabs:
+            raise ValueError(f"plan={plan}: no table carries a bi index "
+                             "in this layout")
+        return tabs, []
+    if plan == "fullscan":
+        tabs = {t: "IGNORE INDEX ({})".format(", ".join(idxs))
+                for t, idxs in sec.items() if idxs}
+        if not tabs:
+            raise ValueError("plan=fullscan: layout has no secondary "
+                             "indexes to ignore (auto already scans)")
+        return tabs, []
+    if plan == "index_merge":
+        tabs = [t for t, idxs in sec.items()
+                if len([i for i in idxs if i != "bi"]) >= 2]
+        if not tabs:
+            raise ValueError("plan=index_merge: no table has >=2 "
+                             "mergeable secondary indexes")
+        return {}, [f"INDEX_MERGE({t})" for t in tabs]
+    raise ValueError(f"unknown plan: {plan}")
 
 
 def inject_table_hint(sql: str, table: str, hint: str) -> str:
@@ -39,6 +76,17 @@ def inject_table_hint(sql: str, table: str, hint: str) -> str:
                          flags=re.IGNORECASE)
     if n == 0:
         raise ValueError(f"hint injection matched nothing for table {table}")
+    return new
+
+
+def inject_select_hint(sql: str, hints: list) -> str:
+    """Insert /*+ ... */ optimizer hints after the first SELECT keyword."""
+    body = " ".join(hints)
+    new, n = re.subn(r"^\s*SELECT\b",
+                     lambda m: m.group(0) + " /*+ " + body + " */",
+                     sql, count=1, flags=re.IGNORECASE)
+    if n == 0:
+        raise ValueError("select-hint injection found no SELECT keyword")
     return new
 
 
@@ -83,18 +131,17 @@ def _walk_range_alternatives(node, out):
 
 
 def run_cell(server, database: str, query_id: str, sql: str, plan: str,
-             bi_tables=(), session_vars=None, actual_where=None,
+             secondary_indexes=None, session_vars=None, actual_where=None,
              trace_path=None) -> dict:
     """Execute one plan-mode cell on a fresh session; returns a flat dict
     (one CSV row). `actual_where` = {table: where_clause} ground-truth spec;
     counts are the caller's to cache across cells (engine-independent)."""
-    hint = PLAN_HINTS[plan]
+    table_hints, select_hints = resolve_plan(plan, secondary_indexes)
     q = sql
-    if hint:
-        if not bi_tables:
-            raise ValueError(f"plan={plan} needs bi tables in the layout")
-        for t in bi_tables:
-            q = inject_table_hint(q, t, hint)
+    for t, hint in table_hints.items():
+        q = inject_table_hint(q, t, hint)
+    if select_hints:
+        q = inject_select_hint(q, select_hints)
 
     conn = server.connect(database=database)
     try:
@@ -145,9 +192,14 @@ def run_cell(server, database: str, query_id: str, sql: str, plan: str,
     if bi_est is not None and actual:
         q_error = round(max(bi_est / actual, actual / bi_est), 4)
 
+    # plan-sanity contract (H2c): every measurement row names the access
+    # path it actually measured; perf-mode CSVs must carry these columns.
+    main = tables[0] if tables else {}
     return {
         "query_id": query_id,
         "plan": plan,
+        "chosen_access": main.get("access_type"),
+        "chosen_key": main.get("key"),
         "chosen_plan": json.dumps(
             [[t["name"], t["access_type"], t["key"], t["rows"]]
              for t in tables]),

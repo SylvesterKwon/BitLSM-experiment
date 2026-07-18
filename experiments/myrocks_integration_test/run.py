@@ -9,7 +9,9 @@ For each (engine, index_layout) cell: boot the identity-cached datadir,
 then for each query x plan run one plan-mode cell (fresh session; EXPLAIN
 JSON + optimizer_trace) and append a CSV row. Ground-truth COUNTs are
 engine-independent (all engines load the byte-identical flat file) and are
-cached once per (workload, query) under the data directory.
+cached once per (workload, query) under the data directory. Every engine's
+own COUNT is re-run and verified against the cached truth (cross-engine
+correctness gate) — any mismatch is reported and fails the sweep.
 
 Usage:
     python3 experiments/myrocks_integration_test/run.py exp_set/<params>.json [options]
@@ -34,7 +36,9 @@ from myrocks.workloads.ssb_flat import SsbFlatWorkload  # noqa: E402
 
 CSV_FIELDS = [
     "ts", "workload", "engine", "index_layout", "query_id", "plan",
-    "bi_chosen", "bi_est_rows", "actual_rows", "q_error", "query_cost",
+    "chosen_access", "chosen_key",
+    "bi_chosen", "bi_est_rows", "actual_rows", "engine_rows", "count_match",
+    "q_error", "query_cost",
     "explain_ms", "trace_bytes", "chosen_plan",
     "lsm_state", "server_args_hash", "mysql_commit", "bitlsm_commit",
 ]
@@ -55,7 +59,12 @@ def extract_where(sql: str):
 
 class GroundTruth:
     """(query_id -> actual matching rows), persisted next to the data so
-    every engine and estimator iteration scores against the same truth."""
+    every engine and estimator iteration scores against the same truth.
+
+    Doubles as the cross-engine correctness gate (H2b): all engines load
+    the byte-identical flat file, so each engine's own COUNT must equal
+    the cached truth. The first engine to see a query seeds the cache;
+    every later engine verifies against it."""
 
     def __init__(self, workload):
         self.path = os.path.join(
@@ -66,19 +75,27 @@ class GroundTruth:
             with open(self.path) as f:
                 self.cache = json.load(f)
 
-    def get(self, qid, sql, conn):
+    def count_on_engine(self, sql, conn):
+        """This engine's own matching-row count for the query's WHERE."""
+        where = extract_where(sql)
+        if where is None:
+            return None
+        cur = conn.cursor()
+        cur.execute(f"SELECT COUNT(*) FROM lineorder_flat WHERE {where}")
+        n = cur.fetchone()[0]
+        cur.close()
+        return n
+
+    def check(self, qid, engine_count):
+        """Returns (truth, match). Seeds the cache on first sight."""
+        if engine_count is None:
+            return self.cache.get(qid), None
         if qid not in self.cache:
-            where = extract_where(sql)
-            if where is None:
-                return None
-            cur = conn.cursor()
-            cur.execute(
-                f"SELECT COUNT(*) FROM lineorder_flat WHERE {where}")
-            self.cache[qid] = cur.fetchone()[0]
-            cur.close()
+            self.cache[qid] = engine_count
             with open(self.path, "w") as f:
                 json.dump(self.cache, f, indent=2, sort_keys=True)
-        return self.cache[qid]
+            return engine_count, True
+        return self.cache[qid], self.cache[qid] == engine_count
 
 
 def run(config_path, dry_run, start_from):
@@ -114,6 +131,8 @@ def run(config_path, dry_run, start_from):
         os.makedirs(out_dir, exist_ok=True)
         csv_path = os.path.join(out_dir, "plan_mode.csv")
         truth = GroundTruth(workload)
+        mismatches = []
+        checked = 0
         idx = 0
         with open(csv_path, "w", newline="") as cf:
             writer = csv.DictWriter(cf, fieldnames=CSV_FIELDS)
@@ -127,12 +146,21 @@ def run(config_path, dry_run, start_from):
                                        "LOADED.json")) as f:
                     marker = json.load(f)
                 srv = server_for(workload, engine, layout, build_kind)
-                bi_tabs = workload.bi_tables(layout)
+                sec_idx = workload.secondary_indexes(layout)
                 with srv:
                     binfo = srv.build_info()
                     truth_conn = srv.connect(database=workload.name)
                     for qid, sql in queries.items():
-                        actual = truth.get(qid, sql, truth_conn)
+                        engine_rows = truth.count_on_engine(sql, truth_conn)
+                        actual, match = truth.check(qid, engine_rows)
+                        if match is not None:
+                            checked += 1
+                            if not match:
+                                mismatches.append(
+                                    (engine, layout, qid, engine_rows, actual))
+                                print(f"COUNT MISMATCH {engine}/{layout} "
+                                      f"{qid}: engine={engine_rows} "
+                                      f"truth={actual}")
                         for plan in cell["plans"]:
                             idx += 1
                             if idx < start_from:
@@ -142,10 +170,13 @@ def run(config_path, dry_run, start_from):
                                 f"{engine}-{layout}-{qid}-{plan}.json")
                             row = drv.run_cell(
                                 srv, workload.name, qid, sql, plan,
-                                bi_tables=bi_tabs,
+                                secondary_indexes=sec_idx,
                                 session_vars=cell.get("session_vars"),
                                 trace_path=trace_path)
                             row["actual_rows"] = actual
+                            row["engine_rows"] = engine_rows
+                            row["count_match"] = (None if match is None
+                                                  else int(match))
                             if row["bi_est_rows"] and actual:
                                 row["q_error"] = round(max(
                                     row["bi_est_rows"] / actual,
@@ -163,11 +194,20 @@ def run(config_path, dry_run, start_from):
                             writer.writerow(row)
                             cf.flush()
                             print(f"[{idx}/{total}] {engine}/{layout} "
-                                  f"{qid} {plan}: bi_chosen={row['bi_chosen']} "
+                                  f"{qid} {plan}: "
+                                  f"access={row['chosen_access']} "
+                                  f"key={row['chosen_key']} "
                                   f"est={row['bi_est_rows']} act={actual} "
                                   f"qerr={row['q_error']}")
                     truth_conn.close()
+        print(f"crosscheck: {checked} engine-count checks, "
+              f"{len(mismatches)} mismatches")
+        if mismatches:
+            for m in mismatches:
+                print(f"  MISMATCH {m[0]}/{m[1]} {m[2]}: "
+                      f"engine={m[3]} truth={m[4]}")
         print(f"done -> {csv_path}")
+        return 1 if mismatches else 0
     finally:
         teardown_logging(log_file, log_path)
 
@@ -179,7 +219,8 @@ def main():
     add_common_args(parser)
     args = parser.parse_args()
     maybe_run_as_daemon(args)
-    run(args.config, dry_run=args.dry_run, start_from=args.start_from)
+    sys.exit(run(args.config, dry_run=args.dry_run,
+                 start_from=args.start_from))
 
 
 if __name__ == "__main__":
