@@ -35,10 +35,8 @@ from run_common import (  # noqa: E402
     add_common_args, make_result_dir, maybe_run_as_daemon,
     setup_logging, teardown_logging,
 )
-from myrocks import metrics  # noqa: E402
-from myrocks.loader import (  # noqa: E402
-    SERVER_ARGS, datadir_for, ensure_loaded,
-)
+from myrocks import metrics, server_profile  # noqa: E402
+from myrocks.loader import datadir_for, ensure_loaded  # noqa: E402
 from myrocks.server import MysqldServer  # noqa: E402
 from myrocks.workloads.ssb_flat import SsbFlatWorkload  # noqa: E402
 
@@ -56,24 +54,6 @@ CSV_FIELDS = [
 ] + metrics.KEY_COUNTERS + [
     "lsm_state", "server_args_hash", "mysql_commit", "bitlsm_commit",
 ]
-
-CACHE_BYTES = 1 << 30  # D7: unified 1G budget
-
-PERF_ARGS = {
-    "innodb": [f"--innodb-buffer-pool-size={CACHE_BYTES}",
-               "--innodb-flush-method=O_DIRECT"],
-    "myrocks": [f"--rocksdb-block-cache-size={CACHE_BYTES}",
-                "--rocksdb-use-direct-reads=1"],
-}
-PERF_ARGS["bitlsm"] = PERF_ARGS["myrocks"]
-
-
-def measurement_args(engine: str) -> list:
-    """Load args with cache-related entries replaced by the D7 set."""
-    base = [a for a in SERVER_ARGS[engine]
-            if "buffer-pool-size" not in a and "block-cache-size" not in a]
-    return base + PERF_ARGS[engine]
-
 
 def drop_page_cache() -> bool:
     """Best-effort sync + drop_caches. Needs passwordless sudo; under D7
@@ -97,6 +77,7 @@ def run(config_path, dry_run, start_from):
     exp_name = os.path.basename(os.path.dirname(os.path.abspath(__file__)))
     exp_label = f"{exp_name}_{exp_set}"
     workload = make_workload(config)
+    profile = server_profile.resolve(config.get("server_common"))
     warm_reps = config.get("warm_reps", 5)
     queries = workload.queries()
     if config.get("queries", "all") != "all":
@@ -110,11 +91,13 @@ def run(config_path, dry_run, start_from):
         print(f"config : {config_path}")
         print(f"label  : {exp_label}")
         print(f"cells  : {total} (warm_reps={warm_reps})")
+        print(f"server : {profile}")
         print(f"output : {out_dir}")
         if dry_run:
             for c in cells:
                 print(f"  [{c['engine']}/{c['index_layout']}] "
-                      f"plans={c['plans']} args={measurement_args(c['engine'])}")
+                      f"plans={c['plans']} args="
+                      f"{server_profile.build_args(c['engine'], profile)}")
             return 0
 
         os.makedirs(out_dir, exist_ok=True)
@@ -142,7 +125,8 @@ def run(config_path, dry_run, start_from):
                         if drop_page_cache():
                             cache_drops += 1
                         srv = MysqldServer(datadir_for(identity), "release",
-                                           extra_args=measurement_args(engine))
+                                           extra_args=server_profile.build_args(
+                                               engine, profile))
                         with srv:
                             row = metrics.run_perf_cell(
                                 srv, workload.name, qid, sql, plan,

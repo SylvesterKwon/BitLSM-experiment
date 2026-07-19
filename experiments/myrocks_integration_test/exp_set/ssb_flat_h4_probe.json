@@ -1,0 +1,20 @@
+{
+  "workload": "ssbflat",
+  "sf": 2,
+  "build_kind": "release",
+  "rows": 500000,
+  "writers": [1, 2, 4, 8],
+  "shuffle": false,
+  "server_common": {
+    "cache_bytes": 1073741824,
+    "direct_io": true,
+    "relaxed_commit_flush": true
+  },
+  "identities": [
+    {"engine": "myrocks", "index_layout": "std"},
+    {"engine": "bitlsm",  "index_layout": "bi_v1"},
+    {"engine": "myrocks", "index_layout": "sk_v1"},
+    {"engine": "innodb",  "index_layout": "std"},
+    {"engine": "innodb",  "index_layout": "sk_v1"}
+  ]
+}
