@@ -39,7 +39,7 @@ from myrocks.workloads.ssb_flat import FLAT_COLUMNS, SsbFlatWorkload  # noqa: E4
 
 CSV_FIELDS = [
     "ts", "workload", "engine", "index_layout", "writers", "rows",
-    "seconds", "rows_per_sec", "shuffle",
+    "seconds", "rows_per_sec", "db_bytes", "shuffle",
     "server_args_hash", "mysql_commit", "bitlsm_commit",
 ]
 
@@ -90,6 +90,17 @@ def shuffled_copy(workload, seed: int) -> str:
         f.writelines(lines)
     os.replace(tmp, path)
     return path
+
+
+def _dir_bytes(path: str) -> int:
+    total = 0
+    for root, _, files in os.walk(path):
+        for f in files:
+            try:
+                total += os.path.getsize(os.path.join(root, f))
+            except OSError:
+                pass
+    return total
 
 
 def run_one(workload, engine, layout, n_writers, n_rows, data_path,
@@ -143,6 +154,8 @@ def run_one(workload, engine, layout, n_writers, n_rows, data_path,
             conn.close()
             binfo = srv.build_info()
             args_hash = srv.args_hash()
+        # measured after clean shutdown, natural (uncompacted) resting state
+        db_bytes = _dir_bytes(datadir)
     finally:
         if os.path.exists(datadir):
             shutil.rmtree(datadir)
@@ -151,6 +164,7 @@ def run_one(workload, engine, layout, n_writers, n_rows, data_path,
         "engine": engine, "index_layout": layout, "writers": n_writers,
         "rows": n_rows, "seconds": round(seconds, 1),
         "rows_per_sec": round(n_rows / seconds, 1),
+        "db_bytes": db_bytes,
         "server_args_hash": args_hash,
         "mysql_commit": binfo["mysql_commit"][:12],
         "bitlsm_commit": binfo["bitlsm_commit"][:12],
