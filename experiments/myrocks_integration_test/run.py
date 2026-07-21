@@ -146,10 +146,23 @@ def run(config_path, dry_run, start_from):
                                        "LOADED.json")) as f:
                     marker = json.load(f)
                 srv = server_for(workload, engine, layout, build_kind)
+                # M5 A/B axis: "bitlsm_estimator": false pins the M4b sysvar
+                # fallback (readonly server flag); default/true = estimator on.
+                estimator_on = config.get("bitlsm_estimator", True)
+                if engine == "bitlsm" and not estimator_on:
+                    srv.extra_args.append("--rocksdb-bitlsm-estimator=0")
                 sec_idx = workload.secondary_indexes(layout)
                 with srv:
                     binfo = srv.build_info()
                     truth_conn = srv.connect(database=workload.name)
+                    if engine == "bitlsm" and estimator_on:
+                        # Measurement protocol (registry §2.5): force the
+                        # estimator's stats current before any EXPLAIN, so
+                        # estimates never race the async refresh worker.
+                        rc = truth_conn.cursor()
+                        rc.execute(
+                            "SET GLOBAL rocksdb_bitlsm_estimator_refresh = 1")
+                        rc.close()
                     for qid, sql in queries.items():
                         engine_rows = truth.count_on_engine(sql, truth_conn)
                         actual, match = truth.check(qid, engine_rows)
