@@ -2,9 +2,11 @@
 // ported to namespace experiment::sai. SAIIndexFactory install lands in Task 6,
 // SAIIterator wiring in Task 7.
 #include "sai_db.h"
+#include <algorithm>
 #include <iostream>
 #include <stdexcept>
 #include "sai_index.h"
+#include "sai_iterator.h"
 #include "sai_value_codec.h"
 #include "rocksdb/options.h"
 
@@ -56,8 +58,17 @@ Status SAIDB::Put(const string& pk, const vector<Attr>& attrs,
 }
 
 std::unique_ptr<SAIIterator> SAIDB::NewIterator(bit_lsm::BitLSMQuery& query) {
-  (void)query;
-  return nullptr;  // Task 7 wires SAIIterator here
+  if (!query.Validate(bit_lsm_options_).ok()) return nullptr;
+  // Sort conditions within each OR clause by attr_idx (same as embedded_db.cpp:83-89).
+  for (auto& clause : query.clause_groups) {
+    std::sort(clause.begin(), clause.end(),
+              [](const bit_lsm::QueryCondition& a,
+                 const bit_lsm::QueryCondition& b) {
+                return a.attr_idx < b.attr_idx;
+              });
+  }
+  return std::make_unique<SAIIterator>(db_, cf_handles_[0], bit_lsm_options_,
+                                       query, intersection_limit_);
 }
 
 }  // namespace experiment::sai

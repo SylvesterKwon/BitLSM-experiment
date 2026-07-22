@@ -17,20 +17,12 @@ using Attr =
 
 namespace experiment::sai {
 
-// Task 7 replaces this stub with the real intersection-based scan iterator
-// (index-candidate resolution via MultiGet + per-clause predicate
-// evaluation, mirroring EmbeddedIterator). It must be a complete type here,
-// not just forward-declared: SAIDB::NewIterator returns
-// std::unique_ptr<SAIIterator> by value, and GCC instantiates
-// unique_ptr's destructor wherever such a function is defined -- even a
-// function that only ever returns nullptr -- so an incomplete pointee type
-// fails to compile (same rule as the Pimpl idiom).
-class SAIIterator {
- public:
-  void SeekToFirst() {}
-  bool Valid() const { return false; }
-  void Next() {}
-};
+// The real SAIIterator is defined in sai_iterator.h (Task 7). Only a forward
+// declaration is needed here: SAIDB::NewIterator returns
+// std::unique_ptr<SAIIterator>, but sai_db.cpp includes sai_iterator.h so the
+// complete type is visible where NewIterator is defined and where unique_ptr's
+// destructor is instantiated.
+class SAIIterator;
 
 class SAIDB {
  private:

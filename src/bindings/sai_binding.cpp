@@ -1,5 +1,6 @@
 #include "sai_binding.h"
 #include "benchmark_experiment.h"
+#include "sai_iterator.h"
 #include <chrono>
 #include <cxxopts.hpp>
 #include <rocksdb/filter_policy.h>
@@ -51,13 +52,15 @@ void SAIBinding::Put(const std::string& pk, const std::vector<Attr>& attrs,
 }
 
 ScanResult SAIBinding::Scan(BitLSMQuery& query) {
+  uint64_t matched = 0;
   auto start = std::chrono::high_resolution_clock::now();
-  auto iter = db_->NewIterator(query);  // nullptr until Task 7
-  (void)iter;
+  auto iter = db_->NewIterator(query);
+  for (iter->SeekToFirst(); iter->Valid(); iter->Next())
+    matched++;
   auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                      std::chrono::high_resolution_clock::now() - start)
                      .count();
-  return {static_cast<uint64_t>(elapsed), 0};
+  return {static_cast<uint64_t>(elapsed), matched};
 }
 
 WriteStats SAIBinding::GetWriteStats() {
