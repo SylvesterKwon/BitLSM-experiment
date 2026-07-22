@@ -9,7 +9,6 @@
 
 #include <cassert>
 #include <cstdint>
-#include <iostream>
 
 #include "bit_lsm_option.h"
 #include "rocksdb/db.h"

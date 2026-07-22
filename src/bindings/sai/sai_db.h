@@ -1,6 +1,6 @@
 #pragma once
 // Corresponds to the embedded baseline's EmbeddedDB (src/bindings/embedded/embedded_db.h);
-// ported to namespace experiment::sai, installs SAIIndexFactory (Task 6) instead of
+// ported to namespace experiment::sai, installs SAIIndexFactory instead of
 // EmbeddedIndexFactory, carries the SAI intersection_limit knob.
 #include <rocksdb/db.h>
 #include <rocksdb/options.h>
@@ -17,7 +17,7 @@ using Attr =
 
 namespace experiment::sai {
 
-// The real SAIIterator is defined in sai_iterator.h (Task 7). Only a forward
+// The real SAIIterator is defined in sai_iterator.h. Only a forward
 // declaration is needed here: SAIDB::NewIterator returns
 // std::unique_ptr<SAIIterator>, but sai_db.cpp includes sai_iterator.h so the
 // complete type is visible where NewIterator is defined and where unique_ptr's

@@ -78,7 +78,7 @@ void SAILevelIterator::LoadFile(size_t idx) {
   TableReader* table = cache_interface.Value(new_table_handle);
   BlockBasedTable* bbt = static_cast<BlockBasedTable*>(table);
 
-  // 4. Prepare new SAITableIterator (replaces SABITableIterator)
+  // 4. Prepare new SAITableIterator
   cur_table_handle_ = new_table_handle;
   cur_sti_ = new SAITableIterator(bbt, options_, query_, plan_);
 }

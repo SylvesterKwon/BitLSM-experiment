@@ -4,8 +4,9 @@
 // specialisation, disk/v1/bbtree/BlockBalancedTreeWriter.java): 1024-entry
 // value-sorted leaves, per-leaf rowId-sorted postings, and a LeafOrderMap
 // permutation linking value order to posting order. The balanced split-value
-// index is flattened into binary search over per-block min/max (design D2);
-// internal-node pre-merged postings omitted (D2).
+// index is flattened into a linear scan over the value-sorted, non-overlapping
+// per-block min/max ranges (design D2); internal-node pre-merged postings
+// omitted (D2).
 #include <cstdint>
 #include <limits>
 #include <memory>

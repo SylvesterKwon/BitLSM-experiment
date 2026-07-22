@@ -25,7 +25,7 @@ struct SAIFact {
   double lo = -std::numeric_limits<double>::infinity();
   double hi = std::numeric_limits<double>::infinity();
   bool lo_inc = true, hi_inc = true;
-  uint64_t est = 0;  // filled by the ranking pass (Task 8)
+  uint64_t est = 0;  // filled by the ranking pass
 };
 
 struct SAIPlan {

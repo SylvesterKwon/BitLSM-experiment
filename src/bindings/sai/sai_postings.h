@@ -50,8 +50,7 @@ class PostingsCursor : public RowCursor {
   void LoadBlock(uint32_t block_idx);  // decode block into decoded_
   const char* base_;
   uint32_t n_ = 0, nblocks_ = 0;
-  const char* skip_;    // skip table start
-  const char* blocks_;  // unused; block offsets come from the skip table
+  const char* skip_;  // skip table start
   uint32_t cur_block_ = 0;
   std::vector<uint32_t> decoded_;  // current block's postings
   uint32_t pos_ = 0;
@@ -71,7 +70,6 @@ class IntersectionCursor : public RowCursor {
   std::vector<std::unique_ptr<RowCursor>> children_;
   uint32_t current_ = 0;
   bool valid_ = false;
-  bool primed_ = false;
 };
 
 }  // namespace experiment::sai

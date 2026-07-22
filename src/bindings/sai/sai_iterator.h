@@ -85,7 +85,7 @@ class SAITableIterator : public SAIInternalIterator {
 
   void BuildCursor();          // index mode ctor helper
   void LoadNextBlockScan();    // full-scan mode (EmbeddedTableIterator port)
-  void LoadNextBlockIndexed(); // index mode: next block holding candidates (Task 8)
+  void LoadNextBlockIndexed(); // index mode: next block holding candidates
 
  public:
   SAITableIterator(rocksdb::BlockBasedTable* bbt, bit_lsm::BitLSMOptions options,
@@ -185,7 +185,7 @@ class SAIIterator : public SAIInternalIterator {
   std::vector<std::string> batch_values_;
   uint32_t batch_cur_idx_ = 0;
   std::string latest_user_key_added;
-  void BuildPlan();  // ranking pass (Task 8; full_scan placeholder in Task 7)
+  void BuildPlan();  // ranking pass; full_scan is the no-usable-facts placeholder
   void FetchNextBatch(uint32_t batch_size);
 
  public:

@@ -1,6 +1,6 @@
 // Corresponds to the embedded baseline's EmbeddedDB (src/bindings/embedded/embedded_db.cpp);
-// ported to namespace experiment::sai. SAIIndexFactory install lands in Task 6,
-// SAIIterator wiring in Task 7.
+// ported to namespace experiment::sai, installing SAIIndexFactory and wiring
+// up SAIIterator.
 #include "sai_db.h"
 #include <algorithm>
 #include <iostream>

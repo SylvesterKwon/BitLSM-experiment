@@ -67,7 +67,6 @@ PostingsCursor::PostingsCursor(const char* list_base) : base_(list_base) {
   n_ = GetU32(base_);
   nblocks_ = GetU32(base_ + 4);
   skip_ = base_ + 8;
-  blocks_ = nullptr;
   if (n_ > 0) {
     LoadBlock(0);
     valid_ = true;

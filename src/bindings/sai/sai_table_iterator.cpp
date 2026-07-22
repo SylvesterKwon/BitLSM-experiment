@@ -1,8 +1,8 @@
 // Per-SST iterator for the SAI baseline.
-// Full-scan mode (this task): port of EmbeddedTableIterator's block scan
+// Full-scan mode: port of EmbeddedTableIterator's block scan
 // (src/bindings/embedded/embedded_table_iterator.cpp), candidate set = ALL
 // blocks, exact SAICodec::Evaluate per entry.
-// Index mode (Task 8): posting intersection -> candidate rowIds -> (block,
+// Index mode: posting intersection -> candidate rowIds -> (block,
 // ordinal) fetch; corresponds to Cassandra SAI's index search producing
 // candidate primary keys (disk/v1/V1SSTableIndex.search + PostingListRangeIterator).
 #include <bit_lsm_query.h>
