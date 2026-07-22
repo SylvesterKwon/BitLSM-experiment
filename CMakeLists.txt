@@ -133,7 +133,7 @@ foreach(TEST_SRC ${SAI_TEST_SOURCES})
         ${EMBEDDED_ROCKSDB_DIR}
         ${EMBEDDED_ROCKSDB_DIR}/include
     )
-    target_compile_options(${TEST_NAME} PRIVATE -fno-rtti)
+    target_compile_options(${TEST_NAME} PRIVATE -fno-rtti -UNDEBUG)
     target_link_libraries(${TEST_NAME} PRIVATE ${COMMON_LINK_LIBS} experiment_bindings)
     message(STATUS "SAI test executable added: ${TEST_NAME}")
 endforeach()
