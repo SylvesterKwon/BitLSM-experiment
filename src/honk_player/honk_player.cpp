@@ -31,7 +31,7 @@ int main(int argc, char* argv[]) {
   opts.allow_unrecognised_options();
   // clang-format off
   opts.add_options()
-    ("binding", "Method: bitlsm|no-index|si-ck|si-lu",
+    ("binding", "Method: bitlsm|no-index|si-ck|si-lu|si-eager|embedded|sai",
      cxxopts::value<string>())
     ("workload", "TSV workload file path",
      cxxopts::value<string>())
