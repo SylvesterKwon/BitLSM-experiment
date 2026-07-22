@@ -77,7 +77,7 @@ set(COMMON_LINK_LIBS
 )
 
 # EXPERIMENT BINDINGS (정적 라이브러리)
-file(GLOB BINDING_SOURCES "src/bindings/*.cpp" "src/bindings/embedded/*.cpp")
+file(GLOB BINDING_SOURCES "src/bindings/*.cpp" "src/bindings/embedded/*.cpp" "src/bindings/sai/*.cpp")
 add_library(experiment_bindings STATIC ${BINDING_SOURCES})
 
 # Path to the patched RocksDB vendored inside BitLSM. Referenced DIRECTLY so this
@@ -88,6 +88,7 @@ set(EMBEDDED_ROCKSDB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/BitLSM/third_pa
 target_include_directories(experiment_bindings PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/bindings
     ${CMAKE_CURRENT_SOURCE_DIR}/src/bindings/embedded
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/bindings/sai
     ${CMAKE_CURRENT_SOURCE_DIR}/src/benchmark
     ${EMBEDDED_ROCKSDB_DIR}
     ${EMBEDDED_ROCKSDB_DIR}/include
@@ -119,4 +120,20 @@ foreach(EXP_SRC ${EXPERIMENT_SOURCES})
     target_link_libraries(${EXP_NAME} PRIVATE ${COMMON_LINK_LIBS} experiment_bindings)
 
     message(STATUS "Experiment executable added: ${EXP_NAME}")
+endforeach()
+
+# SAI unit-test executables (assert-based standalone mains)
+file(GLOB SAI_TEST_SOURCES "src/bindings/sai/test/*.cpp")
+foreach(TEST_SRC ${SAI_TEST_SOURCES})
+    get_filename_component(TEST_NAME ${TEST_SRC} NAME_WE)
+    add_executable(${TEST_NAME} ${TEST_SRC})
+    target_include_directories(${TEST_NAME} PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/bindings
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/bindings/sai
+        ${EMBEDDED_ROCKSDB_DIR}
+        ${EMBEDDED_ROCKSDB_DIR}/include
+    )
+    target_compile_options(${TEST_NAME} PRIVATE -fno-rtti)
+    target_link_libraries(${TEST_NAME} PRIVATE ${COMMON_LINK_LIBS} experiment_bindings)
+    message(STATUS "SAI test executable added: ${TEST_NAME}")
 endforeach()
