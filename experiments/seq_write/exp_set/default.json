@@ -40,6 +40,13 @@
       "name": "si-ck",
       "binary": "build/bin/si-ck",
       "params": {}
+    },
+    {
+      "name": "sai",
+      "binary": "build/bin/sai",
+      "params": {
+        "intersection_limit": 2
+      }
     }
   ]
 }
