@@ -36,7 +36,29 @@ SAITableIterator::SAITableIterator(BlockBasedTable* bbt,
 }
 
 void SAITableIterator::BuildCursor() {
-  cursor_.reset();  // Task 8 implements index-mode cursor construction
+  // Corresponds to Cassandra's per-SSTable index search: one posting iterator
+  // per chosen predicate, intersected (disk/v1/V1SSTableIndex.search ->
+  // KeyRangeIntersectionIterator). Any predicate empty in this SSTable ->
+  // the whole SSTable yields no candidates (disjoint short-circuit,
+  // KeyRangeIntersectionIterator.buildIterator:322-331).
+  std::vector<std::unique_ptr<RowCursor>> children;
+  for (const SAIFact& f : plan_.chosen) {
+    auto c = idx_->OpenCursor(f);
+    if (!c || !c->Valid()) {
+      cursor_.reset();
+      return;
+    }
+    children.push_back(std::move(c));
+  }
+  if (children.empty()) {  // defensive: BuildPlan guarantees chosen non-empty
+    cursor_.reset();
+    return;
+  }
+  if (children.size() == 1) {
+    cursor_ = std::move(children[0]);  // single predicate: no intersection
+  } else {
+    cursor_ = std::make_unique<IntersectionCursor>(std::move(children));
+  }
 }
 
 void SAITableIterator::LoadNextBlockScan() {
@@ -86,7 +108,62 @@ void SAITableIterator::LoadNextBlockScan() {
 }
 
 void SAITableIterator::LoadNextBlockIndexed() {
-  valid_ = false;  // Task 8 implements
+  // Consume the candidate rowId stream one data block at a time: all candidates
+  // in the current block are fetched in a single forward walk (candidates are
+  // ascending; rowId = key-order ordinal). NO full-query evaluation here —
+  // post-filtering of every original predicate happens in SAIIterator's
+  // MultiGet cross-check (SAI post-filter, design §5.3).
+  while (cursor_ && cursor_->Valid()) {
+    uint32_t block, ordinal;
+    idx_->Locate(cursor_->Row(), block, ordinal);
+    // Collect this block's candidate ordinals.
+    std::vector<uint32_t> ordinals{ordinal};
+    cursor_->Next();
+    while (cursor_->Valid()) {
+      uint32_t b2, o2;
+      idx_->Locate(cursor_->Row(), b2, o2);
+      if (b2 != block) break;
+      ordinals.push_back(o2);
+      cursor_->Next();
+    }
+    keys_buf_.clear();
+    values_buf_.clear();
+    Status s;
+    BlockHandle bh;
+    bh.set_offset(idx_->block_handles[block].offset);
+    bh.set_size(idx_->block_handles[block].size);
+    DataBlockIter* new_biter = bbt_->NewDataBlockIterator<DataBlockIter>(
+        ReadOptions(), bh, nullptr, BlockType::kData, nullptr, nullptr, nullptr,
+        false, false, s, true);
+    biter_.reset(new_biter);
+    size_t want = 0;
+    uint32_t walk = 0;
+    for (biter_->SeekToFirst(); biter_->Valid() && want < ordinals.size();
+         biter_->Next(), ++walk) {
+      if (walk != ordinals[want]) continue;
+      ++want;
+      ParsedInternalKey ikey;
+      Status ps = rocksdb::ParseInternalKey(biter_->key(), &ikey, false);
+      if (!ps.ok()) continue;
+      if (ikey.sequence > options_.read_seqno) continue;
+      if (ikey.type == rocksdb::kTypeDeletion ||
+          ikey.type == rocksdb::kTypeSingleDeletion)
+        continue;
+      PinnableSlice k;
+      k.PinSelf(biter_->key());
+      PinnableSlice v;
+      v.PinSlice(biter_->value(), nullptr);
+      keys_buf_.push_back(std::move(k));
+      values_buf_.push_back(std::move(v));
+    }
+    if (!keys_buf_.empty()) {
+      buf_idx_ = 0;
+      valid_ = true;
+      return;
+    }
+    // Every candidate in this block was MVCC/tombstone-skipped; next block.
+  }
+  valid_ = false;
 }
 
 void SAITableIterator::SeekToFirst() {

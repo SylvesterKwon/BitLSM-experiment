@@ -14,6 +14,8 @@
 #include "bit_lsm_option.h"
 #include "rocksdb/db.h"
 #include "rocksdb/snapshot.h"
+#include "table/block_based/block_based_table_reader.h"
+#include "table/format.h"
 
 namespace experiment::sai {
 
@@ -158,10 +160,42 @@ Slice SAIIterator::value() const {
   return batch_values_[batch_cur_idx_];
 }
 
+// Conjunction heuristic. Corresponds to Cassandra SAI:
+//  - per-predicate cardinality = sum of per-SSTable posting counts
+//    (KeyRangeUnionIterator count aggregation, KeyRangeUnionIterator.java:202)
+//  - keep only the `limit` most selective for intersection
+//    (KeyRangeIntersectionIterator.java:290-315; default limit 2 =
+//    cassandra.sai.intersection_clause_limit)
+// Deviations D3 (memtable not in ranking) and D5 (counts read from inline
+// metadata; losers never open postings) — design doc §8.
 void SAIIterator::BuildPlan() {
-  // Task 8 replaces this with ExtractFacts + per-SSTable Estimate ranking +
-  // ChooseTopK. Until then every scan uses the exact full-scan path.
-  plan_.full_scan = true;
+  std::vector<SAIFact> facts = ExtractFacts(query_, options_);
+  if (facts.empty()) {
+    plan_.full_scan = true;
+    return;
+  }
+  // Ranking pass: walk every live SSTable's SAIIndexReader and sum estimates.
+  TableCache* tc = cfd_->table_cache();
+  const VersionStorageInfo* vsi = sv_->current->storage_info();
+  const InternalKeyComparator* icmp = vsi->InternalComparator();
+  TableCache::CacheInterface cache_interface = tc->get_cache();
+  for (int level = 0; level < vsi->num_non_empty_levels(); ++level) {
+    for (FileMetaData* meta : vsi->LevelFiles(level)) {
+      TableCache::TypedHandle* handle = nullptr;
+      Status s = tc->FindTable(ReadOptions(), FileOptions(), *icmp, *meta,
+                               &handle, sv_->mutable_cf_options);
+      if (!s.ok()) continue;  // unreadable table contributes nothing
+      auto* bbt = static_cast<BlockBasedTable*>(cache_interface.Value(handle));
+      auto* idx = static_cast<SAIIndexReader*>(
+          bbt->get_rep()->index_reader.get()->GetUDIReader());
+      for (auto& f : facts) f.est += idx->Estimate(f);
+      cache_interface.Release(handle);
+    }
+  }
+  const std::vector<uint32_t> keep = ChooseTopK(facts, intersection_limit_);
+  plan_.chosen.clear();
+  for (uint32_t k : keep) plan_.chosen.push_back(facts[k]);
+  plan_.full_scan = false;
 }
 
 }  // namespace experiment::sai
