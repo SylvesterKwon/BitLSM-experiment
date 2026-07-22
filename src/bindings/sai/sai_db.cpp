@@ -4,6 +4,7 @@
 #include "sai_db.h"
 #include <iostream>
 #include <stdexcept>
+#include "sai_index.h"
 #include "sai_value_codec.h"
 #include "rocksdb/options.h"
 
@@ -20,7 +21,8 @@ SAIDB::SAIDB(const string& db_path, const bit_lsm::BitLSMOptions& bit_lsm_option
       intersection_limit_(intersection_limit) {
   rocksdb_options_ = rocksdb_options;
   BlockBasedTableOptions opts = table_options;
-  // Task 6 installs: opts.user_defined_index_factory = make_shared<SAIIndexFactory>(...)
+  opts.user_defined_index_factory =
+      make_shared<SAIIndexFactory>(bit_lsm_options_);
   rocksdb_options_.table_factory.reset(NewBlockBasedTableFactory(opts));
 
   ColumnFamilyOptions cf_opts(rocksdb_options_);
