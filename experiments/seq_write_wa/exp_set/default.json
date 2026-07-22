@@ -47,6 +47,13 @@
       "params": {
         "bloom_bits": 10
       }
+    },
+    {
+      "name": "sai",
+      "binary": "build/bin/sai",
+      "params": {
+        "intersection_limit": 2
+      }
     }
   ]
 }
