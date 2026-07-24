@@ -35,16 +35,16 @@ inline void ApplyRocksdbCommonOptions(rocksdb::Options& opts) {
 }
 
 // Regime for one table-options block; pass the binding's shared cache so every
-// CF draws from one budget. cache_index_and_filter_blocks keeps index/filter in
-// that budget rather than unbounded in the table reader.
+// CF draws from one data-block budget. cache_index_and_filter_blocks is left at
+// its default (false): index/filter blocks are pre-loaded and pinned in the
+// table reader, so the record-CF Bloom never gets evicted (stable MultiGet) and
+// the cache is purely a data budget. The custom SABI/SAI index is resident and,
+// like the native index/filter, outside the cache -- RSS is the memory metric.
 inline void ApplyRocksdbCommonTableOptions(
     rocksdb::BlockBasedTableOptions& topts,
     const std::shared_ptr<rocksdb::Cache>& cache) {
   topts.block_size = 4 * 1024;
   topts.block_cache = cache;
-  topts.cache_index_and_filter_blocks = true;
-  topts.pin_l0_filter_and_index_blocks_in_cache = false;
-  topts.pin_top_level_index_and_filter = false;
 }
 
 // Whole-key Bloom (10 bits/key) on the record CF. Separate from the helper above
