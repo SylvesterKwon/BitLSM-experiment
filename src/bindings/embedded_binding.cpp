@@ -35,13 +35,10 @@ void EmbeddedBinding::Open(int argc, char* argv[], const std::string& db_path,
   }
   ApplyRocksdbCommonOptions(rocksdb_options);
   rocksdb::BlockBasedTableOptions table_options;
-  table_options.block_size = 4 * 1024;
   ApplyRocksdbCommonTableOptions(table_options, MakeExperimentBlockCache());
-  // Whole-key Bloom filter on the record CF: the controlled constant shared by
-  // all methods (no-index, bitlsm, sai, si-*) so the record CF stays fair. This
-  // is separate from --bloom_bits, which sizes the embedded index's own
-  // per-block categorical Bloom (Qader SIGMOD'18), not the PK point-get filter.
-  table_options.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10, false));
+  // Record-CF Bloom; distinct from --bloom_bits, which sizes the embedded
+  // index's own per-block categorical Bloom (Qader SIGMOD'18).
+  ApplyRecordCfBloom(table_options);
 
   db_ = std::make_unique<embedded::EmbeddedDB>(db_path, opts, rocksdb_options,
                                                 table_options, bloom_bits_);

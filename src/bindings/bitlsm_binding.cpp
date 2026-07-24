@@ -36,15 +36,8 @@ void BitLSMBinding::Open(int argc, char* argv[], const std::string& db_path,
   ApplyRocksdbCommonOptions(rocksdb_options);
 
   rocksdb::BlockBasedTableOptions table_options;
-  table_options.block_size = 4 * 1024;
   ApplyRocksdbCommonTableOptions(table_options, MakeExperimentBlockCache());
-  // Whole-key Bloom filter on the record CF, matching the config used by all
-  // other methods (no-index, si-*) so the record CF is a controlled constant.
-  // Coexists with the SABI user-defined index. BitLSMIterator resolves SABI
-  // candidate keys through db_->MultiGet on this CF, so the filter sits on the
-  // hot read path here too, including the negative lookups for candidates that
-  // do not resolve to a live key.
-  table_options.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10, false));
+  ApplyRecordCfBloom(table_options);
 
   BitLSMOptions bitlsm_opts = opts;
   bitlsm_opts.rho = rho_;

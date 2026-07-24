@@ -37,12 +37,8 @@ void NoIndexBinding::Open(int argc, char* argv[], const std::string& db_path,
   }
   ApplyRocksdbCommonOptions(rocksdb_options);
   BlockBasedTableOptions table_options;
-  table_options.block_size = 4 * 1024;
   ApplyRocksdbCommonTableOptions(table_options, MakeExperimentBlockCache());
-  // Whole-key Bloom filter on the record CF: production-standard config for a
-  // PK point-get store. Applied identically across all methods (bitlsm, si-*)
-  // so the record CF is a controlled constant.
-  table_options.filter_policy.reset(NewBloomFilterPolicy(10, false));
+  ApplyRecordCfBloom(table_options);
   rocksdb_options.table_factory.reset(
       NewBlockBasedTableFactory(table_options));
 
