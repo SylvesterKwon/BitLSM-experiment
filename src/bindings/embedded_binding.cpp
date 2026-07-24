@@ -35,7 +35,7 @@ void EmbeddedBinding::Open(int argc, char* argv[], const std::string& db_path,
   }
   ApplyRocksdbCommonOptions(rocksdb_options);
   rocksdb::BlockBasedTableOptions table_options;
-  ApplyRocksdbCommonTableOptions(table_options, MakeExperimentBlockCache());
+  ApplyRocksdbCommonTableOptions(table_options);
   // Record-CF Bloom; distinct from --bloom_bits, which sizes the embedded
   // index's own per-block categorical Bloom (Qader SIGMOD'18).
   ApplyRecordCfBloom(table_options);

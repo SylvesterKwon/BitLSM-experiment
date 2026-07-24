@@ -37,7 +37,7 @@ void NoIndexBinding::Open(int argc, char* argv[], const std::string& db_path,
   }
   ApplyRocksdbCommonOptions(rocksdb_options);
   BlockBasedTableOptions table_options;
-  ApplyRocksdbCommonTableOptions(table_options, MakeExperimentBlockCache());
+  ApplyRocksdbCommonTableOptions(table_options);
   ApplyRecordCfBloom(table_options);
   rocksdb_options.table_factory.reset(
       NewBlockBasedTableFactory(table_options));

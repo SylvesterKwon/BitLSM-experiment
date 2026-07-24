@@ -5,7 +5,6 @@
 #include "si_index_utils.h"
 #include <algorithm>
 #include <optional>
-#include <rocksdb/cache.h>
 #include <rocksdb/filter_policy.h>
 #include <rocksdb/merge_operator.h>
 #include <rocksdb/statistics.h>
@@ -172,11 +171,6 @@ inline SIDBHandles OpenSITransactionDB(
     std::shared_ptr<rocksdb::Statistics> statistics = nullptr,
     std::optional<rocksdb::BlockBasedTableOptions> si_table_override = {}) {
   SIDBHandles h;
-  // One LRU shared across every CF of this DB so the memory budget is a single
-  // controlled quantity. The secondary factory is built here (not by the
-  // binding) so it draws from the same cache and shares the common regime;
-  // callers pass only the distinguishing bits via si_table_override.
-  auto cache = experiment::MakeExperimentBlockCache();
 
   rocksdb::Options opts;
   opts.create_if_missing = true;
@@ -190,7 +184,7 @@ inline SIDBHandles OpenSITransactionDB(
   experiment::ApplyRocksdbCommonOptions(opts);
 
   rocksdb::BlockBasedTableOptions table_options;
-  experiment::ApplyRocksdbCommonTableOptions(table_options, cache);
+  experiment::ApplyRocksdbCommonTableOptions(table_options);
   opts.table_factory.reset(rocksdb::NewBlockBasedTableFactory(table_options));
 
   rocksdb::ColumnFamilyOptions primary_cf_opts(opts);
@@ -198,7 +192,7 @@ inline SIDBHandles OpenSITransactionDB(
   // Record-CF Bloom on the primary CF only; the secondary CF keeps its own
   // filter (si-ck prefix Bloom via override) or none (si-lu/eager).
   rocksdb::BlockBasedTableOptions primary_table_options;
-  experiment::ApplyRocksdbCommonTableOptions(primary_table_options, cache);
+  experiment::ApplyRocksdbCommonTableOptions(primary_table_options);
   experiment::ApplyRecordCfBloom(primary_table_options);
   primary_cf_opts.table_factory.reset(
       rocksdb::NewBlockBasedTableFactory(primary_table_options));
@@ -210,11 +204,11 @@ inline SIDBHandles OpenSITransactionDB(
     si_cf_opts.merge_operator = si_cf_opts_override.merge_operator;
   if (si_cf_opts_override.prefix_extractor)
     si_cf_opts.prefix_extractor = si_cf_opts_override.prefix_extractor;
-  // Secondary factory: start from the caller's distinguishing bits (si-ck sets
-  // whole_key_filtering + a prefix Bloom), then apply the shared regime/cache.
-  // Without an override the secondary CF inherits the common base factory.
+  // Secondary factory: the caller's distinguishing bits (si-ck sets
+  // whole_key_filtering + a prefix Bloom) plus the shared table regime. Without
+  // an override the secondary CF inherits the common base factory.
   if (si_table_override) {
-    experiment::ApplyRocksdbCommonTableOptions(*si_table_override, cache);
+    experiment::ApplyRocksdbCommonTableOptions(*si_table_override);
     si_cf_opts.table_factory.reset(
         rocksdb::NewBlockBasedTableFactory(*si_table_override));
   }

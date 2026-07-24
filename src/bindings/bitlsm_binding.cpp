@@ -36,7 +36,7 @@ void BitLSMBinding::Open(int argc, char* argv[], const std::string& db_path,
   ApplyRocksdbCommonOptions(rocksdb_options);
 
   rocksdb::BlockBasedTableOptions table_options;
-  ApplyRocksdbCommonTableOptions(table_options, MakeExperimentBlockCache());
+  ApplyRocksdbCommonTableOptions(table_options);
   ApplyRecordCfBloom(table_options);
 
   BitLSMOptions bitlsm_opts = opts;
