@@ -2,6 +2,7 @@
 #include "benchmark_experiment.h"
 #include <chrono>
 #include <cxxopts.hpp>
+#include "rocksdb_common_option.h"
 #include <rocksdb/filter_policy.h>
 #include <rocksdb/options.h>
 #include <rocksdb/table.h>
@@ -32,8 +33,11 @@ void BitLSMBinding::Open(int argc, char* argv[], const std::string& db_path,
     stats_ = rocksdb::CreateDBStatistics();
     rocksdb_options.statistics = stats_;
   }
+  ApplyRocksdbCommonOptions(rocksdb_options);
+
   rocksdb::BlockBasedTableOptions table_options;
   table_options.block_size = 4 * 1024;
+  ApplyRocksdbCommonTableOptions(table_options, MakeExperimentBlockCache());
   // Whole-key Bloom filter on the record CF, matching the config used by all
   // other methods (no-index, si-*) so the record CF is a controlled constant.
   // Coexists with the SABI user-defined index. BitLSMIterator resolves SABI

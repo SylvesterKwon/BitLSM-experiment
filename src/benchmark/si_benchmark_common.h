@@ -1,9 +1,11 @@
 #pragma once
 
 #include "benchmark_experiment.h"
+#include "rocksdb_common_option.h"
 #include "si_index_utils.h"
 #include <algorithm>
 #include <optional>
+#include <rocksdb/cache.h>
 #include <rocksdb/filter_policy.h>
 #include <rocksdb/merge_operator.h>
 #include <rocksdb/statistics.h>
@@ -167,8 +169,13 @@ inline SIDBHandles OpenSITransactionDB(
     const std::string& db_path,
     rocksdb::ColumnFamilyOptions si_cf_opts_override = {},
     int max_background_jobs = 6,
-    std::shared_ptr<rocksdb::Statistics> statistics = nullptr) {
+    std::shared_ptr<rocksdb::Statistics> statistics = nullptr,
+    std::shared_ptr<rocksdb::Cache> cache = nullptr) {
   SIDBHandles h;
+  // One LRU shared across all CFs of this DB so the memory budget is a single
+  // controlled quantity. si-ck passes its own cache so its secondary-CF factory
+  // draws from the same budget; si-lu/eager let us create it here.
+  if (!cache) cache = experiment::MakeExperimentBlockCache();
 
   rocksdb::Options opts;
   opts.create_if_missing = true;
@@ -179,9 +186,11 @@ inline SIDBHandles OpenSITransactionDB(
   opts.max_write_buffer_number = 5;
   if (statistics)
     opts.statistics = statistics;
+  experiment::ApplyRocksdbCommonOptions(opts);
 
   rocksdb::BlockBasedTableOptions table_options;
   table_options.block_size = 4 * 1024;
+  experiment::ApplyRocksdbCommonTableOptions(table_options, cache);
   opts.table_factory.reset(rocksdb::NewBlockBasedTableFactory(table_options));
 
   rocksdb::ColumnFamilyOptions primary_cf_opts(opts);
@@ -195,6 +204,7 @@ inline SIDBHandles OpenSITransactionDB(
   primary_table_options.block_size = 4 * 1024;
   primary_table_options.filter_policy.reset(
       rocksdb::NewBloomFilterPolicy(10, false));
+  experiment::ApplyRocksdbCommonTableOptions(primary_table_options, cache);
   primary_cf_opts.table_factory.reset(
       rocksdb::NewBlockBasedTableFactory(primary_table_options));
 

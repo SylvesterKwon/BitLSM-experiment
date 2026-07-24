@@ -30,16 +30,21 @@ void SICKBinding::Open(int argc, char* argv[], const string& db_path,
   bool wa_mode = (result["exp_type"].as<string>() == "write_seq_wa");
   if (wa_mode) stats_ = rocksdb::CreateDBStatistics();
 
+  // One shared cache for this DB's record + secondary CFs, so the secondary
+  // factory built here draws from the same budget the record CFs use.
+  auto cache = MakeExperimentBlockCache();
   ColumnFamilyOptions si_cf_opts;
   BlockBasedTableOptions si_table_options;
   si_table_options.filter_policy.reset(NewBloomFilterPolicy(10, false));
   si_table_options.whole_key_filtering = false;
+  ApplyRocksdbCommonTableOptions(si_table_options, cache);
   si_cf_opts.table_factory.reset(
       NewBlockBasedTableFactory(si_table_options));
   si_cf_opts.prefix_extractor.reset(
       NewCappedPrefixTransform(idx_no_prefix_size_ + si_prefix_length_));
 
-  db_ = benchmark::OpenSITransactionDB(db_path, si_cf_opts, max_bg_jobs, stats_);
+  db_ = benchmark::OpenSITransactionDB(db_path, si_cf_opts, max_bg_jobs, stats_,
+                                       cache);
 }
 
 void SICKBinding::Put(const string& pk, const vector<Attr>& attrs,

@@ -1,5 +1,6 @@
 #include "embedded_binding.h"
 #include "benchmark_experiment.h"
+#include "rocksdb_common_option.h"
 #include <chrono>
 #include <cxxopts.hpp>
 #include <rocksdb/filter_policy.h>
@@ -32,8 +33,10 @@ void EmbeddedBinding::Open(int argc, char* argv[], const std::string& db_path,
     stats_ = rocksdb::CreateDBStatistics();
     rocksdb_options.statistics = stats_;
   }
+  ApplyRocksdbCommonOptions(rocksdb_options);
   rocksdb::BlockBasedTableOptions table_options;
   table_options.block_size = 4 * 1024;
+  ApplyRocksdbCommonTableOptions(table_options, MakeExperimentBlockCache());
   // Whole-key Bloom filter on the record CF: the controlled constant shared by
   // all methods (no-index, bitlsm, sai, si-*) so the record CF stays fair. This
   // is separate from --bloom_bits, which sizes the embedded index's own

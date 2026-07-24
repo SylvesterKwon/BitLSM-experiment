@@ -1,5 +1,6 @@
 #include "no_index_binding.h"
 #include "bit_lsm_utils.h"
+#include "rocksdb_common_option.h"
 #include <chrono>
 #include <cxxopts.hpp>
 #include <iostream>
@@ -34,8 +35,10 @@ void NoIndexBinding::Open(int argc, char* argv[], const std::string& db_path,
     stats_ = CreateDBStatistics();
     rocksdb_options.statistics = stats_;
   }
+  ApplyRocksdbCommonOptions(rocksdb_options);
   BlockBasedTableOptions table_options;
   table_options.block_size = 4 * 1024;
+  ApplyRocksdbCommonTableOptions(table_options, MakeExperimentBlockCache());
   // Whole-key Bloom filter on the record CF: production-standard config for a
   // PK point-get store. Applied identically across all methods (bitlsm, si-*)
   // so the record CF is a controlled constant.
