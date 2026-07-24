@@ -1,6 +1,7 @@
 #include "sai_binding.h"
 #include "benchmark_experiment.h"
 #include "sai_iterator.h"
+#include "rocksdb_common_option.h"
 #include <chrono>
 #include <cxxopts.hpp>
 #include <rocksdb/filter_policy.h>
@@ -34,13 +35,11 @@ void SAIBinding::Open(int argc, char* argv[], const std::string& db_path,
     stats_ = rocksdb::CreateDBStatistics();
     rocksdb_options.statistics = stats_;
   }
+  ApplyRocksdbCommonOptions(rocksdb_options);
+
   rocksdb::BlockBasedTableOptions table_options;
-  table_options.block_size = 4 * 1024;
-  // Whole-key Bloom on the record CF, the controlled constant shared by all
-  // methods (commit 0f1c75f). SAIIterator resolves index candidates via
-  // MultiGet on this CF, so it sits on the hot read path here as it does for
-  // bitlsm.
-  table_options.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10, false));
+  ApplyRocksdbCommonTableOptions(table_options);
+  ApplyRecordCfBloom(table_options);
 
   db_ = std::make_unique<sai::SAIDB>(db_path, opts, rocksdb_options,
                                      table_options, intersection_limit_);

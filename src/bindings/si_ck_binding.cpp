@@ -30,16 +30,17 @@ void SICKBinding::Open(int argc, char* argv[], const string& db_path,
   bool wa_mode = (result["exp_type"].as<string>() == "write_seq_wa");
   if (wa_mode) stats_ = rocksdb::CreateDBStatistics();
 
+  // The secondary CF differs only in its filter (prefix Bloom, not whole-key);
+  // pass those bits and let OpenSITransactionDB apply the shared regime/cache.
   ColumnFamilyOptions si_cf_opts;
+  si_cf_opts.prefix_extractor.reset(
+      NewCappedPrefixTransform(idx_no_prefix_size_ + si_prefix_length_));
   BlockBasedTableOptions si_table_options;
   si_table_options.filter_policy.reset(NewBloomFilterPolicy(10, false));
   si_table_options.whole_key_filtering = false;
-  si_cf_opts.table_factory.reset(
-      NewBlockBasedTableFactory(si_table_options));
-  si_cf_opts.prefix_extractor.reset(
-      NewCappedPrefixTransform(idx_no_prefix_size_ + si_prefix_length_));
 
-  db_ = benchmark::OpenSITransactionDB(db_path, si_cf_opts, max_bg_jobs, stats_);
+  db_ = benchmark::OpenSITransactionDB(db_path, si_cf_opts, max_bg_jobs, stats_,
+                                       si_table_options);
 }
 
 void SICKBinding::Put(const string& pk, const vector<Attr>& attrs,
