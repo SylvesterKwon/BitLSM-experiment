@@ -321,8 +321,14 @@ int main(int argc, char* argv[]) {
             cout << "[interleave] phase begins at " << writes << " records\n";
           }
           auto t0 = chrono::high_resolution_clock::now();
-          binding->Scan(query);
+          auto interleave_result = binding->Scan(query);
           auto t1 = chrono::high_resolution_clock::now();
+          if (!interleave_result.ok) {
+            // The scan stopped on an error; recording its latency would
+            // poison the interleave curve. Fail the run instead.
+            cerr << "ERROR: scan stopped on an error; aborting run\n";
+            return 1;
+          }
           auto latency = chrono::duration_cast<chrono::microseconds>(t1 - t0).count();
           auto elapsed = chrono::duration_cast<chrono::microseconds>(t1 - interleave_start).count();
           if (!no_csv) {
@@ -333,6 +339,12 @@ int main(int argc, char* argv[]) {
           cout << "[interleave] QUERY #" << reads << " at " << writes << " records, " << latency << "us\n";
         } else {
           auto scan_result = binding->Scan(query);
+          if (!scan_result.ok) {
+            // The scan stopped on an error; `matched` is a partial count.
+            // Fail the run instead of recording a poisoned CSV row.
+            cerr << "ERROR: scan stopped on an error; aborting run\n";
+            return 1;
+          }
           if (!no_csv) {
             ensure_read_csv();
             double selectivity =

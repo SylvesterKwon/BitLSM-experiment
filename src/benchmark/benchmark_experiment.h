@@ -169,6 +169,12 @@ class BenchmarkExperiment {
       auto sr = binding_->Scan(query);
       binding_->Close();
 
+      if (!sr.ok) {
+        // The scan stopped on an error; `matched` is a partial count. Fail
+        // the run instead of printing a RESULT line the sweep would record.
+        cerr << "ERROR: scan stopped on an error; result discarded\n";
+        return 1;
+      }
       double sel_actual = n > 0 ? static_cast<double>(sr.matched) / n : 0.0;
       cout << "RESULT:" << sr.elapsed_ms << "," << sr.matched
            << "," << sel_actual << "\n";

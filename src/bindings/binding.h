@@ -15,6 +15,10 @@ using bit_lsm::BitLSMQuery;
 struct ScanResult {
   uint64_t elapsed_ms;
   uint64_t matched;
+  // False when the scan stopped on an error (e.g. an index block that could
+  // not be loaded): `matched` is then a partial count and must not be
+  // recorded as a result. Bindings without status plumbing leave it true.
+  bool ok = true;
 };
 
 struct WriteStats {
