@@ -59,8 +59,11 @@ SAIMergingIterator::SAIMergingIterator(SuperVersion* sv,
     Status s = tc_->FindTable(ro, FileOptions(), *icmp_, *meta, &table_handle,
                               cf_opts_);
     if (!s.ok()) {
+      // Skipping the file would silently drop every row it holds, so record
+      // the failure; SeekToFirst() refuses to scan once status_ is non-OK.
       std::cerr << "[SAIMergingIterator]: Failed to load L0 file "
-                << meta->fd.GetNumber() << "\n";
+                << meta->fd.GetNumber() << ": " << s.ToString() << "\n";
+      if (status_.ok()) status_ = s;
       continue;
     }
     TableReader* table = cache_interface.Value(table_handle);
@@ -95,13 +98,28 @@ void SAIMergingIterator::SeekToFirst() {
   while (!heap_.empty()) heap_.pop();
   valid_ = false;
 
-  // 2. Propagate SeekToFirst & register to heap
+  // 2. A child that failed to open (see the constructor) already lost rows:
+  // never produce a partial merge over the survivors.
+  if (!status_.ok()) return;
+
+  // 3. Propagate SeekToFirst & register to heap
   for (auto* child : ch_iters_) {
     child->SeekToFirst();
-    if (child->Valid()) heap_.push(child);
+    if (child->Valid()) {
+      heap_.push(child);
+      continue;
+    }
+    // An invalid child is end-of-data only while its status is OK. The first
+    // non-OK status wins and ends the whole merge: the rows behind it are
+    // unknown, so any output here would be an incomplete result.
+    if (!child->status().ok()) {
+      status_ = child->status();
+      while (!heap_.empty()) heap_.pop();
+      return;
+    }
   }
 
-  // 3. Set current iterator validity
+  // 4. Set current iterator validity
   if (!heap_.empty()) {
     valid_ = true;
   }
@@ -114,7 +132,16 @@ void SAIMergingIterator::Next() {
   SAIInternalIterator* top_iter = heap_.top();
   heap_.pop();
   top_iter->Next();
-  if (top_iter->Valid()) heap_.push(top_iter);
+  if (top_iter->Valid()) {
+    heap_.push(top_iter);
+  } else if (!top_iter->status().ok()) {
+    // The child stopped on an error rather than running out of rows; the
+    // merge cannot complete, so stop instead of draining the other children.
+    status_ = top_iter->status();
+    while (!heap_.empty()) heap_.pop();
+    valid_ = false;
+    return;
+  }
 
   // 2. Update valid_
   valid_ = !heap_.empty();

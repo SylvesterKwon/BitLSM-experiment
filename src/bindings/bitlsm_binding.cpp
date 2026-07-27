@@ -2,6 +2,7 @@
 #include "benchmark_experiment.h"
 #include <chrono>
 #include <cxxopts.hpp>
+#include <iostream>
 #include "rocksdb_common_option.h"
 #include <rocksdb/filter_policy.h>
 #include <rocksdb/options.h>
@@ -59,6 +60,14 @@ ScanResult BitLSMBinding::Scan(BitLSMQuery& query) {
   auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                      std::chrono::high_resolution_clock::now() - start)
                      .count();
+  // !Valid() alone only means "no more rows"; a non-OK status means the scan
+  // stopped on an error (typically an SST whose SABI block could not be
+  // loaded) and `matched` is a partial count.
+  rocksdb::Status s = iter->status();
+  if (!s.ok()) {
+    std::cerr << "[BitLSMBinding::Scan] scan failed: " << s.ToString() << "\n";
+    return {static_cast<uint64_t>(elapsed), matched, false};
+  }
   return {static_cast<uint64_t>(elapsed), matched};
 }
 

@@ -5,13 +5,14 @@
 // SABI selects exact ROW indexes from a bitmap; this iterator selects candidate
 // BLOCKS from BF/zonemap and then scans EVERY entry in each candidate block,
 // applying EmbeddedCodec::Evaluate exactly. The RocksDB-internal mechanics of
-// opening a data-block iterator (get_rep(), GetUDIReader(),
+// opening a data-block iterator (GetUserDefinedIndexReader(),
 // NewDataBlockIterator<DataBlockIter>) are ported from
 // third_party/BitLSM/src/include/sabi_table_iterator.cpp.
 
 #include <bit_lsm_query.h>
 
 #include <cstdint>
+#include <iostream>
 #include <limits>
 
 #include "rocksdb/options.h"
@@ -42,13 +43,23 @@ static double U2D(uint64_t u) {
 EmbeddedTableIterator::EmbeddedTableIterator(BlockBasedTable* bbt,
                                              bit_lsm::BitLSMOptions options,
                                              bit_lsm::BitLSMQuery query)
-    : options_(std::move(options)),
-      bbt_(bbt),
-      query_(std::move(query)),
-      // Access pattern copied from sabi_table_iterator.cpp:
-      // get the IndexReader, then downcast its UDI reader to ours.
-      index_reader_(bbt_->get_rep()->index_reader.get()),
-      idx_(static_cast<EmbeddedIndexReader*>(index_reader_->GetUDIReader())) {
+    : options_(std::move(options)), bbt_(bbt), query_(std::move(query)) {
+  // Holds the index entry for this iterator's lifetime: a block cache pin
+  // when cache_index_and_filter_blocks is on (evictable after release), or an
+  // unowned reference to the table-lifetime pin in Rep when off. Mirrors
+  // SABITableIterator (third_party/BitLSM/src/include/sabi_table_iterator.cpp).
+  Status s = bbt_->GetUserDefinedIndexReader(ReadOptions(), &udi_entry_);
+  if (!s.ok()) {
+    // Every failure here is fatal for the scan, NotFound (an SST carrying no
+    // index block) included: the query path has no fallback scan, so skipping
+    // this file would silently drop every row it holds. Record the status so
+    // the parent iterators stop instead of reading it as "no matching rows".
+    std::cerr << "Failed to load embedded index: " << s.ToString() << "\n";
+    status_ = s;
+    return;  // stays !Valid(); SeekToFirst is a no-op
+  }
+  idx_ = static_cast<EmbeddedIndexReader*>(udi_entry_.GetValue()->reader());
+
   SelectCandidateBlocks();
 }
 
@@ -217,6 +228,13 @@ void EmbeddedTableIterator::LoadNextBlock() {
         ReadOptions(), candidate_blocks_[cur_block_idx_], nullptr,
         BlockType::kData, nullptr, nullptr, nullptr, false, false, s, true);
     biter_.reset(new_biter);
+    if (!s.ok()) {
+      // The candidate block is unreadable. Its rows cannot be skipped
+      // silently, so stop the scan here and let the status propagate.
+      status_ = s;
+      valid_ = false;
+      return;
+    }
 
     // Scan EVERY entry in this candidate block; buffer exact matches.
     for (biter_->SeekToFirst(); biter_->Valid(); biter_->Next()) {
@@ -254,6 +272,16 @@ void EmbeddedTableIterator::LoadNextBlock() {
 }
 
 void EmbeddedTableIterator::SeekToFirst() {
+  // A failure is sticky: never restart a scan that already lost data.
+  if (!status_.ok()) {
+    valid_ = false;
+    return;
+  }
+  // The index block failed to load in the constructor: nothing to scan.
+  if (idx_ == nullptr) {
+    valid_ = false;
+    return;
+  }
   cur_block_idx_ = -1;
   buf_idx_ = 0;
   keys_buf_.clear();

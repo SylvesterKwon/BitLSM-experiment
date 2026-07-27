@@ -72,7 +72,10 @@ void SAILevelIterator::LoadFile(size_t idx) {
   Status s = tc_->FindTable(read_options, file_options, *icmp_, *file_meta,
                             &new_table_handle, cf_opts_, no_io);
   if (!s.ok()) {
-    std::cerr << "Failed to load SST\n";
+    // Unreadable SST: its rows cannot be skipped silently, so record the
+    // failure. cur_sti_ stays null and the callers below stop on status_.
+    std::cerr << "Failed to load SST: " << s.ToString() << "\n";
+    status_ = s;
     return;
   }
   TableReader* table = cache_interface.Value(new_table_handle);
@@ -84,17 +87,31 @@ void SAILevelIterator::LoadFile(size_t idx) {
 }
 
 void SAILevelIterator::SeekToFirst() {
+  // 0. A failure is sticky: never restart a scan that already lost a file.
+  if (!status_.ok()) {
+    valid_ = false;
+    return;
+  }
+
   // 1. Set file cursor to zero
   cur_file_idx_ = 0;
 
   // 2. Load files sequentially until valid data is found
   while (cur_file_idx_ < files_.size()) {
     LoadFile(cur_file_idx_);
+    if (!status_.ok()) return;  // LoadFile failed; valid_ is already false
 
     if (cur_sti_ != nullptr) {
       cur_sti_->SeekToFirst();
       if (cur_sti_->Valid()) {
         valid_ = true;
+        return;
+      }
+      // An invalid table iterator means "this file has no matching rows" only
+      // while its status is OK. On an error, adopt it and stop: advancing
+      // would drop every row of this file from the result.
+      if (!cur_sti_->status().ok()) {
+        status_ = cur_sti_->status();
         return;
       }
     }
@@ -114,16 +131,27 @@ void SAILevelIterator::Next() {
   // 3. If current table is no longer valid, move to next valid table
   if (!cur_sti_->Valid()) {
     valid_ = false;
+    // Read the status before the next LoadFile() destroys cur_sti_: a
+    // mid-file failure ends the scan here rather than skipping the rest.
+    if (!cur_sti_->status().ok()) {
+      status_ = cur_sti_->status();
+      return;
+    }
     while (true) {
       cur_file_idx_++;
       if (cur_file_idx_ >= files_.size()) {
         return;
       }
       LoadFile(cur_file_idx_);
+      if (!status_.ok()) return;
       if (cur_sti_ != nullptr) {
         cur_sti_->SeekToFirst();
         if (cur_sti_->Valid()) {
           valid_ = true;
+          return;
+        }
+        if (!cur_sti_->status().ok()) {
+          status_ = cur_sti_->status();
           return;
         }
       }

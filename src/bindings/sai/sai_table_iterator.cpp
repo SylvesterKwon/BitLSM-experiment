@@ -14,6 +14,8 @@
 #define TEST_CACHE_LINE_SIZE \
   64  // matches embedded_table_iterator.cpp / sabi_table_iterator.cpp
 
+#include <iostream>
+
 #include "sai_iterator.h"
 #include "sai_value_codec.h"
 #include "table/block_based/block_based_table_reader.h"
@@ -29,9 +31,23 @@ SAITableIterator::SAITableIterator(BlockBasedTable* bbt,
     : options_(std::move(options)),
       bbt_(bbt),
       query_(std::move(query)),
-      plan_(std::move(plan)),
-      index_reader_(bbt_->get_rep()->index_reader.get()),
-      idx_(static_cast<SAIIndexReader*>(index_reader_->GetUDIReader())) {
+      plan_(std::move(plan)) {
+  // Holds the SAI entry for this iterator's lifetime: a block cache pin when
+  // cache_index_and_filter_blocks is on (evictable after release), or an
+  // unowned reference to the table-lifetime pin in Rep when off. Mirrors
+  // SABITableIterator (third_party/BitLSM/src/include/sabi_table_iterator.cpp).
+  Status s = bbt_->GetUserDefinedIndexReader(ReadOptions(), &udi_entry_);
+  if (!s.ok()) {
+    // Every failure here is fatal for the scan, NotFound (an SST carrying no
+    // SAI block) included: the query path has no fallback scan, so skipping
+    // this file would silently drop every row it holds. Record the status so
+    // the parent iterators stop instead of reading it as "no matching rows".
+    std::cerr << "Failed to load SAI index: " << s.ToString() << "\n";
+    status_ = s;
+    return;  // stays !Valid(); SeekToFirst is a no-op
+  }
+  idx_ = static_cast<SAIIndexReader*>(udi_entry_.GetValue()->reader());
+
   if (!plan_.full_scan) BuildCursor();
 }
 
@@ -79,6 +95,13 @@ void SAITableIterator::LoadNextBlockScan() {
         ReadOptions(), bh, nullptr, BlockType::kData, nullptr, nullptr, nullptr,
         false, false, s, true);
     biter_.reset(new_biter);
+    if (!s.ok()) {
+      // The block is unreadable. Its rows cannot be skipped silently, so stop
+      // the scan here and let the status propagate.
+      status_ = s;
+      valid_ = false;
+      return;
+    }
     for (biter_->SeekToFirst(); biter_->Valid(); biter_->Next()) {
       ParsedInternalKey ikey;
       Status ps = rocksdb::ParseInternalKey(biter_->key(), &ikey, false);
@@ -136,6 +159,14 @@ void SAITableIterator::LoadNextBlockIndexed() {
         ReadOptions(), bh, nullptr, BlockType::kData, nullptr, nullptr, nullptr,
         false, false, s, true);
     biter_.reset(new_biter);
+    if (!s.ok()) {
+      // The block the candidate rowIds point at is unreadable. Its rows
+      // cannot be skipped silently, so stop the scan and let the status
+      // propagate.
+      status_ = s;
+      valid_ = false;
+      return;
+    }
     size_t want = 0;
     uint32_t walk = 0;
     for (biter_->SeekToFirst(); biter_->Valid() && want < ordinals.size();
@@ -167,6 +198,16 @@ void SAITableIterator::LoadNextBlockIndexed() {
 }
 
 void SAITableIterator::SeekToFirst() {
+  // A failure is sticky: never restart a scan that already lost data.
+  if (!status_.ok()) {
+    valid_ = false;
+    return;
+  }
+  // The SAI block failed to load in the constructor: nothing to scan.
+  if (idx_ == nullptr) {
+    valid_ = false;
+    return;
+  }
   cur_block_idx_ = -1;
   buf_idx_ = 0;
   keys_buf_.clear();

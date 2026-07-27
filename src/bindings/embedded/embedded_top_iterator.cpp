@@ -67,12 +67,19 @@ void EmbeddedIterator::FetchNextBatch(uint32_t batch_size) {
   batch_cur_idx_ = 0;
   valid_ = false;
 
-  // 2. Try to find next valid batch which contains at least one valid data entry
+  // 2. Never scan on top of a failed merge: the merging iterator stops on the
+  // first child error, so anything it could still yield is a partial answer.
+  if (!smi_->status().ok()) {
+    status_ = smi_->status();
+    return;
+  }
+
+  // 3. Try to find next valid batch which contains at least one valid data entry
   while (batch_keys_.empty() && smi_->Valid()) {
     std::vector<std::string> candidate_keys;
     candidate_keys.reserve(batch_size);
 
-    // 3. Get candidate keys
+    // 4. Get candidate keys
     while (smi_->Valid() && candidate_keys.size() < batch_size) {
       ParsedInternalKey ikey;
       s = rocksdb::ParseInternalKey(smi_->key(), &ikey, false);
@@ -85,9 +92,17 @@ void EmbeddedIterator::FetchNextBatch(uint32_t batch_size) {
       }
       smi_->Next();
     }
+    // The merge may have stopped on an error partway through this batch.
+    // Half a batch is worse than none, so drop it and report the failure.
+    if (!smi_->status().ok()) {
+      status_ = smi_->status();
+      batch_keys_.clear();
+      batch_values_.clear();
+      return;
+    }
     if (candidate_keys.empty()) break;
 
-    // 4. MultiGet candidates from RocksDB
+    // 5. MultiGet candidates from RocksDB
     std::vector<Slice> candidate_key_slices;
     candidate_key_slices.reserve(candidate_keys.size());
     for (const auto& k : candidate_keys) {
@@ -102,17 +117,27 @@ void EmbeddedIterator::FetchNextBatch(uint32_t batch_size) {
                   candidate_key_slices.data(), pin_values.data(),
                   statuses.data(), true);
 
-    // 5. Cross check (replaces query_.CheckCondition with EmbeddedCodec::Evaluate)
+    // 6. Cross check (replaces query_.CheckCondition with EmbeddedCodec::Evaluate)
     for (uint32_t i = 0; i < candidate_key_slices.size(); ++i) {
-      // 5-1. Check given candidate key exists in DB
-      if (!statuses[i].ok()) continue;
+      // 6-1. Check given candidate key exists in DB. NotFound is expected: the
+      // candidate row was shadowed/deleted between the index read and this
+      // fetch. Any other non-OK status is a real MultiGet failure, so this
+      // batch is unverifiable -- drop it and report the failure the same way
+      // a mid-batch smi_ error does above.
+      if (!statuses[i].ok()) {
+        if (statuses[i].IsNotFound()) continue;
+        status_ = statuses[i];
+        batch_keys_.clear();
+        batch_values_.clear();
+        return;
+      }
 
-      // 5-2. Value validation via EmbeddedCodec::Evaluate
+      // 6-2. Value validation via EmbeddedCodec::Evaluate
       if (EmbeddedCodec::Evaluate(
               query_,
               std::string_view(pin_values[i].data(), pin_values[i].size()),
               options_)) {
-        // 5-3. Move key/value to validated batch if valid entry
+        // 6-3. Move key/value to validated batch if valid entry
         batch_keys_.push_back(std::move(candidate_keys[i]));
         // Optimization: Only call ToString() for valid values
         batch_values_.push_back(pin_values[i].ToString());
@@ -120,7 +145,7 @@ void EmbeddedIterator::FetchNextBatch(uint32_t batch_size) {
     }
   }
 
-  // 6. Update valid_
+  // 7. Update valid_
   if (!batch_keys_.empty()) valid_ = true;
 }
 

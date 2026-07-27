@@ -26,12 +26,19 @@ namespace experiment::embedded {
 class EmbeddedInternalIterator {
  protected:
   bool valid_ = false;
+  // OK unless iteration hit an error. Sticky: once an iterator fails it stays
+  // failed, because the failure (an index block that will not load) is not
+  // recoverable by re-seeking the same iterator. Every layer must therefore
+  // distinguish "!Valid() and OK" (exhausted) from "!Valid() and !OK"
+  // (stopped early), never treating the latter as end-of-data.
+  rocksdb::Status status_;
 
  public:
   virtual ~EmbeddedInternalIterator() {}
   virtual void SeekToFirst() = 0;
   virtual void Next() = 0;
   bool Valid() const { return valid_; }
+  virtual rocksdb::Status status() const { return status_; }
   virtual rocksdb::Slice key() const = 0;
   virtual rocksdb::Slice value() const = 0;
 };
@@ -81,8 +88,14 @@ class EmbeddedTableIterator : public EmbeddedInternalIterator {
   // Table & query context
   bit_lsm::BitLSMOptions options_;
   rocksdb::BlockBasedTable* bbt_;
-  rocksdb::BlockBasedTable::IndexReader* index_reader_;
-  EmbeddedIndexReader* idx_;
+  // Holds the index entry (and its parsed EmbeddedIndexReader) for this
+  // iterator's lifetime: a block cache pin when cache_index_and_filter_blocks
+  // is on (evictable after release), or an unowned reference to the
+  // table-lifetime pin in Rep when off. Either way valid only while the table
+  // reader stays alive. Declared before every member that references reader
+  // state — members are destroyed in reverse order, so this must die last.
+  rocksdb::CachableEntry<rocksdb::Block_kUserDefinedIndex> udi_entry_;
+  EmbeddedIndexReader* idx_ = nullptr;  // points into udi_entry_; null on failure
   bit_lsm::BitLSMQuery query_;
 
   // Candidate blocks selected by the flat-AND BF + zone-map predicate.
