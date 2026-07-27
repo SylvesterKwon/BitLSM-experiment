@@ -33,7 +33,19 @@ class EmbeddedIndexReader : public rocksdb::UserDefinedIndexReader {
       const rocksdb::ReadOptions&) override {
     return nullptr;  // pruning is driven by EmbeddedTableIterator, not this.
   }
-  size_t ApproximateMemoryUsage() const override { return raw_len_; }
+  // The block cache charges this on top of the raw block bytes
+  // (Block_kUserDefinedIndex::ApproximateMemoryUsage), so it must cover every
+  // heap structure the reader keeps resident: the blob copy plus the vectors
+  // parsed out of it in the constructor. Undercounting here leaks memory past
+  // the block_cache budget.
+  size_t ApproximateMemoryUsage() const override {
+    return sizeof(*this) + owned_.capacity() +
+           entry_count_psum.capacity() * sizeof(uint32_t) +
+           block_handles.capacity() *
+               sizeof(rocksdb::UserDefinedIndexBuilder::BlockHandle) +
+           section_c_off_.capacity() * sizeof(uint32_t) +
+           file_zone_.capacity() * sizeof(ZoneMap);
+  }
 
   // Region of Section C for block_idx; len set to its byte length.
   const char* BlockFilterRegion(uint32_t block_idx, size_t& len) const {

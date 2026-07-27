@@ -53,7 +53,18 @@ class SAIIndexReader : public rocksdb::UserDefinedIndexReader {
       const rocksdb::ReadOptions&) override {
     return nullptr;  // scanning is driven by SAITableIterator, not this.
   }
-  size_t ApproximateMemoryUsage() const override { return owned_.size(); }
+  // The block cache charges this on top of the raw block bytes
+  // (Block_kUserDefinedIndex::ApproximateMemoryUsage), so it must cover every
+  // heap structure the reader keeps resident: the blob copy plus the Section-A
+  // vectors parsed out of it in the constructor. Undercounting here leaks
+  // memory past the block_cache budget.
+  size_t ApproximateMemoryUsage() const override {
+    return sizeof(*this) + owned_.capacity() +
+           entry_count_psum.capacity() * sizeof(uint32_t) +
+           block_handles.capacity() *
+               sizeof(rocksdb::UserDefinedIndexBuilder::BlockHandle) +
+           region_off_.capacity() * sizeof(uint32_t);
+  }
 
   uint64_t Estimate(const SAIFact& f) const;
   std::unique_ptr<RowCursor> OpenCursor(const SAIFact& f) const;
