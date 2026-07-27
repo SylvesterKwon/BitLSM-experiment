@@ -56,6 +56,10 @@ void SAIMemTableIterator::FindNextValidEntry() {
 
     iter_->Next();
   }
+
+  // Exhausted: surface an error the underlying iterator stopped on, so the
+  // merging iterator does not read it as end-of-data.
+  if (!iter_->status().ok()) status_ = iter_->status();
 }
 
 SAIMemTableIterator::SAIMemTableIterator(rocksdb::MemTable* mem,

@@ -22,12 +22,19 @@ namespace experiment::sai {
 class SAIInternalIterator {
  protected:
   bool valid_ = false;
+  // OK unless iteration hit an error. Sticky: once an iterator fails it stays
+  // failed, because the failure (a SAI block that will not load) is not
+  // recoverable by re-seeking the same iterator. Every layer must therefore
+  // distinguish "!Valid() and OK" (exhausted) from "!Valid() and !OK"
+  // (stopped early), never treating the latter as end-of-data.
+  rocksdb::Status status_;
 
  public:
   virtual ~SAIInternalIterator() {}
   virtual void SeekToFirst() = 0;
   virtual void Next() = 0;
   bool Valid() const { return valid_; }
+  virtual rocksdb::Status status() const { return status_; }
   virtual rocksdb::Slice key() const = 0;
   virtual rocksdb::Slice value() const = 0;
 };
@@ -70,8 +77,15 @@ class SAITableIterator : public SAIInternalIterator {
  private:
   bit_lsm::BitLSMOptions options_;
   rocksdb::BlockBasedTable* bbt_;
-  rocksdb::BlockBasedTable::IndexReader* index_reader_;
-  SAIIndexReader* idx_;
+  // Holds the SAI entry (and its parsed SAIIndexReader) for this iterator's
+  // lifetime: a block cache pin when cache_index_and_filter_blocks is on
+  // (evictable after release), or an unowned reference to the table-lifetime
+  // pin in Rep when off. Either way valid only while the table reader stays
+  // alive. Declared before every member that references reader state (the
+  // posting/cont cursors point into the reader's blob) — members are
+  // destroyed in reverse order, so this must die last.
+  rocksdb::CachableEntry<rocksdb::Block_kUserDefinedIndex> udi_entry_;
+  SAIIndexReader* idx_ = nullptr;  // points into udi_entry_; null on failure
   bit_lsm::BitLSMQuery query_;
   SAIPlan plan_;
 
