@@ -1,6 +1,5 @@
 {
   "workload": "pbi_taxpayer",
-  "instance": 2,
   "build_kind": "release",
   "queries": "all",
   "warm_reps": 5,

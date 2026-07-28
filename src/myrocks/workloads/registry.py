@@ -10,5 +10,7 @@ def make_workload(config):
     if kind == "ssbflat":
         return SsbFlatWorkload(sf=config.get("sf", 1))
     if kind == "pbi_taxpayer":
-        return PbiTaxpayerWorkload(instance=config.get("instance", 2))
+        # Instance is pinned (Taxpayer_2, see workload docstring), not an
+        # experimental variable — exp_set JSONs carry real variables only.
+        return PbiTaxpayerWorkload()
     raise ValueError(f"unknown workload: {kind}")
