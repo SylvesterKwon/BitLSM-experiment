@@ -122,6 +122,26 @@ def run(config_path, dry_run, start_from):
                                            extra_args=server_profile.build_args(
                                                engine, profile))
                         with srv:
+                            if engine == "bitlsm":
+                                # Stats-fairness warm-up: InnoDB/MyRocks table
+                                # stats persist and are warm at boot, while the
+                                # bitlsm estimator builds asynchronously ~3-5s
+                                # after first table open. Without this, every
+                                # auto plan is chosen against the sysvar
+                                # fallback (and can even differ from the
+                                # EXPLAIN recorded after the runs). Touches one
+                                # row + SABI metadata only — the data cache
+                                # stays cold for the timed run.
+                                wconn = srv.connect(database=workload.name)
+                                wcur = wconn.cursor()
+                                for t in workload.tables():
+                                    wcur.execute(f"SELECT 1 FROM {t} LIMIT 1")
+                                    wcur.fetchall()
+                                wcur.execute("SET GLOBAL "
+                                             "rocksdb_bitlsm_estimator_refresh"
+                                             " = 1")
+                                wcur.close()
+                                wconn.close()
                             row = metrics.run_perf_cell(
                                 srv, workload.name, qid, sql, plan,
                                 secondary_indexes=sec_idx,
