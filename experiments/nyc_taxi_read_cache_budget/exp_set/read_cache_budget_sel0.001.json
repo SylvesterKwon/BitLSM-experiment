@@ -37,13 +37,6 @@
       }
     },
     {
-      "name": "si-eager",
-      "query_limit": 10,
-      "params": {
-        "read_strategy": ["im", "pf"]
-      }
-    },
-    {
       "name": "embedded",
       "query_limit": 10,
       "params": {
@@ -53,9 +46,7 @@
     {
       "name": "sai",
       "query_limit": 10,
-      "params": {
-        "intersection_limit": 2
-      }
+      "params": {}
     }
   ]
 }

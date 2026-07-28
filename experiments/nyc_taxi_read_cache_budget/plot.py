@@ -29,8 +29,6 @@ METHOD_ORDER = [
     "si-lu_strategy_im",
     "si-ck_strategy_pf",
     "si-ck_strategy_im",
-    "si-eager_strategy_pf",
-    "si-eager_strategy_im",
     "embedded_bloom_bits10",
     "sai_il2",
     "bitlsm_rho0.01",
@@ -41,8 +39,6 @@ METHOD_LABELS = {
     "si-lu_strategy_im": "Lazy (Intersection)",
     "si-ck_strategy_pf": "Composite (Post Filtering)",
     "si-ck_strategy_im": "Composite (Intersection)",
-    "si-eager_strategy_pf": "Eager (Post Filtering)",
-    "si-eager_strategy_im": "Eager (Intersection)",
     "embedded_bloom_bits10": "Bloom + Zone Map",
     "sai_il2": "SAI",
     "bitlsm_rho0.01": r"BitLSM ($\rho$=0.01)",
@@ -53,8 +49,6 @@ METHOD_COLORS = {
     "si-ck_strategy_pf": "#9888B8",
     "si-lu_strategy_im": "#4CC850",
     "si-lu_strategy_pf": "#4CC850",
-    "si-eager_strategy_im": "#C89838",
-    "si-eager_strategy_pf": "#C89838",
     "embedded_bloom_bits10": "#1FA8A0",
     "sai_il2": "#3060C0",
     "bitlsm_rho0.01": "#9B1B1B",
@@ -63,7 +57,6 @@ METHOD_COLORS = {
 METHOD_LINESTYLE = {
     "si-ck_strategy_im": "--",
     "si-lu_strategy_im": "--",
-    "si-eager_strategy_im": "--",
 }
 
 BUDGET_DIR = re.compile(r"^mb(\d+)$")
