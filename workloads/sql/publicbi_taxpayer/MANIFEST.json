@@ -1,0 +1,8 @@
+{
+  "instance": 2,
+  "prep_version": 1,
+  "rows": 9153273,
+  "null_fields": 9740023,
+  "source_gz_sha256": "84c05dd017cb840aff0912d0241db1ebb1598fc053e0368526a9da81689d52f5",
+  "prepared_sha256": "5699b39e1684b1f1917ced0225a8fa1db5a0e9b035ad0562264b84ba57f69433"
+}

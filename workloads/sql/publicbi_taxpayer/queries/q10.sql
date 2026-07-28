@@ -1,0 +1,1 @@
+SELECT nppes_provider_city AS nppes_provider_city FROM taxpayer WHERE ((nppes_provider_first_name = 'JOHN') AND (nppes_provider_last_org_name = 'HOLDER') AND (nppes_provider_state = 'WA')) GROUP BY nppes_provider_city;

@@ -50,9 +50,17 @@ def _status_snapshot(cur) -> dict:
     return snap
 
 
+def _norm_cell(v):
+    """Floats to 12 significant digits before fingerprinting: AVG/SUM over
+    DOUBLE is summation-order dependent, so bit-exact digests would falsely
+    differ across access paths (registry: fingerprint-float-12g). Exact
+    types (int/Decimal/str/bytes/None) pass through untouched."""
+    return f"{v:.12g}" if isinstance(v, float) else v
+
+
 def _fingerprint(rows) -> str:
     h = hashlib.md5()
-    for r in sorted(repr(r) for r in rows):
+    for r in sorted(repr(tuple(_norm_cell(c) for c in r)) for r in rows):
         h.update(r.encode())
     return h.hexdigest()
 

@@ -1,0 +1,1 @@
+SELECT AVG((average_Medicare_allowed_amt - average_Medicare_payment_amt)) AS `avg:Calculation_9940518082838207:ok`, nppes_provider_last_org_name AS nppes_provider_last_org_name FROM taxpayer WHERE ((hcpcs_description = 'Initial hospital care') AND (nppes_provider_city IN ('BELLEVUE', 'BELLVUE')) AND (nppes_provider_state = 'WA')) GROUP BY nppes_provider_last_org_name;
