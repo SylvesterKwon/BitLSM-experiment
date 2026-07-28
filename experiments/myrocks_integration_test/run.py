@@ -156,7 +156,14 @@ def run(config_path, dry_run, start_from):
                         # Measurement protocol (registry §2.5): force the
                         # estimator's stats current before any EXPLAIN, so
                         # estimates never race the async refresh worker.
+                        # The tables MUST be opened first — on a cold server
+                        # the registry is empty and refresh is a silent
+                        # no-op (documented trap; caused an all-fallback
+                        # q-error artifact in the 2026-07-28 rho sweep).
                         rc = truth_conn.cursor()
+                        for t in workload.tables():
+                            rc.execute(f"SELECT 1 FROM {t} LIMIT 1")
+                            rc.fetchall()
                         rc.execute(
                             "SET GLOBAL rocksdb_bitlsm_estimator_refresh = 1")
                         rc.close()
