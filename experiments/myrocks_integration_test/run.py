@@ -32,7 +32,7 @@ from run_common import (  # noqa: E402
 )
 from myrocks import driver as drv  # noqa: E402
 from myrocks.loader import datadir_for, ensure_loaded, is_loaded, server_for  # noqa: E402
-from myrocks.workloads.ssb_flat import SsbFlatWorkload  # noqa: E402
+from myrocks.workloads.registry import make_workload  # noqa: E402
 
 CSV_FIELDS = [
     "ts", "workload", "engine", "index_layout", "query_id", "plan",
@@ -42,12 +42,6 @@ CSV_FIELDS = [
     "explain_ms", "trace_bytes", "chosen_plan",
     "lsm_state", "server_args_hash", "mysql_commit", "bitlsm_commit",
 ]
-
-
-def make_workload(config):
-    if config["workload"] == "ssbflat":
-        return SsbFlatWorkload(sf=config.get("sf", 1))
-    raise ValueError(f"unknown workload: {config['workload']}")
 
 
 def extract_where(sql: str):
@@ -67,8 +61,11 @@ class GroundTruth:
     every later engine verifies against it."""
 
     def __init__(self, workload):
+        tables = workload.tables()
+        assert len(tables) == 1, "GroundTruth assumes single-table workloads"
+        self.table = tables[0]
         self.path = os.path.join(
-            os.path.dirname(workload.data_file("lineorder_flat")),
+            os.path.dirname(workload.data_file(self.table)),
             f"ground_truth.{workload.name}.json")
         self.cache = {}
         if os.path.exists(self.path):
@@ -81,7 +78,7 @@ class GroundTruth:
         if where is None:
             return None
         cur = conn.cursor()
-        cur.execute(f"SELECT COUNT(*) FROM lineorder_flat WHERE {where}")
+        cur.execute(f"SELECT COUNT(*) FROM {self.table} WHERE {where}")
         n = cur.fetchone()[0]
         cur.close()
         return n

@@ -38,13 +38,7 @@ from run_common import (  # noqa: E402
 from myrocks import metrics, server_profile  # noqa: E402
 from myrocks.loader import datadir_for, ensure_loaded  # noqa: E402
 from myrocks.server import MysqldServer  # noqa: E402
-from myrocks.workloads.ssb_flat import SsbFlatWorkload  # noqa: E402
-
-
-def make_workload(config):
-    if config["workload"] == "ssbflat":
-        return SsbFlatWorkload(sf=config.get("sf", 1))
-    raise ValueError(f"unknown workload: {config['workload']}")
+from myrocks.workloads.registry import make_workload  # noqa: E402
 
 CSV_FIELDS = [
     "ts", "workload", "engine", "index_layout", "query_id", "plan",
