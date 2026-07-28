@@ -34,6 +34,14 @@ rule as SSB), VARBINARY on every engine (BITLSM_INDEX requires binary
 strings; identical schema keeps engines comparable):
   hcpcs_description, nppes_provider_city, nppes_provider_first_name,
   nppes_provider_last_org_name, nppes_provider_state
+
+Index layouts:
+  std       — PK (rid) only
+  sk_v1     — std + one SK per filter column
+  bi_v1     — std + BITLSM_INDEX over the filter columns (bitlsm engine)
+  sk_bi_v1  — sk_v1 + bi coexisting (bitlsm engine): the deployment-
+              realistic "add bi on top of conventional SKs" cell; pairs
+              with plan=ignore_bi to isolate bi's marginal read benefit
 """
 
 import gzip
@@ -144,14 +152,14 @@ class PbiTaxpayerWorkload(Workload):
         cols += [f"    {c} {t}{' NOT NULL' if nn else ''}"
                  for c, t, nn in COLUMNS]
         cols.append("    PRIMARY KEY (rid)")
-        if index_layout == "sk_v1":
+        if index_layout in ("sk_v1", "sk_bi_v1"):
             for c in FILTER_COLUMNS:
                 cols.append(f"    KEY sk_{c.lower()} ({c})")
-        elif index_layout == "bi_v1":
-            assert engine == "bitlsm", "bi layout is bitlsm-engine only"
+        if index_layout in ("bi_v1", "sk_bi_v1"):
+            assert engine == "bitlsm", "bi layouts are bitlsm-engine only"
             cols.append(
                 f"    INDEX bi ({', '.join(FILTER_COLUMNS)}) BITLSM_INDEX")
-        elif index_layout != "std":
+        if index_layout not in ("std", "sk_v1", "bi_v1", "sk_bi_v1"):
             raise ValueError(f"unknown index_layout: {index_layout}")
         body = ",\n".join(cols)
         return (f"CREATE TABLE {table} (\n{body}\n) "
@@ -166,13 +174,16 @@ class PbiTaxpayerWorkload(Workload):
                 f"({cols})")
 
     def bi_tables(self, index_layout):
-        return {"taxpayer"} if index_layout == "bi_v1" else set()
+        return {"taxpayer"} if index_layout in ("bi_v1", "sk_bi_v1") else set()
 
     def secondary_indexes(self, index_layout):
+        sks = [f"sk_{c.lower()}" for c in FILTER_COLUMNS]
         if index_layout == "sk_v1":
-            return {"taxpayer": [f"sk_{c.lower()}" for c in FILTER_COLUMNS]}
+            return {"taxpayer": sks}
         if index_layout == "bi_v1":
             return {"taxpayer": ["bi"]}
+        if index_layout == "sk_bi_v1":
+            return {"taxpayer": sks + ["bi"]}
         return {}
 
     def queries(self):
