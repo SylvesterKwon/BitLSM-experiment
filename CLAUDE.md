@@ -165,6 +165,7 @@ python3 experiments/<name>/run.py experiments/<name>/exp_set/<params>.json [opti
 
 | Experiment | Description | Binary |
 |---|---|---|
+| `myrocks_integration_test` | SQL-level BitLSM×MyRocks vs InnoDB/MyRocks (plan/perf/ingest; SSB-flat + Public BI Taxpayer) | `build-mysql/release/bin/mysqld` |
 | `seq_write` | Synthetic sequential write — time + DB size | benchmark binaries |
 | `nyc_taxi_seq_write` | NYC taxi sequential write | `honk_player` |
 | `nyc_taxi_seq_read` | NYC taxi sequential read (DB must exist) | `honk_player` |
