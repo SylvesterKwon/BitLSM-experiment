@@ -1,0 +1,11 @@
+{
+  "workload": "pbi_taxpayer",
+  "instance": 2,
+  "build_kind": "release",
+  "queries": "all",
+  "cells": [
+    {"engine": "bitlsm",  "index_layout": "bi_v1", "plans": ["auto", "force_bi", "ignore_bi", "fullscan"]},
+    {"engine": "myrocks", "index_layout": "sk_v1", "plans": ["auto", "fullscan", "index_merge"]},
+    {"engine": "innodb",  "index_layout": "sk_v1", "plans": ["auto", "fullscan", "index_merge"]}
+  ]
+}
