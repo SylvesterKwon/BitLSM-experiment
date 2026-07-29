@@ -165,9 +165,9 @@ def run(config_path, dry_run, start_from):
                         # no-op (documented trap; caused an all-fallback
                         # q-error artifact in the 2026-07-28 rho sweep).
                         rc = truth_conn.cursor()
-                        for t in workload.tables():
-                            rc.execute(f"SELECT 1 FROM {t} LIMIT 1")
-                            rc.fetchall()
+                        rc.execute("LOCK TABLES " + ", ".join(
+                            f"{t} READ" for t in workload.tables()))
+                        rc.execute("UNLOCK TABLES")
                         rc.execute(
                             "SET GLOBAL rocksdb_bitlsm_estimator_refresh = 1")
                         rc.close()

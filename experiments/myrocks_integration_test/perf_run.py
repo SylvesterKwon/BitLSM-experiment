@@ -139,9 +139,13 @@ def run(config_path, dry_run, start_from):
                             # the data cache stays cold for the timed run.
                             wconn = srv.connect(database=workload.name)
                             wcur = wconn.cursor()
-                            for t in workload.tables():
-                                wcur.execute(f"SELECT 1 FROM {t} LIMIT 1")
-                                wcur.fetchall()
+                            # LOCK TABLES READ instantiates every handler
+                            # (triggering lazy estimator attach) while reading
+                            # zero rows by construction -- the cold run's data
+                            # blocks stay untouched.
+                            wcur.execute("LOCK TABLES " + ", ".join(
+                                f"{t} READ" for t in workload.tables()))
+                            wcur.execute("UNLOCK TABLES")
                             if engine == "bitlsm":
                                 wcur.execute("SET GLOBAL "
                                              "rocksdb_bitlsm_estimator_refresh"
