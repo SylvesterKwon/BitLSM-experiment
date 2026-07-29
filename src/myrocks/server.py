@@ -106,7 +106,7 @@ class MysqldServer:
             unix_socket=self.socket, user="root", password="",
             database=database, autocommit=True, allow_local_infile=True)
 
-    def stop(self, timeout: float = 60.0):
+    def stop(self, timeout: float = 600.0):
         if self.proc is None:
             return
         try:
