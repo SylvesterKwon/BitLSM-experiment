@@ -1,0 +1,17 @@
+{
+  "workload": "ssbflat",
+  "sf": 2,
+  "build_kind": "release",
+  "queries": "all",
+  "warm_reps": 5,
+  "server_common": {
+    "cache_bytes": 1073741824,
+    "direct_io": true,
+    "relaxed_commit_flush": true
+  },
+  "cells": [
+    {"engine": "bitlsm",  "index_layout": "bi_v1",        "plans": ["auto", "force_bi", "fullscan"]},
+    {"engine": "myrocks", "index_layout": "sk_oracle_v1", "plans": ["auto", "fullscan"]},
+    {"engine": "innodb",  "index_layout": "sk_oracle_v1", "plans": ["auto", "fullscan"]}
+  ]
+}
