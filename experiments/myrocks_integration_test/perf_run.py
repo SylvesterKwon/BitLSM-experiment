@@ -41,7 +41,8 @@ from myrocks.server import MysqldServer  # noqa: E402
 from myrocks.workloads.registry import make_workload  # noqa: E402
 
 CSV_FIELDS = [
-    "ts", "workload", "engine", "index_layout", "query_id", "plan",
+    "ts", "workload", "engine", "index_layout", "engine_params",
+    "query_id", "plan",
     "chosen_access", "chosen_key",
     "cold_ms", "warm_ms_median", "warm_ms_min", "warm_ms_max", "warm_reps",
     "rows_returned", "result_fingerprint", "fp_match",
@@ -105,8 +106,9 @@ def run(config_path, dry_run, start_from):
             writer.writeheader()
             for cell in cells:
                 engine, layout = cell["engine"], cell["index_layout"]
-                identity = workload.identity(engine, layout)
-                ensure_loaded(workload, engine, layout, "release")
+                eparams = cell.get("engine_params")
+                identity = workload.identity(engine, layout, eparams)
+                ensure_loaded(workload, engine, layout, "release", eparams)
                 with open(os.path.join(datadir_for(identity),
                                        "LOADED.json")) as f:
                     marker = json.load(f)
@@ -169,6 +171,9 @@ def run(config_path, dry_run, start_from):
                             "workload": workload.name,
                             "engine": engine,
                             "index_layout": layout,
+                            "engine_params": ";".join(
+                                f"{k}={v}" for k, v in
+                                sorted((eparams or {}).items())),
                             "lsm_state": marker.get("lsm_state"),
                             "server_args_hash": args_hash,
                             "mysql_commit": binfo["mysql_commit"][:12],

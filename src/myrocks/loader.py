@@ -121,6 +121,22 @@ def ensure_loaded(workload, engine: str, index_layout: str,
             cur.execute(f"ANALYZE TABLE {table}")
             cur.fetchall()
 
+        # engine_params {"hist": <tag>}: InnoDB column histograms (default
+        # bucket count) on the workload's filter columns — lets the optimizer
+        # see value skew that rec_per_key averages hide. Identity-forked so
+        # the histogram-free baseline datadir stays intact.
+        hist = "off"
+        if engine == "innodb" and (engine_params or {}).get("hist"):
+            cols = workload.histogram_columns()
+            if not cols:
+                raise RuntimeError("hist engine_param set but workload "
+                                   "defines no histogram_columns()")
+            for table in workload.tables():
+                cur.execute(f"ANALYZE TABLE {table} UPDATE HISTOGRAM ON "
+                            + ", ".join(cols))
+                cur.fetchall()
+            hist = f"on:{engine_params['hist']}"
+
         marker = {
             "identity": identity,
             "workload": workload.name,
@@ -130,7 +146,7 @@ def ensure_loaded(workload, engine: str, index_layout: str,
             "row_counts": counts,
             "server_args_hash": srv.args_hash(),
             "build_info": srv.build_info(),
-            "innodb_histograms": "off",  # explicit: std config, no UPDATE HISTOGRAM
+            "innodb_histograms": hist,
             "lsm_state": lsm_state,
             "load_seconds": round(time.time() - t0, 1),
             "loaded_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
