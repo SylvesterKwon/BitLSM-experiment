@@ -121,12 +121,16 @@ def ensure_loaded(workload, engine: str, index_layout: str,
             cur.execute(f"ANALYZE TABLE {table}")
             cur.fetchall()
 
-        # engine_params {"hist": <tag>}: InnoDB column histograms (default
-        # bucket count) on the workload's filter columns — lets the optimizer
-        # see value skew that rec_per_key averages hide. Identity-forked so
-        # the histogram-free baseline datadir stays intact.
+        # engine_params {"hist": <tag>}: server-level column histograms
+        # (default bucket count) on the workload's filter columns. Standard
+        # for SK-engine cells since 2026-07-29 (stats fairness: bitlsm gets
+        # its estimator, SK engines get histograms). Note the optimizer only
+        # consults histograms where index dives can't answer (non-indexed
+        # predicate columns) — on fully-indexed filter sets this is a
+        # deliberate null-op (verified: identical plans on taxpayer).
+        # Identity-forked so histogram-free baselines stay intact.
         hist = "off"
-        if engine == "innodb" and (engine_params or {}).get("hist"):
+        if engine in ("innodb", "myrocks") and (engine_params or {}).get("hist"):
             cols = workload.histogram_columns()
             if not cols:
                 raise RuntimeError("hist engine_param set but workload "
