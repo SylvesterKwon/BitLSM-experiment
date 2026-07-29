@@ -1,0 +1,16 @@
+{
+  "workload": "pbi_taxpayer",
+  "build_kind": "release",
+  "queries": "all",
+  "warm_reps": 5,
+  "server_common": {
+    "cache_bytes": 1073741824,
+    "direct_io": true,
+    "relaxed_commit_flush": true
+  },
+  "cells": [
+    {"engine": "innodb", "index_layout": "sk_v1",
+     "session_vars": {"optimizer_switch": "'index_merge_intersection=off'"},
+     "plans": ["auto"]}
+  ]
+}
