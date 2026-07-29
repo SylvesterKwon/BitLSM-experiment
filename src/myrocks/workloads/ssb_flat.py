@@ -275,6 +275,9 @@ class SsbFlatWorkload(Workload):
             return {"lineorder_flat": ["bi"]}
         return {}
 
+    def histogram_columns(self):
+        return list(FILTER_COLUMNS)
+
     def queries(self):
         out = {}
         for fname in sorted(os.listdir(QUERY_DIR)):
