@@ -12,7 +12,7 @@ Index layouts (harness plan D6, flat reinterpretation):
   std          — composite PK only (auto has nothing but scans; lower ref)
   sk_v1        — std + one SK per filter column (index_merge arena)
   bi_v1        — std + BITLSM_INDEX over the same filter columns (bitlsm)
-  sk_oracle_v1 — std + per-template optimal composites (ORACLE_INDEXES);
+  composite_v1 — std + per-template optimal composites (COMPOSITE_INDEXES);
                  upper bound on any realistic SK configuration
 
 Filter-target dim strings are VARBINARY on ALL engines (BITLSM_INDEX takes
@@ -89,29 +89,29 @@ FILTER_COLUMNS = [
     "C_REGION", "C_NATION", "C_CITY",
 ]
 
-# sk_oracle_v1 composites — every query template gets a composite over
+# composite_v1 composites — every query template gets a composite over
 # exactly its sargable predicate columns (equality columns leading, the
 # range column last; later range columns stay in the key as in-index
-# filters). Duplicate column sets collapse (q2_2/q2_3 -> sko_05), and an
+# filters). Duplicate column sets collapse (q2_2/q2_3 -> comp_05), and an
 # index is omitted when its full sargable prefix is preserved verbatim as
-# the leading prefix of another (q4_1 rides sko_10's 3-prefix). This is
+# the leading prefix of another (q4_1 rides comp_10's 3-prefix). This is
 # the query-specific-best-configuration candidate set [Chaudhuri &
 # Narasayya, VLDB'97] with index-preserving prefix merges [ICDE'99] — an
 # upper bound on any realistic SK configuration, so read wins against it
 # transfer to every weaker real-world layout.
-ORACLE_INDEXES = [
-    ("sko_01", ["D_YEAR", "LO_DISCOUNT", "LO_QUANTITY"]),          # q1_1
-    ("sko_02", ["D_YEARMONTHNUM", "LO_DISCOUNT", "LO_QUANTITY"]),  # q1_2
-    ("sko_03", ["D_WEEKNUMINYEAR", "D_YEAR",
+COMPOSITE_INDEXES = [
+    ("comp_01", ["D_YEAR", "LO_DISCOUNT", "LO_QUANTITY"]),          # q1_1
+    ("comp_02", ["D_YEARMONTHNUM", "LO_DISCOUNT", "LO_QUANTITY"]),  # q1_2
+    ("comp_03", ["D_WEEKNUMINYEAR", "D_YEAR",
                 "LO_DISCOUNT", "LO_QUANTITY"]),                    # q1_3
-    ("sko_04", ["P_CATEGORY", "S_REGION"]),                        # q2_1
-    ("sko_05", ["S_REGION", "P_BRAND"]),                           # q2_2 q2_3
-    ("sko_06", ["C_REGION", "S_REGION", "D_YEAR"]),                # q3_1
-    ("sko_07", ["C_NATION", "S_NATION", "D_YEAR"]),                # q3_2
-    ("sko_08", ["C_CITY", "S_CITY", "D_YEAR"]),                    # q3_3
-    ("sko_09", ["C_CITY", "S_CITY", "D_YEARMONTHNUM"]),            # q3_4
-    ("sko_10", ["C_REGION", "S_REGION", "P_MFGR", "D_YEAR"]),      # q4_1 q4_2
-    ("sko_11", ["S_NATION", "P_CATEGORY", "C_REGION", "D_YEAR"]),  # q4_3
+    ("comp_04", ["P_CATEGORY", "S_REGION"]),                        # q2_1
+    ("comp_05", ["S_REGION", "P_BRAND"]),                           # q2_2 q2_3
+    ("comp_06", ["C_REGION", "S_REGION", "D_YEAR"]),                # q3_1
+    ("comp_07", ["C_NATION", "S_NATION", "D_YEAR"]),                # q3_2
+    ("comp_08", ["C_CITY", "S_CITY", "D_YEAR"]),                    # q3_3
+    ("comp_09", ["C_CITY", "S_CITY", "D_YEARMONTHNUM"]),            # q3_4
+    ("comp_10", ["C_REGION", "S_REGION", "P_MFGR", "D_YEAR"]),      # q4_1 q4_2
+    ("comp_11", ["S_NATION", "P_CATEGORY", "C_REGION", "D_YEAR"]),  # q4_3
 ]
 
 # Canonical dbgen row counts, verified 2026-07-17 @ submodule pin (SF1).
@@ -242,8 +242,8 @@ class SsbFlatWorkload(Workload):
         if index_layout == "sk_v1":
             for c in FILTER_COLUMNS:
                 cols.append(f"    KEY sk_{c.lower()} ({c})")
-        elif index_layout == "sk_oracle_v1":
-            for name, icols in ORACLE_INDEXES:
+        elif index_layout == "composite_v1":
+            for name, icols in COMPOSITE_INDEXES:
                 cols.append(f"    KEY {name} ({', '.join(icols)})")
         elif index_layout == "bi_v1":
             assert engine == "bitlsm", "bi layout is bitlsm-engine only"
@@ -269,8 +269,8 @@ class SsbFlatWorkload(Workload):
         if index_layout == "sk_v1":
             return {"lineorder_flat":
                     [f"sk_{c.lower()}" for c in FILTER_COLUMNS]}
-        if index_layout == "sk_oracle_v1":
-            return {"lineorder_flat": [n for n, _ in ORACLE_INDEXES]}
+        if index_layout == "composite_v1":
+            return {"lineorder_flat": [n for n, _ in COMPOSITE_INDEXES]}
         if index_layout == "bi_v1":
             return {"lineorder_flat": ["bi"]}
         return {}
