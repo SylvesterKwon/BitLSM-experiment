@@ -51,6 +51,11 @@ class Workload:
     def data_file(self, table: str) -> str:
         raise NotImplementedError
 
+    def histogram_columns(self) -> list:
+        """Columns for ANALYZE .. UPDATE HISTOGRAM (engine_params
+        {"hist": ...} identities). [] = workload defines no histogram set."""
+        return []
+
     def queries(self) -> dict:
         """{stable query_id: SQL text}"""
         raise NotImplementedError

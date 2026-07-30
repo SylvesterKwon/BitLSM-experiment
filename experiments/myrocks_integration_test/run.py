@@ -35,7 +35,8 @@ from myrocks.loader import datadir_for, ensure_loaded, is_loaded, server_for  # 
 from myrocks.workloads.registry import make_workload  # noqa: E402
 
 CSV_FIELDS = [
-    "ts", "workload", "engine", "index_layout", "query_id", "plan",
+    "ts", "workload", "engine", "index_layout", "engine_params",
+    "query_id", "plan",
     "chosen_access", "chosen_key",
     "bi_chosen", "bi_est_rows", "actual_rows", "engine_rows", "count_match",
     "q_error", "query_cost",
@@ -119,7 +120,8 @@ def run(config_path, dry_run, start_from):
         print(f"output : {out_dir}")
         if dry_run:
             for c in cells:
-                identity = workload.identity(c["engine"], c["index_layout"])
+                identity = workload.identity(
+                    c["engine"], c["index_layout"], c.get("engine_params"))
                 state = "cached" if is_loaded(identity) else "NEEDS LOAD"
                 print(f"  [{c['engine']}/{c['index_layout']}] {state} "
                       f"plans={c['plans']}")
@@ -137,12 +139,14 @@ def run(config_path, dry_run, start_from):
 
             for cell in cells:
                 engine, layout = cell["engine"], cell["index_layout"]
-                identity = workload.identity(engine, layout)
-                ensure_loaded(workload, engine, layout, build_kind)
+                eparams = cell.get("engine_params")
+                identity = workload.identity(engine, layout, eparams)
+                ensure_loaded(workload, engine, layout, build_kind, eparams)
                 with open(os.path.join(datadir_for(identity),
                                        "LOADED.json")) as f:
                     marker = json.load(f)
-                srv = server_for(workload, engine, layout, build_kind)
+                srv = server_for(workload, engine, layout, build_kind,
+                                 eparams)
                 # M5 A/B axis: "bitlsm_estimator": false pins the M4b sysvar
                 # fallback (readonly server flag); default/true = estimator on.
                 estimator_on = config.get("bitlsm_estimator", True)
@@ -156,7 +160,14 @@ def run(config_path, dry_run, start_from):
                         # Measurement protocol (registry §2.5): force the
                         # estimator's stats current before any EXPLAIN, so
                         # estimates never race the async refresh worker.
+                        # The tables MUST be opened first — on a cold server
+                        # the registry is empty and refresh is a silent
+                        # no-op (documented trap; caused an all-fallback
+                        # q-error artifact in the 2026-07-28 rho sweep).
                         rc = truth_conn.cursor()
+                        rc.execute("LOCK TABLES " + ", ".join(
+                            f"{t} READ" for t in workload.tables()))
+                        rc.execute("UNLOCK TABLES")
                         rc.execute(
                             "SET GLOBAL rocksdb_bitlsm_estimator_refresh = 1")
                         rc.close()
@@ -196,6 +207,9 @@ def run(config_path, dry_run, start_from):
                                 "workload": workload.name,
                                 "engine": engine,
                                 "index_layout": layout,
+                                "engine_params": ";".join(
+                                    f"{k}={v}" for k, v in
+                                    sorted((eparams or {}).items())),
                                 "lsm_state": marker.get("lsm_state"),
                                 "server_args_hash": srv.args_hash(),
                                 "mysql_commit": binfo["mysql_commit"][:12],

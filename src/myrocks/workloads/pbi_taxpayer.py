@@ -36,12 +36,14 @@ strings; identical schema keeps engines comparable):
   nppes_provider_last_org_name, nppes_provider_state
 
 Index layouts:
-  std       — PK (rid) only
-  sk_v1     — std + one SK per filter column
-  bi_v1     — std + BITLSM_INDEX over the filter columns (bitlsm engine)
-  sk_bi_v1  — sk_v1 + bi coexisting (bitlsm engine): the deployment-
-              realistic "add bi on top of conventional SKs" cell; pairs
-              with plan=ignore_bi to isolate bi's marginal read benefit
+  std          — PK (rid) only
+  sk_v1        — std + one SK per filter column
+  bi_v1        — std + BITLSM_INDEX over the filter columns (bitlsm engine)
+  sk_bi_v1     — sk_v1 + bi coexisting (bitlsm engine): the deployment-
+                 realistic "add bi on top of conventional SKs" cell; pairs
+                 with plan=ignore_bi to isolate bi's marginal read benefit
+  composite_v1 — std + per-template optimal composites (COMPOSITE_INDEXES);
+                 upper bound on any realistic SK configuration
 """
 
 import gzip
@@ -103,6 +105,33 @@ FILTER_COLUMNS = [
     "nppes_provider_last_org_name", "nppes_provider_state",
 ]
 
+# composite_v1 composites — every query template gets a composite over
+# exactly its sargable predicate columns (all-equality here; column order
+# within an index realizes the longest subset chain, ties broken toward
+# the chain absorbing more templates). Duplicate column sets collapse and
+# an index is omitted when its full sargable prefix is preserved verbatim
+# as the leading prefix of another (index-preserving merge): the chain
+# {first,last} < {first,last,state} < {+hcpcs} collapses into comp_01, and
+# {hcpcs,state} < {hcpcs,city,state} into comp_02. {last,state} and
+# {first,state} are not prefix-realizable inside comp_01 (first/state
+# intervene) -> dedicated comp_03/comp_04. Query-specific-best-configuration
+# candidates [Chaudhuri & Narasayya, VLDB'97] + index-preserving merges
+# [ICDE'99]; upper bound on any realistic SK configuration. q02 has no
+# WHERE and full-scans under every layout.
+COMPOSITE_INDEXES = [
+    ("comp_01", ["nppes_provider_last_org_name",
+                "nppes_provider_first_name",
+                "nppes_provider_state",
+                "hcpcs_description"]),
+    # ^ q04 q05 q07 q09 q10 q11 q14 q17 q18 q19
+    ("comp_02", ["hcpcs_description", "nppes_provider_state",
+                "nppes_provider_city"]),    # q03 q12 q15 q16 q20 q21 q22
+    ("comp_03", ["nppes_provider_last_org_name",
+                "nppes_provider_state"]),   # q01 q06
+    ("comp_04", ["nppes_provider_first_name",
+                "nppes_provider_state"]),   # q08 q13
+]
+
 # Stream-counted from the Zenodo files (2026-07-28 feasibility study).
 EXPECTED_ROWS_BY_INSTANCE = {1: 9_153_273, 2: 9_153_273}
 
@@ -155,11 +184,15 @@ class PbiTaxpayerWorkload(Workload):
         if index_layout in ("sk_v1", "sk_bi_v1"):
             for c in FILTER_COLUMNS:
                 cols.append(f"    KEY sk_{c.lower()} ({c})")
+        if index_layout == "composite_v1":
+            for name, icols in COMPOSITE_INDEXES:
+                cols.append(f"    KEY {name} ({', '.join(icols)})")
         if index_layout in ("bi_v1", "sk_bi_v1"):
             assert engine == "bitlsm", "bi layouts are bitlsm-engine only"
             cols.append(
                 f"    INDEX bi ({', '.join(FILTER_COLUMNS)}) BITLSM_INDEX")
-        if index_layout not in ("std", "sk_v1", "bi_v1", "sk_bi_v1"):
+        if index_layout not in ("std", "sk_v1", "bi_v1", "sk_bi_v1",
+                                "composite_v1"):
             raise ValueError(f"unknown index_layout: {index_layout}")
         body = ",\n".join(cols)
         return (f"CREATE TABLE {table} (\n{body}\n) "
@@ -180,11 +213,16 @@ class PbiTaxpayerWorkload(Workload):
         sks = [f"sk_{c.lower()}" for c in FILTER_COLUMNS]
         if index_layout == "sk_v1":
             return {"taxpayer": sks}
+        if index_layout == "composite_v1":
+            return {"taxpayer": [n for n, _ in COMPOSITE_INDEXES]}
         if index_layout == "bi_v1":
             return {"taxpayer": ["bi"]}
         if index_layout == "sk_bi_v1":
             return {"taxpayer": sks + ["bi"]}
         return {}
+
+    def histogram_columns(self):
+        return list(FILTER_COLUMNS)
 
     def queries(self):
         out = {}

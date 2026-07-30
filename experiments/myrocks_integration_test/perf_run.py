@@ -41,7 +41,8 @@ from myrocks.server import MysqldServer  # noqa: E402
 from myrocks.workloads.registry import make_workload  # noqa: E402
 
 CSV_FIELDS = [
-    "ts", "workload", "engine", "index_layout", "query_id", "plan",
+    "ts", "workload", "engine", "index_layout", "engine_params",
+    "query_id", "plan",
     "chosen_access", "chosen_key",
     "cold_ms", "warm_ms_median", "warm_ms_min", "warm_ms_max", "warm_reps",
     "rows_returned", "result_fingerprint", "fp_match",
@@ -105,8 +106,9 @@ def run(config_path, dry_run, start_from):
             writer.writeheader()
             for cell in cells:
                 engine, layout = cell["engine"], cell["index_layout"]
-                identity = workload.identity(engine, layout)
-                ensure_loaded(workload, engine, layout, "release")
+                eparams = cell.get("engine_params")
+                identity = workload.identity(engine, layout, eparams)
+                ensure_loaded(workload, engine, layout, "release", eparams)
                 with open(os.path.join(datadir_for(identity),
                                        "LOADED.json")) as f:
                     marker = json.load(f)
@@ -122,6 +124,34 @@ def run(config_path, dry_run, start_from):
                                            extra_args=server_profile.build_args(
                                                engine, profile))
                         with srv:
+                            # Warm-up before the timed cold run, all engines
+                            # symmetric: open each table (one-row SELECT) so
+                            # cold_ms measures query I/O, not dictionary /
+                            # table-open overhead. For bitlsm additionally
+                            # force the estimator stats current (synchronous
+                            # rebuild, ~1.3s/boot measured): InnoDB/MyRocks
+                            # ANALYZE stats persist and are warm at boot,
+                            # while the bitlsm estimator builds async ~3-5s
+                            # after first open — without this every auto plan
+                            # is chosen against the sysvar fallback (and can
+                            # differ from the EXPLAIN recorded after the
+                            # runs). Touches one row + SABI metadata only —
+                            # the data cache stays cold for the timed run.
+                            wconn = srv.connect(database=workload.name)
+                            wcur = wconn.cursor()
+                            # LOCK TABLES READ instantiates every handler
+                            # (triggering lazy estimator attach) while reading
+                            # zero rows by construction -- the cold run's data
+                            # blocks stay untouched.
+                            wcur.execute("LOCK TABLES " + ", ".join(
+                                f"{t} READ" for t in workload.tables()))
+                            wcur.execute("UNLOCK TABLES")
+                            if engine == "bitlsm":
+                                wcur.execute("SET GLOBAL "
+                                             "rocksdb_bitlsm_estimator_refresh"
+                                             " = 1")
+                            wcur.close()
+                            wconn.close()
                             row = metrics.run_perf_cell(
                                 srv, workload.name, qid, sql, plan,
                                 secondary_indexes=sec_idx,
@@ -145,6 +175,9 @@ def run(config_path, dry_run, start_from):
                             "workload": workload.name,
                             "engine": engine,
                             "index_layout": layout,
+                            "engine_params": ";".join(
+                                f"{k}={v}" for k, v in
+                                sorted((eparams or {}).items())),
                             "lsm_state": marker.get("lsm_state"),
                             "server_args_hash": args_hash,
                             "mysql_commit": binfo["mysql_commit"][:12],
