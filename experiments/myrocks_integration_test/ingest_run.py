@@ -35,7 +35,7 @@ from run_common import (  # noqa: E402
 )
 from myrocks import server_profile  # noqa: E402
 from myrocks.server import DB_BASE, MysqldServer  # noqa: E402
-from myrocks.workloads.ssb_flat import FLAT_COLUMNS, SsbFlatWorkload  # noqa: E402
+from myrocks.workloads.registry import make_workload  # noqa: E402
 
 CSV_FIELDS = [
     "ts", "workload", "engine", "index_layout", "writers", "rows",
@@ -43,29 +43,51 @@ CSV_FIELDS = [
     "server_args_hash", "mysql_commit", "bitlsm_commit",
 ]
 
-TABLE = "lineorder_flat"
 CHECKPOINT_ROWS = 10_000
 
+# Calibrated constants, not experiment variables (parameter registry §7).
+#
+# WRITERS: a single writer measures the CLIENT, not the engine. The connector
+# costs ~42us/row (measured against BLACKHOLE), i.e. one process tops out near
+# 23.7k rows/s, and at N=1 that tax was ~63% of the fastest layout's per-row
+# time — which compresses exactly the differences we are after: the InnoDB-SK
+# penalty reads 6.3x at N=1 but 19.1x at N=8 (probe, results/20260719_1553_*).
+# With 8 processes aggregate client capacity (~190k rows/s) is far above the
+# best engine (58.7k), so the server is the bottleneck. Not higher because
+# client and server share one HOST — 8 was the saturation point on a 12-core
+# machine. HOST-SPECIFIC: on a different core count this has to be re-derived
+# (sweep N over {1,2,4,8,...} on the myrocks/std identity and take the knee).
+# Disclose both edges: the LSM engines were still rising at 8 (+36% from 4) so
+# their write cost is a lower bound, while InnoDB already peaked at N=4
+# (std 14.2k -> 13.9k), so 8 does not handicap it.
+WRITERS = 8
+ROWS = "all"  # the whole table: index maintenance has to grow with the tree
 
-def writer_proc(socket, database, data_path, start, count, report_path):
+
+def writer_proc(socket, database, data_path, start, count, report_path,
+                config, table):
     """One writer: stream rows [start, start+count) of the data file as
     individual prepared INSERTs, autocommit each. Checkpoints
     (wallclock, rows_done) every CHECKPOINT_ROWS for the timeline."""
     import mysql.connector
+    # Rebuilt in the child: Workload objects are cheap and this keeps the
+    # process boundary free of pickling assumptions.
+    workload = make_workload(config)
     conn = mysql.connector.connect(unix_socket=socket, user="root",
                                    password="", database=database,
                                    use_pure=False)
     conn.autocommit = True
     cur = conn.cursor(prepared=True)
-    cols = ", ".join(c for c, _, _ in FLAT_COLUMNS)
-    ph = ", ".join(["%s"] * len(FLAT_COLUMNS))
-    sql = f"INSERT INTO {TABLE} ({cols}) VALUES ({ph})"
+    insert_cols = workload.insert_columns()
+    cols = ", ".join(insert_cols)
+    ph = ", ".join(["%s"] * len(insert_cols))
+    sql = f"INSERT INTO {table} ({cols}) VALUES ({ph})"
     done = 0
     with open(report_path, "w") as rep, open(data_path) as f:
         for _ in range(start):
             next(f)
         for _ in range(count):
-            cur.execute(sql, tuple(next(f).rstrip("\n").split("|")))
+            cur.execute(sql, workload.parse_row(next(f)))
             done += 1
             if done % CHECKPOINT_ROWS == 0:
                 rep.write(f"{time.time():.3f},{done}\n")
@@ -79,10 +101,11 @@ def shuffled_copy(workload, seed: int) -> str:
     """Materialize (once) a deterministically shuffled copy of the flat
     file next to it; identity = (flat file, seed)."""
     import random
-    path = f"{workload.flat_path}.shuffled.s{seed}"
+    src = workload.data_file(workload.tables()[0])
+    path = f"{src}.shuffled.s{seed}"
     if os.path.exists(path):
         return path
-    with open(workload.flat_path) as f:
+    with open(src) as f:
         lines = f.readlines()
     random.Random(seed).shuffle(lines)
     tmp = path + ".tmp"
@@ -103,8 +126,8 @@ def _dir_bytes(path: str) -> int:
     return total
 
 
-def run_one(workload, engine, layout, n_writers, n_rows, data_path,
-            build_kind, out_dir, tag, profile):
+def run_one(workload, config, table, engine, layout, n_writers, n_rows,
+            data_path, build_kind, out_dir, tag, profile):
     """One ingest run on a throwaway datadir; returns the result row."""
     datadir = os.path.join(DB_BASE, f"ingest-{workload.name}-{tag}")
     if os.path.exists(datadir):
@@ -118,7 +141,7 @@ def run_one(workload, engine, layout, n_writers, n_rows, data_path,
             cur = conn.cursor()
             cur.execute("CREATE DATABASE ingest")
             cur.execute("USE ingest")
-            cur.execute(workload.create_table_sql(TABLE, engine, layout))
+            cur.execute(workload.create_table_sql(table, engine, layout))
             cur.close()
             conn.close()
 
@@ -133,7 +156,8 @@ def run_one(workload, engine, layout, n_writers, n_rows, data_path,
                 rep = os.path.join(timeline_dir, f"{tag}-w{i}.csv")
                 p = multiprocessing.Process(
                     target=writer_proc,
-                    args=(srv.socket, "ingest", data_path, pos, cnt, rep))
+                    args=(srv.socket, "ingest", data_path, pos, cnt, rep,
+                          config, table))
                 p.start()
                 procs.append(p)
                 pos += cnt
@@ -145,7 +169,7 @@ def run_one(workload, engine, layout, n_writers, n_rows, data_path,
 
             conn = srv.connect(database="ingest")
             cur = conn.cursor()
-            cur.execute(f"SELECT COUNT(*) FROM {TABLE}")
+            cur.execute(f"SELECT COUNT(*) FROM {table}")
             loaded = cur.fetchone()[0]
             if loaded != n_rows:
                 raise RuntimeError(
@@ -181,17 +205,17 @@ def run(config_path, dry_run, start_from):
     exp_set = os.path.splitext(os.path.basename(config_path))[0]
     exp_name = os.path.basename(os.path.dirname(os.path.abspath(__file__)))
     exp_label = f"{exp_name}_{exp_set}"
-    workload = SsbFlatWorkload(sf=config.get("sf", 1))
+    workload = make_workload(config)
     workload.verify_data()
+    table = workload.tables()[0]
     profile = server_profile.resolve(config.get("server_common"))
 
     shuffle = config.get("shuffle", False)
     seed = config.get("shuffle_seed", 42)
     data_path = (shuffled_copy(workload, seed) if shuffle
-                 else workload.flat_path)
-    with open(workload.flat_path + ".meta.json") as f:
-        total_rows = json.load(f)["rows"]
-    n_rows = config["rows"]
+                 else workload.data_file(table))
+    total_rows = workload.total_rows()
+    n_rows = ROWS
     if n_rows == "all":
         n_rows = total_rows
     if n_rows > total_rows:
@@ -199,7 +223,7 @@ def run(config_path, dry_run, start_from):
 
     runs = [(ident["engine"], ident["index_layout"], n)
             for ident in config["identities"]
-            for n in config["writers"]]
+            for n in [WRITERS]]
 
     out_dir = make_result_dir(exp_label)
     log_file, log_path = setup_logging(exp_label)
@@ -226,7 +250,7 @@ def run(config_path, dry_run, start_from):
                     continue
                 tag = f"{engine}-{layout}-N{n}"
                 print(f"[{idx}/{len(runs)}] {tag} ...", flush=True)
-                row = run_one(workload, engine, layout, n, n_rows,
+                row = run_one(workload, config, table, engine, layout, n, n_rows,
                               data_path, "release", out_dir, tag, profile)
                 row.update({"ts": time.strftime("%H:%M:%S"),
                             "workload": workload.name,

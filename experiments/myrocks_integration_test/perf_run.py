@@ -2,9 +2,10 @@
 """MyRocks integration test — perf-mode sweep (H3, harness plan D3/D7).
 
 Measures actual execution latency + counters per (engine, index_layout,
-query, plan) cell on the RELEASE build. Cold protocol per cell: best-effort
-page-cache drop, then a fresh server boot (empties the engine cache — the
-real cold mechanism under D7 direct I/O), 1 cold + K warm executions, stop.
+query, plan) cell on the RELEASE build. Cold protocol per cell: a fresh
+server boot empties the engine cache, then 1 cold + K warm executions, stop.
+Under D7 direct I/O the restart is the whole cold mechanism — the OS page
+cache is not on the read path, so there is nothing else to invalidate.
 
 D7 measurement hygiene (enforced here):
   - build_kind must be "release" (debug wallclock is meaningless)
@@ -25,7 +26,6 @@ Usage:
 import csv
 import json
 import os
-import subprocess
 import sys
 import time
 
@@ -50,16 +50,6 @@ CSV_FIELDS = [
     "lsm_state", "server_args_hash", "mysql_commit", "bitlsm_commit",
 ]
 
-def drop_page_cache() -> bool:
-    """Best-effort sync + drop_caches. Needs passwordless sudo; under D7
-    direct I/O the engine-cache-emptying server restart is what actually
-    makes a run cold, so an unavailable drop is logged, not fatal."""
-    subprocess.run(["sync"], check=True)
-    r = subprocess.run(["sudo", "-n", "tee", "/proc/sys/vm/drop_caches"],
-                       input=b"3", stdout=subprocess.DEVNULL,
-                       stderr=subprocess.DEVNULL)
-    return r.returncode == 0
-
 
 def run(config_path, dry_run, start_from):
     with open(config_path) as f:
@@ -73,6 +63,11 @@ def run(config_path, dry_run, start_from):
     exp_label = f"{exp_name}_{exp_set}"
     workload = make_workload(config)
     profile = server_profile.resolve(config.get("server_common"))
+    if not profile["direct_io"]:
+        # The cold protocol is a server restart and nothing else. That only
+        # empties the engine cache, so without direct I/O the OS page cache
+        # survives every cell and no run after the first is cold.
+        raise SystemExit("perf-mode requires direct_io (D7) — got false")
     warm_reps = config.get("warm_reps", 5)
     queries = workload.queries()
     if config.get("queries", "all") != "all":
@@ -99,7 +94,6 @@ def run(config_path, dry_run, start_from):
         csv_path = os.path.join(out_dir, "perf_mode.csv")
         fp_seen = {}      # query_id -> first fingerprint (engine/plan-blind)
         fp_mismatch = []
-        cache_drops = 0
         idx = 0
         with open(csv_path, "w", newline="") as cf:
             writer = csv.DictWriter(cf, fieldnames=CSV_FIELDS)
@@ -118,8 +112,6 @@ def run(config_path, dry_run, start_from):
                         idx += 1
                         if idx < start_from:
                             continue
-                        if drop_page_cache():
-                            cache_drops += 1
                         srv = MysqldServer(datadir_for(identity), "release",
                                            extra_args=server_profile.build_args(
                                                engine, profile))
@@ -190,8 +182,6 @@ def run(config_path, dry_run, start_from):
                               f"warm={row['warm_ms_median']}ms "
                               f"access={row['chosen_access']} "
                               f"key={row['chosen_key']}")
-        print(f"page-cache drops: {cache_drops}/{idx} "
-              f"(0 = no passwordless sudo; cold = server restart only)")
         print(f"result crosscheck: {len(fp_mismatch)} mismatches")
         for m in fp_mismatch:
             print(f"  MISMATCH {m[0]}/{m[1]} {m[2]} {m[3]}")

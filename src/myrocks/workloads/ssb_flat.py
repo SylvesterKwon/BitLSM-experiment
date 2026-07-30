@@ -239,17 +239,18 @@ class SsbFlatWorkload(Workload):
         cols = [f"    {c} {t}{' NOT NULL' if nn else ''}"
                 for c, t, nn in FLAT_COLUMNS]
         cols.append("    PRIMARY KEY (LO_ORDERKEY, LO_LINENUMBER)")
-        if index_layout == "sk_v1":
+        if index_layout in ("sk_v1", "sk_bi_v1"):
             for c in FILTER_COLUMNS:
                 cols.append(f"    KEY sk_{c.lower()} ({c})")
-        elif index_layout == "composite_v1":
+        if index_layout == "composite_v1":
             for name, icols in COMPOSITE_INDEXES:
                 cols.append(f"    KEY {name} ({', '.join(icols)})")
-        elif index_layout == "bi_v1":
-            assert engine == "bitlsm", "bi layout is bitlsm-engine only"
+        if index_layout in ("bi_v1", "sk_bi_v1"):
+            assert engine == "bitlsm", "bi layouts are bitlsm-engine only"
             cols.append(
                 f"    INDEX bi ({', '.join(FILTER_COLUMNS)}) BITLSM_INDEX")
-        elif index_layout != "std":
+        if index_layout not in ("std", "sk_v1", "bi_v1", "sk_bi_v1",
+                                "composite_v1"):
             raise ValueError(f"unknown index_layout: {index_layout}")
         body = ",\n".join(cols)
         return (f"CREATE TABLE {table} (\n{body}\n) "
@@ -263,20 +264,35 @@ class SsbFlatWorkload(Workload):
                 f"({cols})")
 
     def bi_tables(self, index_layout):
-        return {"lineorder_flat"} if index_layout == "bi_v1" else set()
+        return ({"lineorder_flat"}
+                if index_layout in ("bi_v1", "sk_bi_v1") else set())
 
     def secondary_indexes(self, index_layout):
+        sks = [f"sk_{c.lower()}" for c in FILTER_COLUMNS]
         if index_layout == "sk_v1":
-            return {"lineorder_flat":
-                    [f"sk_{c.lower()}" for c in FILTER_COLUMNS]}
+            return {"lineorder_flat": sks}
         if index_layout == "composite_v1":
             return {"lineorder_flat": [n for n, _ in COMPOSITE_INDEXES]}
         if index_layout == "bi_v1":
             return {"lineorder_flat": ["bi"]}
+        if index_layout == "sk_bi_v1":
+            return {"lineorder_flat": sks + ["bi"]}
         return {}
 
     def histogram_columns(self):
         return list(FILTER_COLUMNS)
+
+    # ---- write axis (ingest_run.py) ---------------------------------------
+
+    def insert_columns(self):
+        return [c for c, _, _ in FLAT_COLUMNS]
+
+    def parse_row(self, line):
+        return tuple(line.rstrip("\n").split("|"))
+
+    def total_rows(self):
+        with open(self.flat_path + ".meta.json") as f:
+            return json.load(f)["rows"]
 
     def queries(self):
         out = {}

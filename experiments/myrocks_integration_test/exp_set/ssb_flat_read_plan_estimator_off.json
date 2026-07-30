@@ -1,0 +1,27 @@
+{
+  "workload": "ssbflat",
+  "sf": 2,
+  "build_kind": "release",
+  "queries": "all",
+  "bitlsm_estimator": false,
+  "cells": [
+    {
+      "engine": "bitlsm",
+      "index_layout": "bi_v1",
+      "plans": [
+        "auto",
+        "force_bi",
+        "fullscan"
+      ]
+    },
+    {
+      "engine": "bitlsm",
+      "index_layout": "sk_bi_v1",
+      "plans": [
+        "auto",
+        "force_bi",
+        "ignore_bi"
+      ]
+    }
+  ]
+}

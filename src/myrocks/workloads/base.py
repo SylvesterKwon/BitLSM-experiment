@@ -51,6 +51,20 @@ class Workload:
     def data_file(self, table: str) -> str:
         raise NotImplementedError
 
+    def insert_columns(self) -> list:
+        """Column names for the row-by-row INSERT of the write axis
+        (ingest_run.py). Order must match parse_row()'s tuple."""
+        raise NotImplementedError
+
+    def parse_row(self, line: str) -> tuple:
+        """One line of data_file() -> a value tuple for insert_columns().
+        Owns the source dialect (delimiter, NULL token)."""
+        raise NotImplementedError
+
+    def total_rows(self) -> int:
+        """Row count of the data source (for `rows: "all"`)."""
+        raise NotImplementedError
+
     def histogram_columns(self) -> list:
         """Columns for ANALYZE .. UPDATE HISTOGRAM (engine_params
         {"hist": ...} identities). [] = workload defines no histogram set."""

@@ -224,6 +224,21 @@ class PbiTaxpayerWorkload(Workload):
     def histogram_columns(self):
         return list(FILTER_COLUMNS)
 
+    # ---- write axis (ingest_run.py) ---------------------------------------
+
+    def insert_columns(self):
+        return ["rid"] + [c for c, _, _ in COLUMNS]
+
+    def parse_row(self, line):
+        # The prepared file carries LOAD DATA's NULL token; the client
+        # protocol needs a real None instead.
+        return tuple(None if v == "\\N" else v
+                     for v in line.rstrip("\n").split("|"))
+
+    def total_rows(self):
+        with open(MANIFEST_PATH) as f:
+            return json.load(f)["rows"]
+
     def queries(self):
         out = {}
         for fname in sorted(os.listdir(QUERY_DIR)):
