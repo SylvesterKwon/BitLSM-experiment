@@ -51,7 +51,7 @@ import hashlib
 import json
 import os
 
-from .base import ENGINE_CLAUSE, Workload
+from .base import ENGINE_CLAUSE, SK_CF_COMMENT, Workload
 
 REPO_ROOT = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", ".."))
@@ -190,12 +190,13 @@ class PbiTaxpayerWorkload(Workload):
         cols += [f"    {c} {t}{' NOT NULL' if nn else ''}"
                  for c, t, nn in COLUMNS]
         cols.append("    PRIMARY KEY (rid)")
+        sk_cf = SK_CF_COMMENT if engine in ("myrocks", "bitlsm") else ""
         if index_layout in ("sk_v1", "sk_bi_v1"):
             for c in FILTER_COLUMNS:
-                cols.append(f"    KEY sk_{c.lower()} ({c})")
+                cols.append(f"    KEY sk_{c.lower()} ({c}){sk_cf}")
         if index_layout == "composite_v1":
             for name, icols, _ in COMPOSITE_INDEXES:
-                cols.append(f"    KEY {name} ({', '.join(icols)})")
+                cols.append(f"    KEY {name} ({', '.join(icols)}){sk_cf}")
         if index_layout in ("bi_v1", "sk_bi_v1"):
             assert engine == "bitlsm", "bi layouts are bitlsm-engine only"
             cols.append(

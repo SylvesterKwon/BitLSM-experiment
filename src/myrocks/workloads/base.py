@@ -12,6 +12,21 @@ ENGINE_CLAUSE = {
     "bitlsm": "ROCKSDB",  # same SE; differs by index layout (bi indexes)
 }
 
+# Secondary keys go to their own CF on the RocksDB engines; InnoDB has no CFs
+# and its DDL is unaffected. The BitLSM estimator normalizes selectivity by the
+# key count of the CF hosting the table's rows, while the optimizer multiplies
+# that back out by the server's logical row count -- so every SK entry sharing
+# that CF diluted the row estimate by exactly (CF keys / table rows). Measured
+# 2026-07-31: 0/1/3/7 SKs gave 1.00/2.00/4.00/8.00x under-estimation, and SSB
+# sk_bi_v1's q-error median was 1878 against bi_v1's 1.08. Splitting the SKs
+# out leaves the data CF holding rows only, which is the condition the
+# estimator assumes. Applied to every SK-bearing rocksdb layout, not just the
+# bi ones, so index placement stays one less difference between the cells.
+# The block cache is a single DB-wide object shared by all CFs, so the D7
+# unified cache budget is unaffected; only the extra memtable is new.
+SK_CF = "sk_cf"
+SK_CF_COMMENT = f" COMMENT 'cfname={SK_CF}'"
+
 
 class Workload:
     name = None  # e.g. "job"
