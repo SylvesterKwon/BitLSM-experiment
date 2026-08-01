@@ -71,8 +71,10 @@ class Workload:
         (ingest_run.py). Order must match parse_row()'s tuple."""
         raise NotImplementedError
 
-    def parse_row(self, line: str) -> tuple:
-        """One line of data_file() -> a value tuple for insert_columns().
+    def parse_row(self, line: bytes) -> tuple:
+        """One line of data_file() (BYTES, read binary) -> a value tuple for
+        insert_columns(). Values stay bytes so the client sends them without
+        charset conversion, matching load_sql's byte-for-byte passthrough.
         Owns the source dialect (delimiter, NULL token)."""
         raise NotImplementedError
 

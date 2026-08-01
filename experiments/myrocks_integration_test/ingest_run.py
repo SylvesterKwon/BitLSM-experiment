@@ -73,9 +73,16 @@ def writer_proc(socket, database, data_path, start, count, report_path,
     # Rebuilt in the child: Workload objects are cheap and this keeps the
     # process boundary free of pickling assumptions.
     workload = make_workload(config)
+    # Both halves are needed for the byte-for-byte passthrough load_sql gets
+    # from CHARACTER SET latin1, and neither works alone: parse_row hands over
+    # bytes so no value is re-encoded, and the session charset must be latin1
+    # or the server rejects the parameter outright ("Conversion from collation
+    # utf8mb4_0900_ai_ci into latin1_swedish_ci impossible"). Taxpayer carries
+    # 14 rows of non-ASCII bytes (first at line 2144650) that killed every
+    # writer reaching them; verified byte-identical on all 14 after the fix.
     conn = mysql.connector.connect(unix_socket=socket, user="root",
                                    password="", database=database,
-                                   use_pure=False)
+                                   charset="latin1", use_pure=False)
     conn.autocommit = True
     cur = conn.cursor(prepared=True)
     insert_cols = workload.insert_columns()
@@ -83,7 +90,9 @@ def writer_proc(socket, database, data_path, start, count, report_path,
     ph = ", ".join(["%s"] * len(insert_cols))
     sql = f"INSERT INTO {table} ({cols}) VALUES ({ph})"
     done = 0
-    with open(report_path, "w") as rep, open(data_path) as f:
+    # Binary: decoding to str and letting the client re-encode corrupts the
+    # bytes even under a latin1 session (0xEF arrives as 0xC3 0xAF).
+    with open(report_path, "w") as rep, open(data_path, "rb") as f:
         for _ in range(start):
             next(f)
         for _ in range(count):
@@ -105,11 +114,13 @@ def shuffled_copy(workload, seed: int) -> str:
     path = f"{src}.shuffled.s{seed}"
     if os.path.exists(path):
         return path
-    with open(src) as f:
+    # Binary throughout: writer_proc reads this file with open(..., "rb"), and
+    # a text-mode round trip would not survive the non-ASCII rows.
+    with open(src, "rb") as f:
         lines = f.readlines()
     random.Random(seed).shuffle(lines)
     tmp = path + ".tmp"
-    with open(tmp, "w") as f:
+    with open(tmp, "wb") as f:
         f.writelines(lines)
     os.replace(tmp, path)
     return path

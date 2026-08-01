@@ -297,8 +297,10 @@ class SsbFlatWorkload(Workload):
     def insert_columns(self):
         return [c for c, _, _ in FLAT_COLUMNS]
 
-    def parse_row(self, line):
-        return tuple(line.rstrip("\n").split("|"))
+    def parse_row(self, line: bytes):
+        # Bytes, not str: the connector then sends them unconverted, matching
+        # load_sql's byte-for-byte passthrough (see writer_proc).
+        return tuple(line.rstrip(b"\n").split(b"|"))
 
     def total_rows(self):
         with open(self.flat_path + ".meta.json") as f:

@@ -242,11 +242,12 @@ class PbiTaxpayerWorkload(Workload):
     def insert_columns(self):
         return ["rid"] + [c for c, _, _ in COLUMNS]
 
-    def parse_row(self, line):
+    def parse_row(self, line: bytes):
         # The prepared file carries LOAD DATA's NULL token; the client
-        # protocol needs a real None instead.
-        return tuple(None if v == "\\N" else v
-                     for v in line.rstrip("\n").split("|"))
+        # protocol needs a real None instead. Values stay bytes so the
+        # connector sends them unconverted (see writer_proc).
+        return tuple(None if v == b"\\N" else v
+                     for v in line.rstrip(b"\n").split(b"|"))
 
     def total_rows(self):
         with open(MANIFEST_PATH) as f:
