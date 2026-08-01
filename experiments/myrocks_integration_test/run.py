@@ -36,7 +36,7 @@ from myrocks.workloads.registry import make_workload  # noqa: E402
 
 CSV_FIELDS = [
     "ts", "workload", "engine", "index_layout", "engine_params",
-    "query_id", "plan",
+    "session_vars", "query_id", "plan",
     "chosen_access", "chosen_key",
     "bi_chosen", "bi_est_rows", "actual_rows", "engine_rows", "count_match",
     "q_error", "query_cost",
@@ -221,6 +221,13 @@ def run(config_path, dry_run, start_from):
                                 "engine_params": ";".join(
                                     f"{k}={v}" for k, v in
                                     sorted((eparams or {}).items())),
+                                # Two cells can share every other identity
+                                # column and differ only here (e.g. the
+                                # index_merge_intersection=off control).
+                                "session_vars": ";".join(
+                                    f"{k}={v}" for k, v in
+                                    sorted((cell.get("session_vars")
+                                            or {}).items())),
                                 "lsm_state": marker.get("lsm_state"),
                                 "server_args_hash": srv.args_hash(),
                                 "mysql_commit": binfo["mysql_commit"][:12],
