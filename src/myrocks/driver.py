@@ -12,6 +12,12 @@ that cannot bind to the layout is a config error, never a silent `auto`):
   ignore_bi   IGNORE INDEX (bi) per bi-carrying table
   fullscan    IGNORE INDEX (<all secondary>) — lower-bound baseline
   index_merge /*+ INDEX_MERGE(t) */ — SK-intersection baseline
+  force_composite  FORCE INDEX (<the query's designed composite>) — the
+              composite_v1 upper bound actually realized. Needed because
+              the optimizer does not reliably pick it: on taxpayer MyRocks
+              estimates the 2-column comp_03 at 1 row against comp_01's 92
+              for a query where comp_03 in fact matches more rows, so 6/21
+              queries ran 2.6x slower than the layout can do.
 Table hints are injected per FROM reference ("title AS t" -> "... t FORCE
 INDEX (bi)"); optimizer hints go after the first SELECT.
 Execution counters / wallclock (metrics.py) belong to perf-mode (H4).
@@ -27,18 +33,32 @@ SESSION_SETUP = [
     "SET SESSION optimizer_trace_max_mem_size=67108864",
 ]
 
-PLANS = ("auto", "force_bi", "ignore_bi", "fullscan", "index_merge")
+PLANS = ("auto", "force_bi", "ignore_bi", "fullscan", "index_merge",
+         "force_composite")
 
 
-def resolve_plan(plan: str, secondary_indexes: dict):
+def resolve_plan(plan: str, secondary_indexes: dict, force_index: str = None):
     """Map a plan name to concrete hints for a layout, given
     {table: [secondary index names]}. Returns (table_hints, select_hints)
     where table_hints = {table: index-hint string} and select_hints =
     [optimizer-hint bodies]. Raises when the plan cannot bind — a silently
-    un-hinted cell would be indistinguishable from `auto`."""
+    un-hinted cell would be indistinguishable from `auto`.
+
+    force_index names the per-query index for force_composite; the caller
+    resolves it from the workload (Workload.composite_index_for)."""
     sec = secondary_indexes or {}
     if plan == "auto":
         return {}, []
+    if plan == "force_composite":
+        if not force_index:
+            raise ValueError("plan=force_composite needs force_index — the "
+                             "query has no designed composite")
+        tabs = {t: f"FORCE INDEX ({force_index})"
+                for t, idxs in sec.items() if force_index in idxs}
+        if not tabs:
+            raise ValueError(f"plan=force_composite: no table carries index "
+                             f"{force_index} in this layout")
+        return tabs, []
     if plan in ("force_bi", "ignore_bi"):
         verb = "FORCE" if plan == "force_bi" else "IGNORE"
         tabs = {t: f"{verb} INDEX (bi)"
@@ -132,11 +152,12 @@ def _walk_range_alternatives(node, out):
 
 def run_cell(server, database: str, query_id: str, sql: str, plan: str,
              secondary_indexes=None, session_vars=None, actual_where=None,
-             trace_path=None) -> dict:
+             trace_path=None, force_index=None) -> dict:
     """Execute one plan-mode cell on a fresh session; returns a flat dict
     (one CSV row). `actual_where` = {table: where_clause} ground-truth spec;
     counts are the caller's to cache across cells (engine-independent)."""
-    table_hints, select_hints = resolve_plan(plan, secondary_indexes)
+    table_hints, select_hints = resolve_plan(plan, secondary_indexes,
+                                             force_index)
     q = sql
     for t, hint in table_hints.items():
         q = inject_table_hint(q, t, hint)

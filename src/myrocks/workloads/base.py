@@ -70,6 +70,15 @@ class Workload:
         {"hist": ...} identities). [] = workload defines no histogram set."""
         return []
 
+    def composite_index_for(self, query_id: str) -> str:
+        """The composite_v1 index this query template was designed around,
+        or None when the query has no sargable predicate to index.
+
+        Drives plan=force_composite. Without it the composite cell measures
+        whatever the optimizer's stats happen to pick, which is not the
+        per-template upper bound the layout exists to represent."""
+        return None
+
     def queries(self) -> dict:
         """{stable query_id: SQL text}"""
         raise NotImplementedError

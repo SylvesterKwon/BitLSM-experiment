@@ -67,11 +67,12 @@ def _fingerprint(rows) -> str:
 
 def run_perf_cell(server, database: str, query_id: str, sql: str, plan: str,
                   secondary_indexes=None, session_vars=None, warm_reps=5,
-                  sidecar_path=None) -> dict:
+                  sidecar_path=None, force_index=None) -> dict:
     """Measure one perf cell; returns a flat dict (one CSV row). The caller
     owns the cold protocol (fresh server per cell); execution 0 here is
     that cold run."""
-    table_hints, select_hints = resolve_plan(plan, secondary_indexes)
+    table_hints, select_hints = resolve_plan(plan, secondary_indexes,
+                                             force_index)
     q = sql
     for t, hint in table_hints.items():
         q = inject_table_hint(q, t, hint)

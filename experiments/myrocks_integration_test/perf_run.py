@@ -112,6 +112,15 @@ def run(config_path, dry_run, start_from):
                         idx += 1
                         if idx < start_from:
                             continue
+                        force_index = (workload.composite_index_for(qid)
+                                       if plan == "force_composite" else None)
+                        if plan == "force_composite" and not force_index:
+                            # No sargable predicate to index (taxpayer q02).
+                            # Skipping is louder than emitting an un-hinted
+                            # row labelled force_composite.
+                            print(f"[{idx}/{total}] SKIP {engine}/{layout} "
+                                  f"{qid} {plan}: no designed composite")
+                            continue
                         srv = MysqldServer(datadir_for(identity), "release",
                                            extra_args=server_profile.build_args(
                                                engine, profile))
@@ -151,7 +160,8 @@ def run(config_path, dry_run, start_from):
                                 warm_reps=warm_reps,
                                 sidecar_path=os.path.join(
                                     out_dir, "counters",
-                                    f"{engine}-{layout}-{qid}-{plan}.json"))
+                                    f"{engine}-{layout}-{qid}-{plan}.json"),
+                                force_index=force_index)
                             binfo = srv.build_info()
                             args_hash = srv.args_hash()
                         fp = row["result_fingerprint"]

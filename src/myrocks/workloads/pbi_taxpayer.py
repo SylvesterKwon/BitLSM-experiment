@@ -118,19 +118,28 @@ FILTER_COLUMNS = [
 # candidates [Chaudhuri & Narasayya, VLDB'97] + index-preserving merges
 # [ICDE'99]; upper bound on any realistic SK configuration. q02 has no
 # WHERE and full-scans under every layout.
+# (name, columns, query templates it was designed for). The query list is
+# data, not a comment, because plan=force_composite binds against it: a
+# stale comment would silently measure the wrong index.
 COMPOSITE_INDEXES = [
     ("comp_01", ["nppes_provider_last_org_name",
                 "nppes_provider_first_name",
                 "nppes_provider_state",
-                "hcpcs_description"]),
-    # ^ q04 q05 q07 q09 q10 q11 q14 q17 q18 q19
+                "hcpcs_description"],
+     ["q04", "q05", "q07", "q09", "q10", "q11", "q14", "q17", "q18", "q19"]),
     ("comp_02", ["hcpcs_description", "nppes_provider_state",
-                "nppes_provider_city"]),    # q03 q12 q15 q16 q20 q21 q22
+                "nppes_provider_city"],
+     ["q03", "q12", "q15", "q16", "q20", "q21", "q22"]),
     ("comp_03", ["nppes_provider_last_org_name",
-                "nppes_provider_state"]),   # q01 q06
+                "nppes_provider_state"],
+     ["q01", "q06"]),
     ("comp_04", ["nppes_provider_first_name",
-                "nppes_provider_state"]),   # q08 q13
+                "nppes_provider_state"],
+     ["q08", "q13"]),
 ]
+# q02 has no WHERE — no composite can help it, and it full-scans everywhere.
+COMPOSITE_FOR_QUERY = {f"pbitax_{q}": name
+                       for name, _, qs in COMPOSITE_INDEXES for q in qs}
 
 # Stream-counted from the Zenodo files (2026-07-28 feasibility study).
 EXPECTED_ROWS_BY_INSTANCE = {1: 9_153_273, 2: 9_153_273}
@@ -185,7 +194,7 @@ class PbiTaxpayerWorkload(Workload):
             for c in FILTER_COLUMNS:
                 cols.append(f"    KEY sk_{c.lower()} ({c})")
         if index_layout == "composite_v1":
-            for name, icols in COMPOSITE_INDEXES:
+            for name, icols, _ in COMPOSITE_INDEXES:
                 cols.append(f"    KEY {name} ({', '.join(icols)})")
         if index_layout in ("bi_v1", "sk_bi_v1"):
             assert engine == "bitlsm", "bi layouts are bitlsm-engine only"
@@ -214,7 +223,7 @@ class PbiTaxpayerWorkload(Workload):
         if index_layout == "sk_v1":
             return {"taxpayer": sks}
         if index_layout == "composite_v1":
-            return {"taxpayer": [n for n, _ in COMPOSITE_INDEXES]}
+            return {"taxpayer": [n for n, _, _ in COMPOSITE_INDEXES]}
         if index_layout == "bi_v1":
             return {"taxpayer": ["bi"]}
         if index_layout == "sk_bi_v1":
@@ -223,6 +232,9 @@ class PbiTaxpayerWorkload(Workload):
 
     def histogram_columns(self):
         return list(FILTER_COLUMNS)
+
+    def composite_index_for(self, query_id):
+        return COMPOSITE_FOR_QUERY.get(query_id)
 
     # ---- write axis (ingest_run.py) ---------------------------------------
 

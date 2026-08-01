@@ -43,7 +43,7 @@
         "hist": "v1"
       },
       "plans": [
-        "auto",
+        "force_composite",
         "fullscan"
       ]
     },
@@ -79,7 +79,7 @@
         "hist": "v1"
       },
       "plans": [
-        "auto",
+        "force_composite",
         "fullscan"
       ]
     }

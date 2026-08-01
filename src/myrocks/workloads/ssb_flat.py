@@ -99,20 +99,26 @@ FILTER_COLUMNS = [
 # Narasayya, VLDB'97] with index-preserving prefix merges [ICDE'99] — an
 # upper bound on any realistic SK configuration, so read wins against it
 # transfer to every weaker real-world layout.
+# (name, columns, query templates it was designed for). The query list is
+# data, not a comment, because plan=force_composite binds against it: a
+# stale comment would silently measure the wrong index.
 COMPOSITE_INDEXES = [
-    ("comp_01", ["D_YEAR", "LO_DISCOUNT", "LO_QUANTITY"]),          # q1_1
-    ("comp_02", ["D_YEARMONTHNUM", "LO_DISCOUNT", "LO_QUANTITY"]),  # q1_2
+    ("comp_01", ["D_YEAR", "LO_DISCOUNT", "LO_QUANTITY"], ["q1_1"]),
+    ("comp_02", ["D_YEARMONTHNUM", "LO_DISCOUNT", "LO_QUANTITY"], ["q1_2"]),
     ("comp_03", ["D_WEEKNUMINYEAR", "D_YEAR",
-                "LO_DISCOUNT", "LO_QUANTITY"]),                    # q1_3
-    ("comp_04", ["P_CATEGORY", "S_REGION"]),                        # q2_1
-    ("comp_05", ["S_REGION", "P_BRAND"]),                           # q2_2 q2_3
-    ("comp_06", ["C_REGION", "S_REGION", "D_YEAR"]),                # q3_1
-    ("comp_07", ["C_NATION", "S_NATION", "D_YEAR"]),                # q3_2
-    ("comp_08", ["C_CITY", "S_CITY", "D_YEAR"]),                    # q3_3
-    ("comp_09", ["C_CITY", "S_CITY", "D_YEARMONTHNUM"]),            # q3_4
-    ("comp_10", ["C_REGION", "S_REGION", "P_MFGR", "D_YEAR"]),      # q4_1 q4_2
-    ("comp_11", ["S_NATION", "P_CATEGORY", "C_REGION", "D_YEAR"]),  # q4_3
+                "LO_DISCOUNT", "LO_QUANTITY"], ["q1_3"]),
+    ("comp_04", ["P_CATEGORY", "S_REGION"], ["q2_1"]),
+    ("comp_05", ["S_REGION", "P_BRAND"], ["q2_2", "q2_3"]),
+    ("comp_06", ["C_REGION", "S_REGION", "D_YEAR"], ["q3_1"]),
+    ("comp_07", ["C_NATION", "S_NATION", "D_YEAR"], ["q3_2"]),
+    ("comp_08", ["C_CITY", "S_CITY", "D_YEAR"], ["q3_3"]),
+    ("comp_09", ["C_CITY", "S_CITY", "D_YEARMONTHNUM"], ["q3_4"]),
+    ("comp_10", ["C_REGION", "S_REGION", "P_MFGR", "D_YEAR"],
+     ["q4_1", "q4_2"]),
+    ("comp_11", ["S_NATION", "P_CATEGORY", "C_REGION", "D_YEAR"], ["q4_3"]),
 ]
+COMPOSITE_FOR_QUERY = {f"ssbflat_{q}": name
+                       for name, _, qs in COMPOSITE_INDEXES for q in qs}
 
 # Canonical dbgen row counts, verified 2026-07-17 @ submodule pin (SF1).
 EXPECTED_TBL_ROWS_SF1 = {
@@ -243,7 +249,7 @@ class SsbFlatWorkload(Workload):
             for c in FILTER_COLUMNS:
                 cols.append(f"    KEY sk_{c.lower()} ({c})")
         if index_layout == "composite_v1":
-            for name, icols in COMPOSITE_INDEXES:
+            for name, icols, _ in COMPOSITE_INDEXES:
                 cols.append(f"    KEY {name} ({', '.join(icols)})")
         if index_layout in ("bi_v1", "sk_bi_v1"):
             assert engine == "bitlsm", "bi layouts are bitlsm-engine only"
@@ -272,7 +278,7 @@ class SsbFlatWorkload(Workload):
         if index_layout == "sk_v1":
             return {"lineorder_flat": sks}
         if index_layout == "composite_v1":
-            return {"lineorder_flat": [n for n, _ in COMPOSITE_INDEXES]}
+            return {"lineorder_flat": [n for n, _, _ in COMPOSITE_INDEXES]}
         if index_layout == "bi_v1":
             return {"lineorder_flat": ["bi"]}
         if index_layout == "sk_bi_v1":
@@ -281,6 +287,9 @@ class SsbFlatWorkload(Workload):
 
     def histogram_columns(self):
         return list(FILTER_COLUMNS)
+
+    def composite_index_for(self, query_id):
+        return COMPOSITE_FOR_QUERY.get(query_id)
 
     # ---- write axis (ingest_run.py) ---------------------------------------
 

@@ -186,6 +186,16 @@ def run(config_path, dry_run, start_from):
                             idx += 1
                             if idx < start_from:
                                 continue
+                            force_index = (
+                                workload.composite_index_for(qid)
+                                if plan == "force_composite" else None)
+                            if plan == "force_composite" and not force_index:
+                                # No sargable predicate to index (taxpayer
+                                # q02). Skipping is louder than emitting an
+                                # un-hinted row labelled force_composite.
+                                print(f"[{idx}/{total}] SKIP {engine}/{layout}"
+                                      f" {qid} {plan}: no designed composite")
+                                continue
                             trace_path = os.path.join(
                                 out_dir, "traces",
                                 f"{engine}-{layout}-{qid}-{plan}.json")
@@ -193,7 +203,8 @@ def run(config_path, dry_run, start_from):
                                 srv, workload.name, qid, sql, plan,
                                 secondary_indexes=sec_idx,
                                 session_vars=cell.get("session_vars"),
-                                trace_path=trace_path)
+                                trace_path=trace_path,
+                                force_index=force_index)
                             row["actual_rows"] = actual
                             row["engine_rows"] = engine_rows
                             row["count_match"] = (None if match is None
