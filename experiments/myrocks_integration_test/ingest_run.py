@@ -13,7 +13,14 @@ flush_log_at_trx_commit=0 — an asymmetric flush setting turns the LSM
 engines fsync-bound (~142 rows/s) and masks everything.
 
 Per run: fresh datadir -> DDL -> N writers over disjoint row ranges ->
-aggregate rows/s + per-writer checkpoint timeline -> drop datadir.
+persist what is still in memory -> aggregate rows/s + write-amplification
+counters + per-writer checkpoint timeline -> drop datadir.
+
+The persist step is inside the timed window. Closing it at the last INSERT
+leaves rows the engine has not written out, which favours whichever engine
+defers more -- the LSM ones, the ones being argued for. The counters are the
+stronger answer to that question anyway: they are timing-free, so where the
+window closes cannot be argued with.
 
 Usage:
     python3 experiments/myrocks_integration_test/ingest_run.py exp_set/<params>.json [options]
@@ -40,6 +47,8 @@ from myrocks.workloads.registry import make_workload  # noqa: E402
 CSV_FIELDS = [
     "ts", "workload", "engine", "index_layout", "writers", "rows",
     "seconds", "rows_per_sec", "db_bytes", "shuffle",
+    "data_write_bytes", "log_write_bytes", "logical_write_bytes",
+    "write_amp", "data_bytes_per_row",
     "server_args_hash", "mysql_commit", "bitlsm_commit",
 ]
 
@@ -126,6 +135,57 @@ def shuffled_copy(workload, seed: int) -> str:
     return path
 
 
+def _status(cur, names) -> dict:
+    out = {}
+    for n in names:
+        cur.execute(f"SHOW GLOBAL STATUS LIKE '{n}'")
+        row = cur.fetchone()
+        out[n] = int(row[1]) if row else 0
+    return out
+
+
+ROCKS_COUNTERS = ("rocksdb_flush_write_bytes", "rocksdb_compact_write_bytes",
+                  "rocksdb_bytes_written", "rocksdb_wal_bytes")
+INNODB_COUNTERS = ("Innodb_data_written", "Innodb_os_log_written")
+
+
+def persist_now(cur, engine, timeout=600.0):
+    """Push what the engine is still holding in memory out to storage.
+
+    Without this the window closes with rows the engine has not written yet,
+    which flatters whichever engine defers more -- the LSM ones, i.e. exactly
+    the ones under test. Measured at 2M rows this is ~8% of the engine's write
+    bytes for RocksDB. Forcing a FULL compaction instead would overshoot just
+    as badly in the other direction: it writes work steady state never does.
+    """
+    if engine in ("myrocks", "bitlsm"):
+        cur.execute("SET GLOBAL rocksdb_force_flush_memtable_now = 1")
+        return
+    # InnoDB defers through the buffer pool instead of a memtable, so the
+    # symmetric step is to drain the dirty pages. There is no flush-now
+    # statement outside debug builds; dropping the dirty-page target makes the
+    # page cleaner do it.
+    cur.execute("SELECT @@innodb_max_dirty_pages_pct")
+    prev = cur.fetchone()[0]
+    cur.execute("SET GLOBAL innodb_max_dirty_pages_pct = 0")
+    try:
+        deadline = time.time() + timeout
+        stable = 0
+        last = None
+        while time.time() < deadline:
+            dirty = _status(cur, ("Innodb_buffer_pool_pages_dirty",))[
+                "Innodb_buffer_pool_pages_dirty"]
+            if dirty < 100:
+                return
+            stable = stable + 1 if dirty == last else 0
+            if stable >= 20:      # 5s with no progress: the rest is churn
+                return
+            last = dirty
+            time.sleep(0.25)
+    finally:
+        cur.execute(f"SET GLOBAL innodb_max_dirty_pages_pct = {prev}")
+
+
 def _dir_bytes(path: str) -> int:
     total = 0
     for root, _, files in os.walk(path):
@@ -153,8 +213,9 @@ def run_one(workload, config, table, engine, layout, n_writers, n_rows,
             cur.execute("CREATE DATABASE ingest")
             cur.execute("USE ingest")
             cur.execute(workload.create_table_sql(table, engine, layout))
-            cur.close()
-            conn.close()
+            rocks = engine in ("myrocks", "bitlsm")
+            counters = ROCKS_COUNTERS if rocks else INNODB_COUNTERS
+            before = _status(cur, counters)
 
             timeline_dir = os.path.join(out_dir, "timeline")
             os.makedirs(timeline_dir, exist_ok=True)
@@ -176,7 +237,23 @@ def run_one(workload, config, table, engine, layout, n_writers, n_rows,
                 p.join()
                 if p.exitcode != 0:
                     raise RuntimeError(f"writer exited {p.exitcode} ({tag})")
+            # Inside the window on purpose -- see persist_now().
+            persist_now(cur, engine)
             seconds = time.time() - t0
+
+            after = _status(cur, counters)
+            delta = {k: after[k] - before[k] for k in counters}
+            if rocks:
+                data_w = (delta["rocksdb_flush_write_bytes"]
+                          + delta["rocksdb_compact_write_bytes"])
+                log_w = delta["rocksdb_wal_bytes"]
+                logical_w = delta["rocksdb_bytes_written"]
+            else:
+                data_w = delta["Innodb_data_written"]
+                log_w = delta["Innodb_os_log_written"]
+                logical_w = None      # InnoDB exposes no user-bytes counter
+            cur.close()
+            conn.close()
 
             conn = srv.connect(database="ingest")
             cur = conn.cursor()
@@ -200,6 +277,18 @@ def run_one(workload, config, table, engine, layout, n_writers, n_rows,
         "rows": n_rows, "seconds": round(seconds, 1),
         "rows_per_sec": round(n_rows / seconds, 1),
         "db_bytes": db_bytes,
+        # Physical bytes the engine actually wrote, split data vs log. Unlike
+        # throughput these are counters, so they carry no timing noise and no
+        # argument about where the window closes -- the answer to "did you
+        # include compaction?" lives here. write_amp is the LSM convention
+        # (physical / user bytes); InnoDB publishes no user-bytes counter, so
+        # data_bytes_per_row is the column that compares across engines.
+        "data_write_bytes": data_w,
+        "log_write_bytes": log_w,
+        "logical_write_bytes": logical_w,
+        "write_amp": (round(data_w / logical_w, 3)
+                      if logical_w else None),
+        "data_bytes_per_row": round(data_w / n_rows, 1),
         "server_args_hash": args_hash,
         "mysql_commit": binfo["mysql_commit"][:12],
         "bitlsm_commit": binfo["bitlsm_commit"][:12],
