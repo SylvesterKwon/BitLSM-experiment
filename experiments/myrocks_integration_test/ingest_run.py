@@ -46,7 +46,8 @@ from myrocks.workloads.registry import make_workload  # noqa: E402
 
 CSV_FIELDS = [
     "ts", "workload", "engine", "index_layout", "writers", "rows",
-    "seconds", "rows_per_sec", "db_bytes", "shuffle",
+    "seconds", "rows_per_sec", "server_cpu_seconds",
+    "server_cpu_us_per_row", "db_bytes", "shuffle",
     "data_write_bytes", "log_write_bytes", "logical_write_bytes",
     "write_amp", "data_bytes_per_row",
     "server_args_hash", "mysql_commit", "bitlsm_commit",
@@ -135,6 +136,24 @@ def shuffled_copy(workload, seed: int) -> str:
     return path
 
 
+def _server_cpu(pid: int) -> float:
+    """CPU time mysqld itself consumed, user+system, in seconds.
+
+    Summed over every thread in the process, so this exceeds wall clock on a
+    busy multicore run (~55 CPU-seconds in 12 wall seconds here) -- that is the
+    metric behaving correctly, not a bug.
+
+    Wall clock also contains the Python connector, which costs ~44us/row and
+    was 44% of an ingest run's wall clock here -- a term shared by every cell,
+    so it dilutes every ratio between them. It is harness, not system under
+    test. Server CPU drops it (separate process) while keeping the SQL layer,
+    which is part of what an SQL-level integration measures.
+    """
+    with open(f"/proc/{pid}/stat") as f:
+        fields = f.read().rsplit(")", 1)[1].split()
+    return (int(fields[11]) + int(fields[12])) / os.sysconf("SC_CLK_TCK")
+
+
 def _status(cur, names) -> dict:
     out = {}
     for n in names:
@@ -216,6 +235,7 @@ def run_one(workload, config, table, engine, layout, n_writers, n_rows,
             rocks = engine in ("myrocks", "bitlsm")
             counters = ROCKS_COUNTERS if rocks else INNODB_COUNTERS
             before = _status(cur, counters)
+            cpu0 = _server_cpu(srv.proc.pid)
 
             timeline_dir = os.path.join(out_dir, "timeline")
             os.makedirs(timeline_dir, exist_ok=True)
@@ -240,6 +260,7 @@ def run_one(workload, config, table, engine, layout, n_writers, n_rows,
             # Inside the window on purpose -- see persist_now().
             persist_now(cur, engine)
             seconds = time.time() - t0
+            server_cpu = _server_cpu(srv.proc.pid) - cpu0
 
             after = _status(cur, counters)
             delta = {k: after[k] - before[k] for k in counters}
@@ -276,6 +297,9 @@ def run_one(workload, config, table, engine, layout, n_writers, n_rows,
         "engine": engine, "index_layout": layout, "writers": n_writers,
         "rows": n_rows, "seconds": round(seconds, 1),
         "rows_per_sec": round(n_rows / seconds, 1),
+        # Client-free view of the same run; see _server_cpu().
+        "server_cpu_seconds": round(server_cpu, 2),
+        "server_cpu_us_per_row": round(server_cpu / n_rows * 1e6, 2),
         "db_bytes": db_bytes,
         # Physical bytes the engine actually wrote, split data vs log. Unlike
         # throughput these are counters, so they carry no timing noise and no
