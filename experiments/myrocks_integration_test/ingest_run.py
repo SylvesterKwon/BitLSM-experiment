@@ -31,7 +31,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from run_common import (  # noqa: E402
     add_common_args, make_result_dir, maybe_run_as_daemon,
-    setup_logging, teardown_logging,
+    setup_logging, teardown_logging, warn_if_cpu_unpinned,
 )
 from myrocks import server_profile  # noqa: E402
 from myrocks.server import DB_BASE, MysqldServer  # noqa: E402
@@ -245,6 +245,7 @@ def run(config_path, dry_run, start_from):
               f"shuffle={shuffle})")
         print(f"server : {profile}")
         print(f"output : {out_dir}")
+        warn_if_cpu_unpinned()
         if dry_run:
             for engine, layout, n in runs:
                 print(f"  {engine}/{layout} writers={n} args="

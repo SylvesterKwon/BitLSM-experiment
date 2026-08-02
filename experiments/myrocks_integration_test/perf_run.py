@@ -33,7 +33,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from run_common import (  # noqa: E402
     add_common_args, make_result_dir, maybe_run_as_daemon,
-    setup_logging, teardown_logging,
+    setup_logging, teardown_logging, warn_if_cpu_unpinned,
 )
 from myrocks import metrics, server_profile  # noqa: E402
 from myrocks.loader import datadir_for, ensure_loaded  # noqa: E402
@@ -83,6 +83,7 @@ def run(config_path, dry_run, start_from):
         print(f"cells  : {total} (warm_reps={warm_reps})")
         print(f"server : {profile}")
         print(f"output : {out_dir}")
+        warn_if_cpu_unpinned()
         if dry_run:
             for c in cells:
                 print(f"  [{c['engine']}/{c['index_layout']}] "

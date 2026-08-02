@@ -6,6 +6,7 @@ CLI argument parsing, and daemon mode.
 """
 
 import argparse
+import glob
 import os
 import subprocess
 import sys
@@ -134,6 +135,44 @@ def reset_hardware(db_path_base: str):
     print("  [hw-reset] waiting 10s for SSD GC ...")
     time.sleep(10)
     print("  [hw-reset] done")
+
+
+def warn_if_cpu_unpinned():
+    """Print a warning when the CPU clock is free to drift (read-only check).
+
+    An unpinned clock swings with temperature across runs and drags wall clock
+    with it, which is how an ingest sweep once reported a layout as faster than
+    the baseline it does strictly more work than. Both settings are lost on
+    reboot, so this is a per-boot trap worth catching before a run rather than
+    after. See README, Measurement hygiene.
+    """
+    problems = []
+    govs = glob.glob("/sys/devices/system/cpu/cpu*/cpufreq/scaling_governor")
+    seen = set()
+    for path in govs:
+        try:
+            with open(path) as f:
+                seen.add(f.read().strip())
+        except OSError:
+            pass
+    if seen and seen != {"performance"}:
+        problems.append(f"governor is {'/'.join(sorted(seen))}, want performance")
+    try:
+        with open("/sys/devices/system/cpu/intel_pstate/no_turbo") as f:
+            if f.read().strip() != "1":
+                problems.append("turbo is on, want it off")
+    except OSError:
+        pass  # not intel_pstate; nothing to assert
+    if not problems:
+        return
+    print("  [WARNING] CPU clock is not pinned — timings will drift between "
+          "runs:")
+    for p in problems:
+        print(f"            {p}")
+    print("            echo performance | sudo tee "
+          "/sys/devices/system/cpu/cpu*/cpufreq/scaling_governor")
+    print("            echo 1 | sudo tee "
+          "/sys/devices/system/cpu/intel_pstate/no_turbo")
 
 
 def make_result_dir(exp_name: str) -> str:
