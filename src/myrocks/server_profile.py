@@ -49,6 +49,10 @@ def build_args(engine: str, profile: dict, write_path: bool = False) -> list:
             args.append("--innodb-flush-log-at-trx-commit=0")
     elif engine in ("myrocks", "bitlsm"):
         args.append(f"--rocksdb-block-cache-size={profile['cache_bytes']}")
+        # Index metadata resident from boot, so cold measures data I/O only.
+        args += ["--rocksdb-max-open-files=-1",
+                 "--rocksdb-cache-index-and-filter-blocks=0",
+                 "--rocksdb-pin-l0-filter-and-index-blocks-in-cache=0"]
         if profile["direct_io"]:
             args.append("--rocksdb-use-direct-reads=1")
             if write_path:
