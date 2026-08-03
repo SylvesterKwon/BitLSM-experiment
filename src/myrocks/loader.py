@@ -111,10 +111,17 @@ def ensure_loaded(workload, engine: str, index_layout: str,
 
         # Deterministic LSM state for read-only measurement (D2:
         # lsm_state=compacted). natural-state runs are a separate H5 axis.
+        # Every CF the table uses, not just 'default': SK layouts put their
+        # entries in sk_cf, and leaving it at L0 makes reads open overlapping
+        # files that a compacted CF would not have -- 49 block reads against
+        # bi_v1's 30 for an identical plan, which read as a BitLSM regression.
         lsm_state = "n/a"
         if rocks:
             cur.execute("SET GLOBAL rocksdb_force_flush_memtable_now = 1")
-            cur.execute("SET GLOBAL rocksdb_compact_cf = 'default'")
+            cur.execute("SELECT DISTINCT CF FROM information_schema.ROCKSDB_DDL"
+                        " WHERE TABLE_SCHEMA = %s", (workload.name,))
+            for (cf_name,) in cur.fetchall():
+                cur.execute("SET GLOBAL rocksdb_compact_cf = %s", (cf_name,))
             lsm_state = "compacted"
 
         for table in workload.tables():
