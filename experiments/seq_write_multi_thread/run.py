@@ -83,7 +83,7 @@ def get_db_size(db_path: str) -> int:
 
 
 def encode_method_label(name: str, combo: dict) -> str:
-    """Method name for CSV (e.g., 'bitlsm_rho0.1')."""
+    """Method name for CSV (e.g., 'bitlsm_rho0.01')."""
     db_params = {k: v for k, v in combo.items() if k in DB_PARAMS}
     if db_params:
         return name + "_" + "_".join(f"{k}{fmt(v)}" for k, v in db_params.items())

@@ -103,7 +103,7 @@ def parse_checkpoints(output: str) -> list[tuple[int, int]]:
 
 
 def method_label(name: str, combo: dict) -> str:
-    """Build method label, appending rho for bitlsm (e.g. 'bitlsm_rho0.05')."""
+    """Build method label, appending rho for bitlsm (e.g. 'bitlsm_rho0.01')."""
     if "rho" in combo:
         return f"{name}_rho{fmt(combo['rho'])}"
     return name

@@ -21,9 +21,9 @@ METHOD_ORDER = [
     "si-ck",
     "si-eager",
     "embedded_bloom_bits10",
-    "bitlsm_rho0.2",
-    "bitlsm_rho0.1",
-    "bitlsm_rho0.05",
+    "bitlsm_rho0.03",
+    "bitlsm_rho0.01",
+    "bitlsm_rho0.003",
 ]
 METHOD_LABELS = {
     "no-index": "No Index",
@@ -31,14 +31,14 @@ METHOD_LABELS = {
     "si-ck": "Composite",
     "si-eager": "SI-Eager",
     "embedded_bloom_bits10": "Bloom + Zone Map",
-    "bitlsm_rho0.2": r"BitLSM ($\rho$=0.2)",
-    "bitlsm_rho0.1": r"BitLSM ($\rho$=0.1)",
-    "bitlsm_rho0.05": r"BitLSM ($\rho$=0.05)",
+    "bitlsm_rho0.03": r"BitLSM ($\rho$=0.03)",
+    "bitlsm_rho0.01": r"BitLSM ($\rho$=0.01)",
+    "bitlsm_rho0.003": r"BitLSM ($\rho$=0.003)",
 }
 METHOD_COLORS = {
-    "bitlsm_rho0.2": "#F08C7C",
-    "bitlsm_rho0.1": "#E04040",
-    "bitlsm_rho0.05": "#9B1B1B",
+    "bitlsm_rho0.03": "#F08C7C",
+    "bitlsm_rho0.01": "#E04040",
+    "bitlsm_rho0.003": "#9B1B1B",
     "si-lu": "#4CC850",
     "si-ck": "#9888B8",
     "embedded_bloom_bits10": "#1FA8A0",
