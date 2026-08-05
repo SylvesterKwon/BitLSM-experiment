@@ -20,6 +20,7 @@ METHOD_ORDER = [
     "si-ck",
     "si-eager",
     "embedded",
+    "sai",
     "bitlsm_rho0.03",
     "bitlsm_rho0.01",
     "bitlsm_rho0.003",
@@ -30,6 +31,7 @@ METHOD_LABELS = {
     "si-ck": "Composite",
     "si-eager": "SI-Eager",
     "embedded": "Bloom + Zone Map",
+    "sai": "SAI",
     "bitlsm_rho0.03": r"BitLSM ($\rho$=0.03)",
     "bitlsm_rho0.01": r"BitLSM ($\rho$=0.01)",
     "bitlsm_rho0.003": r"BitLSM ($\rho$=0.003)",
@@ -41,6 +43,7 @@ METHOD_COLORS = {
     "si-lu": "#4CC850",
     "si-ck": "#9888B8",
     "embedded": "#1FA8A0",
+    "sai": "#3060C0",
 }
 
 
