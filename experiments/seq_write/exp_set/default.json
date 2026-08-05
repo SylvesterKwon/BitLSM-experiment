@@ -42,6 +42,13 @@
       "params": {}
     },
     {
+      "name": "embedded",
+      "binary": "build/bin/embedded",
+      "params": {
+        "bloom_bits": 10
+      }
+    },
+    {
       "name": "sai",
       "binary": "build/bin/sai",
       "params": {
