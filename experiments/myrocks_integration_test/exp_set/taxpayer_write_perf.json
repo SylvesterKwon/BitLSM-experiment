@@ -24,12 +24,20 @@
       "index_layout": "sk_v1"
     },
     {
+      "engine": "myrocks",
+      "index_layout": "composite_v1"
+    },
+    {
       "engine": "innodb",
       "index_layout": "std"
     },
     {
       "engine": "innodb",
       "index_layout": "sk_v1"
+    },
+    {
+      "engine": "innodb",
+      "index_layout": "composite_v1"
     }
   ]
 }
