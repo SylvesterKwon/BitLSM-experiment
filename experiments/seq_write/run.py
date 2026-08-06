@@ -48,7 +48,7 @@ EXP_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PARAMS = ["n", "schema", "rho"]
 
 MASTER_COLUMNS = [
-    "method", "time_elapsed_ms", "records_written", "db_size_bytes",
+    "method", "schema", "time_elapsed_ms", "records_written", "db_size_bytes",
 ]
 
 
@@ -232,9 +232,16 @@ def run(config_path: str, dry_run: bool, method_filter: list, cooldown: int,
                         clean_db(db_path)
                     print()
 
+                    # Pin every row to its schema so the CSV survives a resumed
+                    # or method-filtered sweep; without it the a-value is only
+                    # recoverable from row order, which those options break.
+                    schema_stem = (_schema_stem(combo["schema"])
+                                   if "schema" in combo else "")
+
                     for elapsed_ms, records in checkpoints[:-1]:
                         append_result(master_csv, {
                             "method": label,
+                            "schema": schema_stem,
                             "time_elapsed_ms": elapsed_ms,
                             "records_written": records,
                             "db_size_bytes": "",
@@ -242,6 +249,7 @@ def run(config_path: str, dry_run: bool, method_filter: list, cooldown: int,
                     if checkpoints:
                         append_result(master_csv, {
                             "method": label,
+                            "schema": schema_stem,
                             "time_elapsed_ms": checkpoints[-1][0],
                             "records_written": checkpoints[-1][1],
                             "db_size_bytes": db_size,

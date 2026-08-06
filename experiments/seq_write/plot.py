@@ -4,6 +4,7 @@
 import argparse
 import csv
 import os
+import re
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -47,10 +48,27 @@ METHOD_COLORS = {
 }
 
 
-def load_final_rows(csv_path: str):
-    """Load final row (with db_size_bytes) per run.
+MISSING = (float("nan"), 0, float("nan"))
 
-    Each method has up to len(SCHEMAS) runs in order.
+
+def _schema_slot(schema_field: str):
+    """Map a schema stem like 'default_a8_c1000' to its index in SCHEMAS."""
+    m = re.search(r"_(a\d+)_", schema_field)
+    if not m:
+        return None
+    try:
+        return SCHEMAS.index(m.group(1))
+    except ValueError:
+        return None
+
+
+def load_final_rows(csv_path: str):
+    """Load final row (with db_size_bytes) per run, aligned to SCHEMAS.
+
+    A CSV carrying a `schema` column pins each run to its attribute count, so a
+    resumed (--start-from) or method-filtered sweep still lands on the right
+    x position. Older CSVs have no such column and are read positionally, the
+    way they were written. Absent runs become NaN and simply do not draw.
     Returns {method: [(time_ms, records, db_size_bytes), ...]}.
     """
     data: dict[str, list[tuple[float, int, int]]] = {}
@@ -58,15 +76,24 @@ def load_final_rows(csv_path: str):
         # Handle possible CR line endings
         content = f.read().replace("\r\n", "\n").replace("\r", "\n")
     reader = csv.DictReader(content.strip().splitlines())
+    keyed = reader.fieldnames is not None and "schema" in reader.fieldnames
     for row in reader:
         db_bytes = row.get("db_size_bytes", "").strip()
         if not db_bytes:
             continue
         method = row["method"].strip()
-        time_ms = float(row["time_elapsed_ms"])
-        records = int(row["records_written"])
-        db_size = int(db_bytes)
-        data.setdefault(method, []).append((time_ms, records, db_size))
+        entry = (float(row["time_elapsed_ms"]), int(row["records_written"]),
+                 int(db_bytes))
+        if keyed:
+            slot = _schema_slot(row.get("schema", "").strip())
+            if slot is None:
+                print(f"  [warn] unknown schema {row.get('schema')!r} for "
+                      f"{method}; row skipped")
+                continue
+            runs = data.setdefault(method, [MISSING] * len(SCHEMAS))
+            runs[slot] = entry
+        else:
+            data.setdefault(method, []).append(entry)
     return data
 
 
