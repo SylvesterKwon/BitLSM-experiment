@@ -6,12 +6,12 @@
       100000000
     ],
     "schema": [
-      "default_a1_c100.json",
-      "default_a2_c100.json",
-      "default_a4_c100.json",
-      "default_a8_c100.json",
-      "default_a16_c100.json",
-      "default_a32_c100.json"
+      "default_a1_c1000.json",
+      "default_a2_c1000.json",
+      "default_a4_c1000.json",
+      "default_a8_c1000.json",
+      "default_a16_c1000.json",
+      "default_a32_c1000.json"
     ]
   },
   "methods": [
