@@ -193,6 +193,14 @@ WriteStats SICKBinding::GetWriteStats() {
           stats_->getTickerCount(rocksdb::Tickers::COMPACT_WRITE_BYTES)};
 }
 
+void SICKBinding::WaitForQuiescence() {
+  if (!db_.txn_db) return;
+  WaitForCompactOptions wfco;
+  wfco.flush = true;
+  wfco.wait_for_purge = true;
+  db_.txn_db->WaitForCompact(wfco);
+}
+
 void SICKBinding::Close() { benchmark::CloseSITransactionDB(db_); }
 
 string SICKBinding::ParamSuffix() const {

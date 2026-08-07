@@ -98,6 +98,14 @@ WriteStats NoIndexBinding::GetWriteStats() {
           stats_->getTickerCount(Tickers::COMPACT_WRITE_BYTES)};
 }
 
+void NoIndexBinding::WaitForQuiescence() {
+  if (!db_) return;
+  WaitForCompactOptions wfco;
+  wfco.flush = true;
+  wfco.wait_for_purge = true;
+  db_->WaitForCompact(wfco);
+}
+
 void NoIndexBinding::Close() {
   if (!db_) return;
   if (!cf_handles_.empty()) {

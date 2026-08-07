@@ -48,6 +48,13 @@ class Binding {
   // return cumulative flush/compaction write bytes from RocksDB statistics.
   // Returns {0,0} when statistics is not enabled.
   virtual WriteStats GetWriteStats() { return {}; }
+
+  // Flush the memtable and wait until all ingestion-induced background work
+  // (compactions, obsolete-file purges) has drained. Unlike GetWriteStats()
+  // this schedules no manual compaction: the LSM settles into whatever shape
+  // the ingest itself produced. Write experiments call this before Close()
+  // so that measured wall time / CPU / DB size cover the full induced work.
+  virtual void WaitForQuiescence() {}
 };
 
 std::unique_ptr<Binding> CreateBinding(const std::string& name);

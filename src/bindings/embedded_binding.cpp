@@ -87,6 +87,14 @@ WriteStats EmbeddedBinding::GetWriteStats() {
           stats_->getTickerCount(rocksdb::Tickers::COMPACT_WRITE_BYTES)};
 }
 
+void EmbeddedBinding::WaitForQuiescence() {
+  if (!db_) return;
+  rocksdb::WaitForCompactOptions wfco;
+  wfco.flush = true;
+  wfco.wait_for_purge = true;
+  db_->GetInternalDB()->WaitForCompact(wfco);
+}
+
 void EmbeddedBinding::Close() { db_.reset(); }
 
 }  // namespace experiment

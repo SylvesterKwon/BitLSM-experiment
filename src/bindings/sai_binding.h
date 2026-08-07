@@ -23,6 +23,7 @@ class SAIBinding : public Binding {
   ScanResult Scan(BitLSMQuery& query) override;
   void Close() override;
   WriteStats GetWriteStats() override;
+  void WaitForQuiescence() override;
   std::string Name() const override { return "sai"; }
   std::string ParamSuffix() const override {
     return "_il" + std::to_string(intersection_limit_);

@@ -24,6 +24,7 @@ class SILUBinding : public Binding {
   ScanResult Scan(BitLSMQuery& query) override;
   void Close() override;
   WriteStats GetWriteStats() override;
+  void WaitForQuiescence() override;
   std::string Name() const override { return "si-lu"; }
   std::string ParamSuffix() const override;
 };

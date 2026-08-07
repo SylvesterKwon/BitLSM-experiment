@@ -88,6 +88,14 @@ WriteStats BitLSMBinding::GetWriteStats() {
           stats_->getTickerCount(rocksdb::Tickers::COMPACT_WRITE_BYTES)};
 }
 
+void BitLSMBinding::WaitForQuiescence() {
+  if (!db_) return;
+  rocksdb::WaitForCompactOptions wfco;
+  wfco.flush = true;
+  wfco.wait_for_purge = true;
+  db_->GetInternalDB()->WaitForCompact(wfco);
+}
+
 void BitLSMBinding::Close() { db_.reset(); }
 
 std::string BitLSMBinding::ParamSuffix() const {

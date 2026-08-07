@@ -225,6 +225,24 @@ int main(int argc, char* argv[]) {
     auto put_elapsed = chrono::duration_cast<chrono::milliseconds>(
                            chrono::steady_clock::now() - wall_start).count();
 
+    long long drain_ms = 0;
+    if (writes > 0) {
+      if (!no_csv) {
+        ensure_write_csv();
+        write_csv << put_elapsed << "," << writes << "\n";
+        write_csv.flush();
+      }
+      binding->WaitForQuiescence();
+      auto drained_elapsed = chrono::duration_cast<chrono::milliseconds>(
+                                 chrono::steady_clock::now() - wall_start).count();
+      if (monitor) monitor->Sample(writes);
+      if (!no_csv) {
+        write_csv << drained_elapsed << "," << writes << "\n";
+        write_csv.flush();
+      }
+      drain_ms = drained_elapsed - put_elapsed;
+    }
+
     binding->Close();
 
     auto total_elapsed = chrono::duration_cast<chrono::milliseconds>(
@@ -234,7 +252,8 @@ int main(int argc, char* argv[]) {
          << "Total writes: " << writes << "\n"
          << "Total reads: 0\n"
          << "Total time: " << put_elapsed << "ms\n"
-         << "Total time (incl. compaction): " << total_elapsed << "ms\n";
+         << "Drain time (wait-for-compact): " << drain_ms << "ms\n"
+         << "Total time (incl. drain+close): " << total_elapsed << "ms\n";
     return 0;
   }
 
@@ -374,6 +393,25 @@ int main(int argc, char* argv[]) {
                          chrono::steady_clock::now() - wall_start)
                          .count();
 
+  long long drain_ms = 0;
+  if (writes > 0) {
+    if (!no_csv) {
+      ensure_write_csv();
+      write_csv << put_elapsed << "," << writes << "\n";
+      write_csv.flush();
+    }
+    binding->WaitForQuiescence();
+    auto drained_elapsed = chrono::duration_cast<chrono::milliseconds>(
+                               chrono::steady_clock::now() - wall_start)
+                               .count();
+    if (monitor) monitor->Sample(writes);
+    if (!no_csv) {
+      write_csv << drained_elapsed << "," << writes << "\n";
+      write_csv.flush();
+    }
+    drain_ms = drained_elapsed - put_elapsed;
+  }
+
   binding->Close();
 
   auto total_elapsed = chrono::duration_cast<chrono::milliseconds>(
@@ -384,7 +422,8 @@ int main(int argc, char* argv[]) {
        << "Total writes: " << writes << "\n"
        << "Total reads: " << reads << "\n"
        << "Total time: " << put_elapsed << "ms\n"
-       << "Total time (incl. compaction): " << total_elapsed << "ms\n";
+       << "Drain time (wait-for-compact): " << drain_ms << "ms\n"
+       << "Total time (incl. drain+close): " << total_elapsed << "ms\n";
 
   return 0;
 }

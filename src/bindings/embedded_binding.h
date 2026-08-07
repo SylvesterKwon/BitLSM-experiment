@@ -23,6 +23,7 @@ class EmbeddedBinding : public Binding {
   ScanResult Scan(BitLSMQuery& query) override;
   void Close() override;
   WriteStats GetWriteStats() override;
+  void WaitForQuiescence() override;
   std::string Name() const override { return "embedded"; }
   std::string ParamSuffix() const override {
     return "_bloom_bits" + std::to_string(bloom_bits_);

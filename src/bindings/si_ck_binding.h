@@ -24,6 +24,7 @@ class SICKBinding : public Binding {
   ScanResult Scan(BitLSMQuery& query) override;
   void Close() override;
   WriteStats GetWriteStats() override;
+  void WaitForQuiescence() override;
   std::string Name() const override { return "si-ck"; }
   std::string ParamSuffix() const override;
 };

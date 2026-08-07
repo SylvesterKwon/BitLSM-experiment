@@ -184,6 +184,17 @@ class BenchmarkExperiment {
         auto ws = binding_->GetWriteStats();
         cout << "WA_RESULT:" << user_bytes << "," << ws.flush_bytes << ","
              << ws.compact_bytes << "\n";
+      } else {
+        // Drain ingestion-induced background work so the reported totals
+        // (time, DB size) cover the full cost of the ingest, not just the
+        // Put loop. GetWriteStats() above already drains in wa_mode.
+        auto drain_start = std::chrono::high_resolution_clock::now();
+        binding_->WaitForQuiescence();
+        auto drain_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::high_resolution_clock::now() -
+                            drain_start)
+                            .count();
+        cout << "DRAIN_MS:" << drain_ms << "\n";
       }
       binding_->Close();
     }
