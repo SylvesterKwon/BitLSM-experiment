@@ -48,7 +48,8 @@ EXP_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PARAMS = ["n", "schema", "rho"]
 
 MASTER_COLUMNS = [
-    "method", "schema", "time_elapsed_ms", "records_written", "db_size_bytes",
+    "method", "attr_count", "time_elapsed_ms", "records_written",
+    "db_size_bytes",
 ]
 
 
@@ -64,6 +65,16 @@ def encode_params(params: dict) -> str:
 
 def _schema_stem(schema_path: str) -> str:
     return os.path.splitext(os.path.basename(schema_path))[0]
+
+
+def attr_count(schema_path: str) -> int:
+    """Number of indexed attributes in a schema, read from the file itself.
+
+    The sweep's x axis. Counted rather than parsed out of the filename so a
+    schema that does not follow the default_aN_cC naming still lands right.
+    """
+    with open(schema_path) as f:
+        return len(json.load(f)["attrs"])
 
 
 def get_db_size_bytes(db_path: str) -> int:
@@ -232,16 +243,16 @@ def run(config_path: str, dry_run: bool, method_filter: list, cooldown: int,
                         clean_db(db_path)
                     print()
 
-                    # Pin every row to its schema so the CSV survives a resumed
-                    # or method-filtered sweep; without it the a-value is only
-                    # recoverable from row order, which those options break.
-                    schema_stem = (_schema_stem(combo["schema"])
-                                   if "schema" in combo else "")
+                    # Pin every row to its attribute count so the CSV survives a
+                    # resumed or method-filtered sweep; without it the a value
+                    # is only recoverable from row order, which those break.
+                    attrs = (attr_count(combo["schema"])
+                             if "schema" in combo else "")
 
                     for elapsed_ms, records in checkpoints[:-1]:
                         append_result(master_csv, {
                             "method": label,
-                            "schema": schema_stem,
+                            "attr_count": attrs,
                             "time_elapsed_ms": elapsed_ms,
                             "records_written": records,
                             "db_size_bytes": "",
@@ -249,7 +260,7 @@ def run(config_path: str, dry_run: bool, method_filter: list, cooldown: int,
                     if checkpoints:
                         append_result(master_csv, {
                             "method": label,
-                            "schema": schema_stem,
+                            "attr_count": attrs,
                             "time_elapsed_ms": checkpoints[-1][0],
                             "records_written": checkpoints[-1][1],
                             "db_size_bytes": db_size,
