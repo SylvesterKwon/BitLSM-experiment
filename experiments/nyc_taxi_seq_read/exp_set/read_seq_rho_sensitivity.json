@@ -11,6 +11,7 @@
   "methods": [
     {
       "name": "bitlsm",
+      "query_limit": 100,
       "params": {
         "rho": [
           0.001,
