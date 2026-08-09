@@ -31,7 +31,10 @@ SAITableIterator::SAITableIterator(BlockBasedTable* bbt,
     : options_(std::move(options)),
       bbt_(bbt),
       query_(std::move(query)),
-      plan_(std::move(plan)) {
+      plan_(std::move(plan)),
+      block_prefetcher_(
+          /*compaction_readahead_size=*/0,
+          bbt->get_rep()->table_options.initial_auto_readahead_size) {
   // Holds the SAI entry for this iterator's lifetime: a block cache pin when
   // cache_index_and_filter_blocks is on (evictable after release), or an
   // unowned reference to the table-lifetime pin in Rep when off. Mirrors
@@ -91,9 +94,18 @@ void SAITableIterator::LoadNextBlockScan() {
     BlockHandle bh;
     bh.set_offset(idx_->block_handles[cur_block_idx_].offset);
     bh.set_size(idx_->block_handles[cur_block_idx_].size);
+    // Standard iterator readahead (implicit auto mode: ReadOptions default
+    // readahead_size == 0). The prefetcher only allocates its buffer after
+    // enough sequential reads, so this call is cheap for sparse targets.
+    ReadOptions read_options;
+    block_prefetcher_.PrefetchIfNeeded(
+        bbt_->get_rep(), bh, read_options.readahead_size,
+        /*is_for_compaction=*/false, /*no_sequential_checking=*/false,
+        read_options, /*readaheadsize_cb=*/nullptr,
+        /*is_async_io_prefetch=*/false);
     DataBlockIter* new_biter = bbt_->NewDataBlockIterator<DataBlockIter>(
-        ReadOptions(), bh, nullptr, BlockType::kData, nullptr, nullptr, nullptr,
-        false, false, s, true);
+        read_options, bh, nullptr, BlockType::kData, nullptr, nullptr,
+        block_prefetcher_.prefetch_buffer(), false, false, s, true);
     biter_.reset(new_biter);
     if (!s.ok()) {
       // The block is unreadable. Its rows cannot be skipped silently, so stop
@@ -155,9 +167,18 @@ void SAITableIterator::LoadNextBlockIndexed() {
     BlockHandle bh;
     bh.set_offset(idx_->block_handles[block].offset);
     bh.set_size(idx_->block_handles[block].size);
+    // Same standard readahead as the full-scan path above; in index mode the
+    // candidate blocks are usually sparse, which PrefetchIfNeeded detects and
+    // leaves unprefetched.
+    ReadOptions read_options;
+    block_prefetcher_.PrefetchIfNeeded(
+        bbt_->get_rep(), bh, read_options.readahead_size,
+        /*is_for_compaction=*/false, /*no_sequential_checking=*/false,
+        read_options, /*readaheadsize_cb=*/nullptr,
+        /*is_async_io_prefetch=*/false);
     DataBlockIter* new_biter = bbt_->NewDataBlockIterator<DataBlockIter>(
-        ReadOptions(), bh, nullptr, BlockType::kData, nullptr, nullptr, nullptr,
-        false, false, s, true);
+        read_options, bh, nullptr, BlockType::kData, nullptr, nullptr,
+        block_prefetcher_.prefetch_buffer(), false, false, s, true);
     biter_.reset(new_biter);
     if (!s.ok()) {
       // The block the candidate rowIds point at is unreadable. Its rows
@@ -195,6 +216,25 @@ void SAITableIterator::LoadNextBlockIndexed() {
     // Every candidate in this block was MVCC/tombstone-skipped; next block.
   }
   valid_ = false;
+}
+
+void SAITableIterator::GetReadaheadState(
+    ReadaheadFileInfo* readahead_file_info) {
+  if (block_prefetcher_.prefetch_buffer() != nullptr) {
+    block_prefetcher_.prefetch_buffer()->GetReadaheadState(
+        &(readahead_file_info->data_block_readahead_info));
+  }
+}
+
+void SAITableIterator::SetReadaheadState(
+    ReadaheadFileInfo* readahead_file_info) {
+  // A zero readahead_size means no prior file built a prefetch buffer;
+  // applying it would set this file's initial size to 0 and disable
+  // auto-readahead entirely, so keep the fresh-start defaults instead.
+  if (readahead_file_info->data_block_readahead_info.readahead_size > 0) {
+    block_prefetcher_.SetReadaheadState(
+        &(readahead_file_info->data_block_readahead_info));
+  }
 }
 
 void SAITableIterator::SeekToFirst() {

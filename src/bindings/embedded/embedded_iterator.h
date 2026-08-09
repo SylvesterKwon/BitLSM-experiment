@@ -15,7 +15,9 @@
 #include "db/memtable.h"
 #include "db/version_set.h"
 #include "embedded_index.h"
+#include "file/readahead_file_info.h"
 #include "table/block_based/block_based_table_reader.h"
+#include "table/block_based/block_prefetcher.h"
 
 namespace experiment::embedded {
 
@@ -106,6 +108,12 @@ class EmbeddedTableIterator : public EmbeddedInternalIterator {
   // iterator alive pins the underlying data block, so PinSlice() values stay
   // valid (mirrors SABITableIterator).
   std::unique_ptr<rocksdb::DataBlockIter> biter_;
+  // RocksDB's standard adaptive readahead for this scan's data block reads,
+  // the same mechanism BlockBasedTableIterator uses and the one BitLSM wired
+  // into SABITableIterator (BitLSM PR #38). Its FilePrefetchBuffer is created
+  // lazily by PrefetchIfNeeded once the block access pattern turns
+  // near-sequential, so a sparse candidate-block set never triggers readahead.
+  rocksdb::BlockPrefetcher block_prefetcher_;
   std::vector<rocksdb::PinnableSlice> keys_buf_;
   std::vector<rocksdb::PinnableSlice> values_buf_;
   int32_t buf_idx_ = 0;  // cursor within the buffered matches
@@ -123,6 +131,12 @@ class EmbeddedTableIterator : public EmbeddedInternalIterator {
   void Next() override;
   rocksdb::Slice key() const override;
   rocksdb::Slice value() const override;
+  // Carry the adaptive-readahead ramp across the files of a level scan, the
+  // way LevelIterator hands ReadaheadFileInfo between BlockBasedTableIterators
+  // so a new file resumes at the ramped readahead size instead of 8K
+  // (BitLSM PR #39).
+  void GetReadaheadState(rocksdb::ReadaheadFileInfo* readahead_file_info);
+  void SetReadaheadState(rocksdb::ReadaheadFileInfo* readahead_file_info);
 };
 
 // IteratorComparator for EmbeddedMergingIterator's min-heap.
@@ -159,6 +173,9 @@ class EmbeddedLevelIterator : public EmbeddedInternalIterator {
   uint32_t cur_file_idx_;
   rocksdb::TableCache::TypedHandle* cur_table_handle_;
   EmbeddedTableIterator* cur_sti_;
+  // Readahead state of the last file whose scan built a prefetch buffer,
+  // handed to each newly opened file so the ramp survives file switches.
+  rocksdb::ReadaheadFileInfo readahead_file_info_;
 
   void LoadFile(size_t idx);
 

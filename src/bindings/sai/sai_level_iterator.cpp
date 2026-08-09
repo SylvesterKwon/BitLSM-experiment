@@ -49,6 +49,9 @@ void SAILevelIterator::LoadFile(size_t idx) {
   valid_ = false;
   TableCache::CacheInterface cache_interface = tc_->get_cache();
   if (cur_sti_ != nullptr) {
+    // Capture the ramped readahead state before the iterator dies so the next
+    // file resumes it instead of restarting the ramp from 8K.
+    cur_sti_->GetReadaheadState(&readahead_file_info_);
     delete cur_sti_;
     cur_sti_ = nullptr;
   }
@@ -84,6 +87,7 @@ void SAILevelIterator::LoadFile(size_t idx) {
   // 4. Prepare new SAITableIterator
   cur_table_handle_ = new_table_handle;
   cur_sti_ = new SAITableIterator(bbt, options_, query_, plan_);
+  cur_sti_->SetReadaheadState(&readahead_file_info_);
 }
 
 void SAILevelIterator::SeekToFirst() {

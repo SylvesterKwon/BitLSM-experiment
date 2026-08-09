@@ -43,7 +43,12 @@ static double U2D(uint64_t u) {
 EmbeddedTableIterator::EmbeddedTableIterator(BlockBasedTable* bbt,
                                              bit_lsm::BitLSMOptions options,
                                              bit_lsm::BitLSMQuery query)
-    : options_(std::move(options)), bbt_(bbt), query_(std::move(query)) {
+    : options_(std::move(options)),
+      bbt_(bbt),
+      query_(std::move(query)),
+      block_prefetcher_(
+          /*compaction_readahead_size=*/0,
+          bbt->get_rep()->table_options.initial_auto_readahead_size) {
   // Holds the index entry for this iterator's lifetime: a block cache pin
   // when cache_index_and_filter_blocks is on (evictable after release), or an
   // unowned reference to the table-lifetime pin in Rep when off. Mirrors
@@ -224,9 +229,21 @@ void EmbeddedTableIterator::LoadNextBlock() {
     // Same NewDataBlockIterator<DataBlockIter> call shape as
     // SABITableIterator::GetAllByIndexesFromDataBlock. Resetting biter_ unpins
     // the previously held block before opening the new one.
+    // Standard iterator readahead (implicit auto mode: ReadOptions default
+    // readahead_size == 0). The prefetcher only allocates its buffer after
+    // enough sequential reads, so a sparse candidate-block set stays
+    // unprefetched.
+    ReadOptions read_options;
+    block_prefetcher_.PrefetchIfNeeded(
+        bbt_->get_rep(), candidate_blocks_[cur_block_idx_],
+        read_options.readahead_size,
+        /*is_for_compaction=*/false, /*no_sequential_checking=*/false,
+        read_options, /*readaheadsize_cb=*/nullptr,
+        /*is_async_io_prefetch=*/false);
     DataBlockIter* new_biter = bbt_->NewDataBlockIterator<DataBlockIter>(
-        ReadOptions(), candidate_blocks_[cur_block_idx_], nullptr,
-        BlockType::kData, nullptr, nullptr, nullptr, false, false, s, true);
+        read_options, candidate_blocks_[cur_block_idx_], nullptr,
+        BlockType::kData, nullptr, nullptr, block_prefetcher_.prefetch_buffer(),
+        false, false, s, true);
     biter_.reset(new_biter);
     if (!s.ok()) {
       // The candidate block is unreadable. Its rows cannot be skipped
@@ -268,6 +285,25 @@ void EmbeddedTableIterator::LoadNextBlock() {
       return;
     }
     // No matches in this block; continue to the next candidate block.
+  }
+}
+
+void EmbeddedTableIterator::GetReadaheadState(
+    ReadaheadFileInfo* readahead_file_info) {
+  if (block_prefetcher_.prefetch_buffer() != nullptr) {
+    block_prefetcher_.prefetch_buffer()->GetReadaheadState(
+        &(readahead_file_info->data_block_readahead_info));
+  }
+}
+
+void EmbeddedTableIterator::SetReadaheadState(
+    ReadaheadFileInfo* readahead_file_info) {
+  // A zero readahead_size means no prior file built a prefetch buffer;
+  // applying it would set this file's initial size to 0 and disable
+  // auto-readahead entirely, so keep the fresh-start defaults instead.
+  if (readahead_file_info->data_block_readahead_info.readahead_size > 0) {
+    block_prefetcher_.SetReadaheadState(
+        &(readahead_file_info->data_block_readahead_info));
   }
 }
 

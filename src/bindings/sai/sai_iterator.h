@@ -13,9 +13,11 @@
 #include "db/db_impl/db_impl.h"
 #include "db/memtable.h"
 #include "db/version_set.h"
+#include "file/readahead_file_info.h"
 #include "sai_index.h"
 #include "sai_plan.h"
 #include "table/block_based/block_based_table_reader.h"
+#include "table/block_based/block_prefetcher.h"
 
 namespace experiment::sai {
 
@@ -93,6 +95,12 @@ class SAITableIterator : public SAIInternalIterator {
   int32_t cur_block_idx_ = -1;         // full-scan mode block cursor
 
   std::unique_ptr<rocksdb::DataBlockIter> biter_;
+  // RocksDB's standard adaptive readahead for this scan's data block reads,
+  // the same mechanism BlockBasedTableIterator uses and the one BitLSM wired
+  // into SABITableIterator (BitLSM PR #38). Its FilePrefetchBuffer is created
+  // lazily by PrefetchIfNeeded once the block access pattern turns
+  // near-sequential, so a sparse candidate set never triggers readahead.
+  rocksdb::BlockPrefetcher block_prefetcher_;
   std::vector<rocksdb::PinnableSlice> keys_buf_;
   std::vector<rocksdb::PinnableSlice> values_buf_;
   int32_t buf_idx_ = 0;
@@ -108,6 +116,12 @@ class SAITableIterator : public SAIInternalIterator {
   void Next() override;
   rocksdb::Slice key() const override;
   rocksdb::Slice value() const override;
+  // Carry the adaptive-readahead ramp across the files of a level scan, the
+  // way LevelIterator hands ReadaheadFileInfo between BlockBasedTableIterators
+  // so a new file resumes at the ramped readahead size instead of 8K
+  // (BitLSM PR #39).
+  void GetReadaheadState(rocksdb::ReadaheadFileInfo* readahead_file_info);
+  void SetReadaheadState(rocksdb::ReadaheadFileInfo* readahead_file_info);
 };
 
 struct SAIIteratorComparator {
@@ -137,6 +151,9 @@ class SAILevelIterator : public SAIInternalIterator {
   uint32_t cur_file_idx_;
   rocksdb::TableCache::TypedHandle* cur_table_handle_;
   SAITableIterator* cur_sti_;
+  // Readahead state of the last file whose scan built a prefetch buffer,
+  // handed to each newly opened file so the ramp survives file switches.
+  rocksdb::ReadaheadFileInfo readahead_file_info_;
   void LoadFile(size_t idx);
 
  public:
