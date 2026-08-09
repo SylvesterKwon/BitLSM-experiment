@@ -18,6 +18,7 @@
 
 #include "sai_iterator.h"
 #include "sai_value_codec.h"
+#include "../scan_readahead.h"
 #include "table/block_based/block_based_table_reader.h"
 #include "table/block_based/block_based_table_reader_impl.h"
 #include "util/coding.h"
@@ -58,7 +59,52 @@ SAITableIterator::SAITableIterator(BlockBasedTable* bbt,
   }
   idx_ = static_cast<SAIIndexReader*>(udi_entry_.GetValue()->reader());
 
-  if (!plan_.full_scan) BuildCursor();
+  if (!plan_.full_scan) {
+    BuildCursor();
+    MaterializeCandidates();
+  }
+  PlanScanReadahead();
+}
+
+void SAITableIterator::MaterializeCandidates() {
+  // Drain the posting intersection into (block, ordinal) pairs before the
+  // first data block is read, so the scan's block set — and with it the
+  // readahead window — is known up front instead of emerging one candidate at
+  // a time. The walk below would call Locate on every candidate anyway, so
+  // this moves that work rather than adding it. Costs 8 bytes per candidate,
+  // and only one per-SST iterator is materialized at a time on a level.
+  while (cursor_ && cursor_->Valid()) {
+    uint32_t block, ordinal;
+    idx_->Locate(cursor_->Row(), block, ordinal);
+    cand_block_.push_back(block);
+    cand_ordinal_.push_back(ordinal);
+    cursor_->Next();
+  }
+  cursor_.reset();  // fully consumed; the materialized pairs replace it
+}
+
+void SAITableIterator::PlanScanReadahead() {
+  if (idx_ == nullptr) return;
+  // Candidate blocks in file order: every block in full-scan mode, the
+  // distinct blocks the materialized candidates land in otherwise.
+  std::vector<BlockHandle> blocks;
+  auto push_block = [&](uint32_t bi) {
+    BlockHandle bh;
+    bh.set_offset(idx_->block_handles[bi].offset);
+    bh.set_size(idx_->block_handles[bi].size);
+    blocks.push_back(bh);
+  };
+  if (plan_.full_scan) {
+    blocks.reserve(idx_->block_handles.size());
+    for (uint32_t bi = 0; bi < idx_->block_handles.size(); ++bi) push_block(bi);
+  } else {
+    for (size_t i = 0; i < cand_block_.size(); ++i) {
+      if (i > 0 && cand_block_[i] == cand_block_[i - 1]) continue;
+      push_block(cand_block_[i]);
+    }
+  }
+  scan_readahead_size_ = PlanScanReadaheadSize(
+      blocks, bbt_->get_rep()->table_options.max_auto_readahead_size);
 }
 
 void SAITableIterator::BuildCursor() {
@@ -102,10 +148,12 @@ void SAITableIterator::LoadNextBlockScan() {
     BlockHandle bh;
     bh.set_offset(idx_->block_handles[cur_block_idx_].offset);
     bh.set_size(idx_->block_handles[cur_block_idx_].size);
-    // Standard iterator readahead (implicit auto mode: ReadOptions default
-    // readahead_size == 0). The prefetcher only allocates its buffer after
-    // enough sequential reads, so this call is cheap for sparse targets.
+    // Standard iterator readahead. A non-zero scan_readahead_size_ takes
+    // PrefetchIfNeeded's explicit branch, which skips the adjacency check and
+    // serves every candidate inside the window from one read; 0 falls back to
+    // the implicit ramp.
     ReadOptions read_options;
+    read_options.readahead_size = scan_readahead_size_;
     block_prefetcher_.PrefetchIfNeeded(
         bbt_->get_rep(), bh, read_options.readahead_size,
         /*is_for_compaction=*/false, /*no_sequential_checking=*/false,
@@ -175,18 +223,14 @@ void SAITableIterator::LoadNextBlockIndexed() {
   // ascending; rowId = key-order ordinal). NO full-query evaluation here —
   // post-filtering of every original predicate happens in SAIIterator's
   // MultiGet cross-check (SAI post-filter, design §5.3).
-  while (cursor_ && cursor_->Valid()) {
-    uint32_t block, ordinal;
-    idx_->Locate(cursor_->Row(), block, ordinal);
+  while (cand_pos_ < cand_block_.size()) {
+    const uint32_t block = cand_block_[cand_pos_];
     // Collect this block's candidate ordinals.
-    std::vector<uint32_t> ordinals{ordinal};
-    cursor_->Next();
-    while (cursor_->Valid()) {
-      uint32_t b2, o2;
-      idx_->Locate(cursor_->Row(), b2, o2);
-      if (b2 != block) break;
-      ordinals.push_back(o2);
-      cursor_->Next();
+    std::vector<uint32_t> ordinals{cand_ordinal_[cand_pos_]};
+    ++cand_pos_;
+    while (cand_pos_ < cand_block_.size() && cand_block_[cand_pos_] == block) {
+      ordinals.push_back(cand_ordinal_[cand_pos_]);
+      ++cand_pos_;
     }
     keys_buf_.clear();
     values_buf_.clear();
@@ -195,10 +239,11 @@ void SAITableIterator::LoadNextBlockIndexed() {
     BlockHandle bh;
     bh.set_offset(idx_->block_handles[block].offset);
     bh.set_size(idx_->block_handles[block].size);
-    // Same standard readahead as the full-scan path above; in index mode the
-    // candidate blocks are usually sparse, which PrefetchIfNeeded detects and
-    // leaves unprefetched.
+    // Same planned readahead as the full-scan path above. In index mode the
+    // candidate blocks are often sparse, and the planner declines to open a
+    // window when merging across the gaps would cost more than it saves.
     ReadOptions read_options;
+    read_options.readahead_size = scan_readahead_size_;
     block_prefetcher_.PrefetchIfNeeded(
         bbt_->get_rep(), bh, read_options.readahead_size,
         /*is_for_compaction=*/false, /*no_sequential_checking=*/false,
@@ -275,6 +320,11 @@ void SAITableIterator::LoadNextBlockIndexed() {
 
 void SAITableIterator::GetReadaheadState(
     ReadaheadFileInfo* readahead_file_info) {
+  // Only the implicit ramp has state worth carrying. An explicit window was
+  // sized for this file's candidate layout, and handing it to the next file
+  // would seed that file's implicit ramp with a window its own layout never
+  // justified.
+  if (scan_readahead_size_ > 0) return;
   if (block_prefetcher_.prefetch_buffer() != nullptr) {
     block_prefetcher_.prefetch_buffer()->GetReadaheadState(
         &(readahead_file_info->data_block_readahead_info));
