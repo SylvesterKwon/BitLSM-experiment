@@ -24,7 +24,8 @@ using namespace rocksdb;
 
 EmbeddedMergingIterator::EmbeddedMergingIterator(SuperVersion* sv,
                                                  bit_lsm::BitLSMOptions options,
-                                                 bit_lsm::BitLSMQuery query)
+                                                 bit_lsm::BitLSMQuery query,
+                                                 bool track_source_versions)
     : sv_(sv),
       cfd_(sv_->cfd),
       options_(options),
@@ -70,7 +71,9 @@ EmbeddedMergingIterator::EmbeddedMergingIterator(SuperVersion* sv,
     TableReader* table = cache_interface.Value(table_handle);
     BlockBasedTable* bbt = static_cast<BlockBasedTable*>(table);
 
-    ch_iters_.push_back(new EmbeddedTableIterator(bbt, options_, query_));
+    ch_iters_.push_back(new EmbeddedTableIterator(
+        bbt, options_, query_, track_source_versions, /*source_level=*/0,
+        meta->fd.GetNumber(), meta->num_range_deletions > 0));
     l0_handles_.push_back(table_handle);
   }
 
@@ -78,8 +81,8 @@ EmbeddedMergingIterator::EmbeddedMergingIterator(SuperVersion* sv,
   for (uint32_t level = 1; level < storage_info_->num_non_empty_levels();
        ++level) {
     if (storage_info_->NumLevelFiles(level) > 0) {
-      ch_iters_.push_back(
-          new EmbeddedLevelIterator(sv, level, options_, query_));
+      ch_iters_.push_back(new EmbeddedLevelIterator(sv, level, options_, query_,
+                                                    track_source_versions));
     }
   }
 }

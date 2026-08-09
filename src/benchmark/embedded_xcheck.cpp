@@ -1,4 +1,4 @@
-// Correctness cross-check: BitLSM vs embedded index baseline.
+// Correctness cross-check: BitLSM vs the embedded and SAI index baselines.
 //
 // Gate before any performance use. Both engines MUST return identical match
 // counts for identical queries on identical data. To avoid a vacuous pass
@@ -111,6 +111,7 @@ int main(int argc, char** argv) {
       (argc > 1) ? argv[1] : "/tmp/xcheck_bitlsm";
   std::string embedded_path =
       (argc > 2) ? argv[2] : "/tmp/xcheck_embedded";
+  std::string sai_path = (argc > 3) ? argv[3] : "/tmp/xcheck_sai";
 
   // ---- Schema / options ----
   BitLSMOptions opts;
@@ -240,14 +241,16 @@ int main(int argc, char** argv) {
   std::vector<uint64_t> bitlsm = run_method("bitlsm", bitlsm_path);
   std::cout << "running embedded...\n";
   std::vector<uint64_t> embedded = run_method("embedded", embedded_path);
+  std::cout << "running sai...\n";
+  std::vector<uint64_t> sai = run_method("sai", sai_path);
 
   // ---- Compare against ground truth ----
   bool ok = true;
-  std::cout << "\n  query | expected | bitlsm | embedded\n";
-  std::cout << "  ------------------------------------------\n";
+  std::cout << "\n  query | expected | bitlsm | embedded | sai\n";
+  std::cout << "  --------------------------------------------------\n";
   for (size_t i = 0; i < queries.size(); ++i) {
     std::cout << "  " << queries[i].name << " | " << expected[i] << " | "
-              << bitlsm[i] << " | " << embedded[i] << "\n";
+              << bitlsm[i] << " | " << embedded[i] << " | " << sai[i] << "\n";
   }
   std::cout << "\n";
 
@@ -255,6 +258,11 @@ int main(int argc, char** argv) {
     if (embedded[i] != expected[i]) {
       std::cout << "FAIL: " << queries[i].name
                 << " embedded=" << embedded[i]
+                << " expected=" << expected[i] << "\n";
+      ok = false;
+    }
+    if (sai[i] != expected[i]) {
+      std::cout << "FAIL: " << queries[i].name << " sai=" << sai[i]
                 << " expected=" << expected[i] << "\n";
       ok = false;
     }

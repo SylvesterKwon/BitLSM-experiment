@@ -22,7 +22,8 @@ using namespace rocksdb;
 
 SAIMergingIterator::SAIMergingIterator(SuperVersion* sv,
                                        bit_lsm::BitLSMOptions options,
-                                       bit_lsm::BitLSMQuery query, SAIPlan plan)
+                                       bit_lsm::BitLSMQuery query, SAIPlan plan,
+                                       bool track_source_versions)
     : sv_(sv),
       cfd_(sv_->cfd),
       options_(options),
@@ -69,7 +70,10 @@ SAIMergingIterator::SAIMergingIterator(SuperVersion* sv,
     TableReader* table = cache_interface.Value(table_handle);
     BlockBasedTable* bbt = static_cast<BlockBasedTable*>(table);
 
-    ch_iters_.push_back(new SAITableIterator(bbt, options_, query_, plan_));
+    ch_iters_.push_back(new SAITableIterator(
+        bbt, options_, query_, plan_, track_source_versions,
+        /*source_level=*/0, meta->fd.GetNumber(),
+        meta->num_range_deletions > 0));
     l0_handles_.push_back(table_handle);
   }
 
@@ -77,8 +81,8 @@ SAIMergingIterator::SAIMergingIterator(SuperVersion* sv,
   for (uint32_t level = 1; level < storage_info_->num_non_empty_levels();
        ++level) {
     if (storage_info_->NumLevelFiles(level) > 0) {
-      ch_iters_.push_back(
-          new SAILevelIterator(sv, level, options_, query_, plan_));
+      ch_iters_.push_back(new SAILevelIterator(sv, level, options_, query_,
+                                               plan_, track_source_versions));
     }
   }
 }

@@ -6,6 +6,7 @@
 // posting-intersection candidate generation (Cassandra SAI architecture: index
 // search -> candidate primary keys -> materialize -> post-filter).
 #include <bit_lsm_query.h>
+#include <bit_lsm_shadow_check.h>
 #include <cstdint>
 #include <queue>
 #include "bit_lsm_option.h"
@@ -20,6 +21,10 @@
 #include "table/block_based/block_prefetcher.h"
 
 namespace experiment::sai {
+
+// Source level reported by iterators whose row came from a memtable rather
+// than an SST. Mirrors BitLSM's kMemtableSourceLevel.
+inline constexpr int kMemtableSourceLevel = -1;
 
 class SAIInternalIterator {
  protected:
@@ -39,6 +44,15 @@ class SAIInternalIterator {
   virtual rocksdb::Status status() const { return status_; }
   virtual rocksdb::Slice key() const = 0;
   virtual rocksdb::Slice value() const = 0;
+  // Provenance of the current row, used by SAIIterator's shadow check to
+  // decide whether the authoritative MultiGet can be skipped. Defaults suit a
+  // memtable source, which has no file and whose rows the checker probes
+  // directly. Mirrors BitLSM's SABIInternalIterator (PR #41).
+  virtual int SourceLevel() const { return kMemtableSourceLevel; }
+  virtual uint64_t SourceFileNumber() const { return 0; }
+  // True when a newer version of this row exists in the SAME file, which the
+  // checker cannot see: it deliberately ignores the candidate's own file.
+  virtual bool SourceHasNewerVersion() const { return false; }
 };
 
 class SAIIterator;
@@ -105,17 +119,43 @@ class SAITableIterator : public SAIInternalIterator {
   std::vector<rocksdb::PinnableSlice> values_buf_;
   int32_t buf_idx_ = 0;
 
+  // Whether the block walk must record in-file shadowing; only the shadow
+  // check needs it, so a scan without it pays nothing.
+  bool track_source_versions_ = false;
+  int source_level_ = kMemtableSourceLevel;
+  uint64_t file_number_ = 0;
+  // A range tombstone in this file can cover a row without leaving a point
+  // entry, and neither the block walk nor ShadowChecker (which skips the
+  // candidate's own file) can see it. Such a file is never provably clean.
+  bool source_has_range_del_ = false;
+  // Parallel to keys_buf_: 1 when a newer version of that row was seen
+  // earlier in the same block (or could not be ruled out).
+  std::vector<uint8_t> shadowed_buf_;
+  // Previous entry's user key, copied because the block iterator decodes keys
+  // in place and Next() overwrites the buffer.
+  std::string prev_user_key_;
+
   void BuildCursor();          // index mode ctor helper
   void LoadNextBlockScan();    // full-scan mode (EmbeddedTableIterator port)
   void LoadNextBlockIndexed(); // index mode: next block holding candidates
 
  public:
   SAITableIterator(rocksdb::BlockBasedTable* bbt, bit_lsm::BitLSMOptions options,
-                   bit_lsm::BitLSMQuery query, SAIPlan plan);
+                   bit_lsm::BitLSMQuery query, SAIPlan plan,
+                   bool track_source_versions = false,
+                   int source_level = kMemtableSourceLevel,
+                   uint64_t file_number = 0,
+                   bool source_has_range_del = false);
   void SeekToFirst() override;
   void Next() override;
   rocksdb::Slice key() const override;
   rocksdb::Slice value() const override;
+  int SourceLevel() const override { return source_level_; }
+  uint64_t SourceFileNumber() const override { return file_number_; }
+  bool SourceHasNewerVersion() const override {
+    if (!track_source_versions_) return false;
+    return source_has_range_del_ || shadowed_buf_[buf_idx_] != 0;
+  }
   // Carry the adaptive-readahead ramp across the files of a level scan, the
   // way LevelIterator hands ReadaheadFileInfo between BlockBasedTableIterators
   // so a new file resumes at the ramped readahead size instead of 8K
@@ -154,17 +194,21 @@ class SAILevelIterator : public SAIInternalIterator {
   // Readahead state of the last file whose scan built a prefetch buffer,
   // handed to each newly opened file so the ramp survives file switches.
   rocksdb::ReadaheadFileInfo readahead_file_info_;
+  bool track_source_versions_;
   void LoadFile(size_t idx);
 
  public:
   SAILevelIterator(rocksdb::SuperVersion* sv, uint32_t level,
                    bit_lsm::BitLSMOptions options, bit_lsm::BitLSMQuery query,
-                   SAIPlan plan);
+                   SAIPlan plan, bool track_source_versions = false);
   ~SAILevelIterator() override;
   void SeekToFirst() override;
   void Next() override;
   rocksdb::Slice key() const override;
   rocksdb::Slice value() const override;
+  int SourceLevel() const override;
+  uint64_t SourceFileNumber() const override;
+  bool SourceHasNewerVersion() const override;
 };
 
 class SAIMergingIterator : public SAIInternalIterator {
@@ -187,12 +231,20 @@ class SAIMergingIterator : public SAIInternalIterator {
 
  public:
   SAIMergingIterator(rocksdb::SuperVersion* sv, bit_lsm::BitLSMOptions options,
-                     bit_lsm::BitLSMQuery query, SAIPlan plan);
+                     bit_lsm::BitLSMQuery query, SAIPlan plan,
+                     bool track_source_versions = false);
   ~SAIMergingIterator() override;
   void SeekToFirst() override;
   void Next() override;
   rocksdb::Slice key() const override;
   rocksdb::Slice value() const override;
+  int SourceLevel() const override { return heap_.top()->SourceLevel(); }
+  uint64_t SourceFileNumber() const override {
+    return heap_.top()->SourceFileNumber();
+  }
+  bool SourceHasNewerVersion() const override {
+    return heap_.top()->SourceHasNewerVersion();
+  }
 };
 
 // Top-level iterator: global key-order merge, dedup (newest version first),
@@ -216,6 +268,32 @@ class SAIIterator : public SAIInternalIterator {
   std::vector<std::string> batch_values_;
   uint32_t batch_cur_idx_ = 0;
   std::string latest_user_key_added;
+
+  // Shadow check (port of BitLSM PR #41): a candidate the scan already read is
+  // the answer unless a newer version may live somewhere the per-SST scan
+  // cannot see, so only the unprovable ones need the MultiGet re-fetch. Unlike
+  // BitLSM and the embedded baseline, the post-filter still runs on every
+  // clean row here: index mode deliberately leaves full-query evaluation to
+  // this cross-check (design 5.3), so skipping the fetch must not skip the
+  // predicate -- it just evaluates the row the scan already read.
+  std::unique_ptr<bit_lsm::ShadowChecker> checker_;
+  // Owns the ScanContext the checker holds by reference.
+  std::unique_ptr<bit_lsm::ScanContext> scan_ctx_;
+  bool check_enabled_ = false;
+  // Whole-scan authority: on a settled DB no candidate can be shadowed at all,
+  // so entire batches skip the re-fetch without any per-key probing.
+  bool authoritative_scan_ = false;
+  // Reused per batch so the candidate loop allocates nothing steady-state.
+  std::vector<std::string> candidate_keys_;
+  std::vector<std::string> candidate_values_;
+  std::vector<rocksdb::SequenceNumber> candidate_seqnos_;
+  std::vector<int> candidate_src_levels_;
+  std::vector<uint64_t> candidate_src_files_;
+  std::vector<uint8_t> candidate_in_file_shadowed_;
+  std::vector<uint32_t> dirty_idx_;
+  uint64_t checked_keys_ = 0;
+  uint64_t skipped_keys_ = 0;
+
   void BuildPlan();  // ranking pass; full_scan is the no-usable-facts placeholder
   void FetchNextBatch(uint32_t batch_size);
 
@@ -228,6 +306,13 @@ class SAIIterator : public SAIInternalIterator {
   void Next() override;
   rocksdb::Slice key() const override;
   rocksdb::Slice value() const override;
+  // Shadow-check instrumentation, mirroring BitLSMIterator's TEST_ accessors:
+  // lets a test assert the skip actually ran rather than passing vacuously,
+  // and lets an experiment report the baseline's skip rate.
+  uint64_t TEST_SkippedKeys() const { return skipped_keys_; }
+  uint64_t TEST_CheckedKeys() const { return checked_keys_; }
+  bool TEST_CheckEnabled() const { return check_enabled_; }
+  bool TEST_AuthoritativeScan() const { return authoritative_scan_; }
 };
 
 }  // namespace experiment::sai
