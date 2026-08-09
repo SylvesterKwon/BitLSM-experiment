@@ -13,6 +13,8 @@
 #include "db/column_family.h"
 #include "db/db_impl/db_impl.h"
 #include "db/memtable.h"
+#include <bit_lsm_shadow_check.h>
+
 #include "db/version_set.h"
 #include "embedded_index.h"
 #include "file/readahead_file_info.h"
@@ -20,6 +22,10 @@
 #include "table/block_based/block_prefetcher.h"
 
 namespace experiment::embedded {
+
+// Source level reported by iterators whose row came from a memtable rather
+// than an SST. Mirrors BitLSM's kMemtableSourceLevel.
+inline constexpr int kMemtableSourceLevel = -1;
 
 // Abstract base class for internal iterators used by the embedded scan engine.
 // Corresponds to BitLSM's SABIInternalIterator
@@ -43,6 +49,15 @@ class EmbeddedInternalIterator {
   virtual rocksdb::Status status() const { return status_; }
   virtual rocksdb::Slice key() const = 0;
   virtual rocksdb::Slice value() const = 0;
+  // Provenance of the current row, used by EmbeddedIterator's shadow check to
+  // decide whether the authoritative MultiGet can be skipped. Defaults suit a
+  // memtable source, which has no file and whose rows the checker probes
+  // directly. Mirrors BitLSM's SABIInternalIterator (PR #41).
+  virtual int SourceLevel() const { return kMemtableSourceLevel; }
+  virtual uint64_t SourceFileNumber() const { return 0; }
+  // True when a newer version of this row exists in the SAME file, which the
+  // checker cannot see: it deliberately ignores the candidate's own file.
+  virtual bool SourceHasNewerVersion() const { return false; }
 };
 
 // Forward declarations
@@ -118,6 +133,22 @@ class EmbeddedTableIterator : public EmbeddedInternalIterator {
   std::vector<rocksdb::PinnableSlice> values_buf_;
   int32_t buf_idx_ = 0;  // cursor within the buffered matches
 
+  // Whether the block walk must record in-file shadowing; only the shadow
+  // check needs it, so a scan without it pays nothing.
+  bool track_source_versions_ = false;
+  int source_level_ = kMemtableSourceLevel;
+  uint64_t file_number_ = 0;
+  // A range tombstone in this file can cover a row without leaving a point
+  // entry, and neither the block walk nor ShadowChecker (which skips the
+  // candidate's own file) can see it. Such a file is never provably clean.
+  bool source_has_range_del_ = false;
+  // Parallel to keys_buf_: 1 when a newer version of that row was seen
+  // earlier in the same block (or could not be ruled out).
+  std::vector<uint8_t> shadowed_buf_;
+  // Previous entry's user key, copied because the block iterator decodes keys
+  // in place and Next() overwrites the buffer.
+  std::string prev_user_key_;
+
   // Build candidate_blocks_ from the per-block BF / zone-map regions.
   void SelectCandidateBlocks();
   // Open the next candidate block, scan all entries, buffer exact matches.
@@ -126,11 +157,21 @@ class EmbeddedTableIterator : public EmbeddedInternalIterator {
  public:
   EmbeddedTableIterator(rocksdb::BlockBasedTable* bbt,
                         bit_lsm::BitLSMOptions options,
-                        bit_lsm::BitLSMQuery query);
+                        bit_lsm::BitLSMQuery query,
+                        bool track_source_versions = false,
+                        int source_level = kMemtableSourceLevel,
+                        uint64_t file_number = 0,
+                        bool source_has_range_del = false);
   void SeekToFirst() override;
   void Next() override;
   rocksdb::Slice key() const override;
   rocksdb::Slice value() const override;
+  int SourceLevel() const override { return source_level_; }
+  uint64_t SourceFileNumber() const override { return file_number_; }
+  bool SourceHasNewerVersion() const override {
+    if (!track_source_versions_) return false;
+    return source_has_range_del_ || shadowed_buf_[buf_idx_] != 0;
+  }
   // Carry the adaptive-readahead ramp across the files of a level scan, the
   // way LevelIterator hands ReadaheadFileInfo between BlockBasedTableIterators
   // so a new file resumes at the ramped readahead size instead of 8K
@@ -176,18 +217,23 @@ class EmbeddedLevelIterator : public EmbeddedInternalIterator {
   // Readahead state of the last file whose scan built a prefetch buffer,
   // handed to each newly opened file so the ramp survives file switches.
   rocksdb::ReadaheadFileInfo readahead_file_info_;
+  bool track_source_versions_;
 
   void LoadFile(size_t idx);
 
  public:
   EmbeddedLevelIterator(rocksdb::SuperVersion* sv, uint32_t level,
                         bit_lsm::BitLSMOptions options,
-                        bit_lsm::BitLSMQuery query);
+                        bit_lsm::BitLSMQuery query,
+                        bool track_source_versions = false);
   ~EmbeddedLevelIterator() override;
   void SeekToFirst() override;
   void Next() override;
   rocksdb::Slice key() const override;
   rocksdb::Slice value() const override;
+  int SourceLevel() const override;
+  uint64_t SourceFileNumber() const override;
+  bool SourceHasNewerVersion() const override;
 };
 
 // Merging iterator for the embedded baseline.
@@ -217,12 +263,20 @@ class EmbeddedMergingIterator : public EmbeddedInternalIterator {
  public:
   EmbeddedMergingIterator(rocksdb::SuperVersion* sv,
                           bit_lsm::BitLSMOptions options,
-                          bit_lsm::BitLSMQuery query);
+                          bit_lsm::BitLSMQuery query,
+                          bool track_source_versions = false);
   ~EmbeddedMergingIterator() override;
   void SeekToFirst() override;
   void Next() override;
   rocksdb::Slice key() const override;
   rocksdb::Slice value() const override;
+  int SourceLevel() const override { return heap_.top()->SourceLevel(); }
+  uint64_t SourceFileNumber() const override {
+    return heap_.top()->SourceFileNumber();
+  }
+  bool SourceHasNewerVersion() const override {
+    return heap_.top()->SourceHasNewerVersion();
+  }
 };
 
 // Top-level iterator for the embedded baseline.
@@ -249,6 +303,27 @@ class EmbeddedIterator : public EmbeddedInternalIterator {
 
   std::string latest_user_key_added;
 
+  // Shadow check (port of BitLSM PR #41): a candidate the scan already read is
+  // the answer unless a newer version may live somewhere the per-SST scan
+  // cannot see, so only the unprovable ones need the MultiGet re-fetch.
+  std::unique_ptr<bit_lsm::ShadowChecker> checker_;
+  // Owns the ScanContext the checker holds by reference.
+  std::unique_ptr<bit_lsm::ScanContext> scan_ctx_;
+  bool check_enabled_ = false;
+  // Whole-scan authority: on a settled DB no candidate can be shadowed at all,
+  // so entire batches skip the re-fetch without any per-key probing.
+  bool authoritative_scan_ = false;
+  // Reused per batch so the candidate loop allocates nothing steady-state.
+  std::vector<std::string> candidate_keys_;
+  std::vector<std::string> candidate_values_;
+  std::vector<rocksdb::SequenceNumber> candidate_seqnos_;
+  std::vector<int> candidate_src_levels_;
+  std::vector<uint64_t> candidate_src_files_;
+  std::vector<uint8_t> candidate_in_file_shadowed_;
+  std::vector<uint32_t> dirty_idx_;
+  uint64_t checked_keys_ = 0;
+  uint64_t skipped_keys_ = 0;
+
   void FetchNextBatch(uint32_t batch_size);
 
  public:
@@ -259,6 +334,13 @@ class EmbeddedIterator : public EmbeddedInternalIterator {
   void Next() override;
   rocksdb::Slice key() const override;
   rocksdb::Slice value() const override;
+  // Shadow-check instrumentation, mirroring BitLSMIterator's TEST_ accessors:
+  // lets a test assert the skip actually ran rather than passing vacuously,
+  // and lets an experiment report the baseline's skip rate.
+  uint64_t TEST_SkippedKeys() const { return skipped_keys_; }
+  uint64_t TEST_CheckedKeys() const { return checked_keys_; }
+  bool TEST_CheckEnabled() const { return check_enabled_; }
+  bool TEST_AuthoritativeScan() const { return authoritative_scan_; }
 };
 
 }  // namespace experiment::embedded

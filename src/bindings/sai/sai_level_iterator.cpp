@@ -22,7 +22,8 @@ using namespace rocksdb;
 
 SAILevelIterator::SAILevelIterator(SuperVersion* sv, uint32_t level,
                                    bit_lsm::BitLSMOptions options,
-                                   bit_lsm::BitLSMQuery query, SAIPlan plan)
+                                   bit_lsm::BitLSMQuery query, SAIPlan plan,
+                                   bool track_source_versions)
     : sv_(sv),
       cfd_(sv->cfd),
       level_(level),
@@ -37,7 +38,20 @@ SAILevelIterator::SAILevelIterator(SuperVersion* sv, uint32_t level,
       files_(storage_info_->LevelFiles(level_)),
       cur_file_idx_(0),
       cur_table_handle_(nullptr),
-      cur_sti_(nullptr) {}
+      cur_sti_(nullptr),
+      track_source_versions_(track_source_versions) {}
+
+int SAILevelIterator::SourceLevel() const {
+  return cur_sti_ ? cur_sti_->SourceLevel() : kMemtableSourceLevel;
+}
+
+uint64_t SAILevelIterator::SourceFileNumber() const {
+  return cur_sti_ ? cur_sti_->SourceFileNumber() : 0;
+}
+
+bool SAILevelIterator::SourceHasNewerVersion() const {
+  return cur_sti_ ? cur_sti_->SourceHasNewerVersion() : false;
+}
 
 SAILevelIterator::~SAILevelIterator() {
   if (cur_sti_) delete cur_sti_;
@@ -86,7 +100,10 @@ void SAILevelIterator::LoadFile(size_t idx) {
 
   // 4. Prepare new SAITableIterator
   cur_table_handle_ = new_table_handle;
-  cur_sti_ = new SAITableIterator(bbt, options_, query_, plan_);
+  cur_sti_ = new SAITableIterator(
+      bbt, options_, query_, plan_, track_source_versions_,
+      static_cast<int>(level_), file_meta->fd.GetNumber(),
+      file_meta->num_range_deletions > 0);
   cur_sti_->SetReadaheadState(&readahead_file_info_);
 }
 

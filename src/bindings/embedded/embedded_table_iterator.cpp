@@ -42,13 +42,21 @@ static double U2D(uint64_t u) {
 
 EmbeddedTableIterator::EmbeddedTableIterator(BlockBasedTable* bbt,
                                              bit_lsm::BitLSMOptions options,
-                                             bit_lsm::BitLSMQuery query)
+                                             bit_lsm::BitLSMQuery query,
+                                             bool track_source_versions,
+                                             int source_level,
+                                             uint64_t file_number,
+                                             bool source_has_range_del)
     : options_(std::move(options)),
       bbt_(bbt),
       query_(std::move(query)),
       block_prefetcher_(
           /*compaction_readahead_size=*/0,
-          bbt->get_rep()->table_options.initial_auto_readahead_size) {
+          bbt->get_rep()->table_options.initial_auto_readahead_size),
+      track_source_versions_(track_source_versions),
+      source_level_(source_level),
+      file_number_(file_number),
+      source_has_range_del_(source_has_range_del) {
   // Holds the index entry for this iterator's lifetime: a block cache pin
   // when cache_index_and_filter_blocks is on (evictable after release), or an
   // unowned reference to the table-lifetime pin in Rep when off. Mirrors
@@ -224,6 +232,7 @@ void EmbeddedTableIterator::LoadNextBlock() {
 
     keys_buf_.clear();
     values_buf_.clear();
+    shadowed_buf_.clear();
 
     Status s;
     // Same NewDataBlockIterator<DataBlockIter> call shape as
@@ -254,10 +263,31 @@ void EmbeddedTableIterator::LoadNextBlock() {
     }
 
     // Scan EVERY entry in this candidate block; buffer exact matches.
+    // prev_known is per block: the first entry's predecessor lives in the
+    // previous block, which the candidate set may have pruned away, so it is
+    // never observable here.
+    bool prev_known = false;
     for (biter_->SeekToFirst(); biter_->Valid(); biter_->Next()) {
       ParsedInternalKey ikey;
       Status ps = rocksdb::ParseInternalKey(biter_->key(), &ikey, false);
-      if (!ps.ok()) continue;  // skip corrupted key
+      if (!ps.ok()) {
+        prev_known = false;  // an unparsable entry breaks the adjacency chain
+        continue;            // skip corrupted key
+      }
+      // Internal keys sort by user key ascending and seqno descending, so one
+      // key's entries are contiguous with the newest first: a preceding entry
+      // with the same user key means this row is an older in-file version.
+      // Unknown counts as shadowed, which only costs a re-fetch. Unlike
+      // SABITableIterator, which jumps to bitmap-selected rows and loses the
+      // predecessor at every restart point, this walk steps on every entry, so
+      // only a block's first row is unresolvable.
+      bool in_file_shadowed = true;
+      if (track_source_versions_) {
+        in_file_shadowed =
+            !prev_known || rocksdb::Slice(prev_user_key_) == ikey.user_key;
+        prev_user_key_.assign(ikey.user_key.data(), ikey.user_key.size());
+        prev_known = true;
+      }
       // MVCC filtering.
       if (ikey.sequence > options_.read_seqno) continue;
       // Filter tombstones.
@@ -276,6 +306,8 @@ void EmbeddedTableIterator::LoadNextBlock() {
         v.PinSlice(biter_->value(), nullptr);  // value pinned (biter_ alive).
         keys_buf_.push_back(std::move(k));
         values_buf_.push_back(std::move(v));
+        if (track_source_versions_)
+          shadowed_buf_.push_back(in_file_shadowed ? 1 : 0);
       }
     }
 

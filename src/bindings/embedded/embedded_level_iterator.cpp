@@ -22,7 +22,8 @@ using namespace rocksdb;
 
 EmbeddedLevelIterator::EmbeddedLevelIterator(SuperVersion* sv, uint32_t level,
                                              bit_lsm::BitLSMOptions options,
-                                             bit_lsm::BitLSMQuery query)
+                                             bit_lsm::BitLSMQuery query,
+                                             bool track_source_versions)
     : sv_(sv),
       cfd_(sv->cfd),
       level_(level),
@@ -36,7 +37,20 @@ EmbeddedLevelIterator::EmbeddedLevelIterator(SuperVersion* sv, uint32_t level,
       files_(storage_info_->LevelFiles(level_)),
       cur_file_idx_(0),
       cur_table_handle_(nullptr),
-      cur_sti_(nullptr) {}
+      cur_sti_(nullptr),
+      track_source_versions_(track_source_versions) {}
+
+int EmbeddedLevelIterator::SourceLevel() const {
+  return cur_sti_ ? cur_sti_->SourceLevel() : kMemtableSourceLevel;
+}
+
+uint64_t EmbeddedLevelIterator::SourceFileNumber() const {
+  return cur_sti_ ? cur_sti_->SourceFileNumber() : 0;
+}
+
+bool EmbeddedLevelIterator::SourceHasNewerVersion() const {
+  return cur_sti_ ? cur_sti_->SourceHasNewerVersion() : false;
+}
 
 EmbeddedLevelIterator::~EmbeddedLevelIterator() {
   if (cur_sti_) delete cur_sti_;
@@ -85,7 +99,9 @@ void EmbeddedLevelIterator::LoadFile(size_t idx) {
 
   // 4. Prepare new EmbeddedTableIterator (replaces SABITableIterator)
   cur_table_handle_ = new_table_handle;
-  cur_sti_ = new EmbeddedTableIterator(bbt, options_, query_);
+  cur_sti_ = new EmbeddedTableIterator(
+      bbt, options_, query_, track_source_versions_, static_cast<int>(level_),
+      file_meta->fd.GetNumber(), file_meta->num_range_deletions > 0);
   cur_sti_->SetReadaheadState(&readahead_file_info_);
 }
 

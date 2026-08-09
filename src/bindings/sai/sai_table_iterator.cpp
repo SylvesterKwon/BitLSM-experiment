@@ -27,14 +27,21 @@ using namespace rocksdb;
 
 SAITableIterator::SAITableIterator(BlockBasedTable* bbt,
                                    bit_lsm::BitLSMOptions options,
-                                   bit_lsm::BitLSMQuery query, SAIPlan plan)
+                                   bit_lsm::BitLSMQuery query, SAIPlan plan,
+                                   bool track_source_versions, int source_level,
+                                   uint64_t file_number,
+                                   bool source_has_range_del)
     : options_(std::move(options)),
       bbt_(bbt),
       query_(std::move(query)),
       plan_(std::move(plan)),
       block_prefetcher_(
           /*compaction_readahead_size=*/0,
-          bbt->get_rep()->table_options.initial_auto_readahead_size) {
+          bbt->get_rep()->table_options.initial_auto_readahead_size),
+      track_source_versions_(track_source_versions),
+      source_level_(source_level),
+      file_number_(file_number),
+      source_has_range_del_(source_has_range_del) {
   // Holds the SAI entry for this iterator's lifetime: a block cache pin when
   // cache_index_and_filter_blocks is on (evictable after release), or an
   // unowned reference to the table-lifetime pin in Rep when off. Mirrors
@@ -90,6 +97,7 @@ void SAITableIterator::LoadNextBlockScan() {
     }
     keys_buf_.clear();
     values_buf_.clear();
+    shadowed_buf_.clear();
     Status s;
     BlockHandle bh;
     bh.set_offset(idx_->block_handles[cur_block_idx_].offset);
@@ -114,10 +122,27 @@ void SAITableIterator::LoadNextBlockScan() {
       valid_ = false;
       return;
     }
+    // prev_known is per block: the first entry's predecessor lives in the
+    // previous block, so it is never observable here.
+    bool prev_known = false;
     for (biter_->SeekToFirst(); biter_->Valid(); biter_->Next()) {
       ParsedInternalKey ikey;
       Status ps = rocksdb::ParseInternalKey(biter_->key(), &ikey, false);
-      if (!ps.ok()) continue;
+      if (!ps.ok()) {
+        prev_known = false;  // an unparsable entry breaks the adjacency chain
+        continue;
+      }
+      // Internal keys sort by user key ascending and seqno descending, so a
+      // preceding entry with the same user key means this row is an older
+      // in-file version. Unknown counts as shadowed, which only costs a
+      // re-fetch.
+      bool in_file_shadowed = true;
+      if (track_source_versions_) {
+        in_file_shadowed =
+            !prev_known || rocksdb::Slice(prev_user_key_) == ikey.user_key;
+        prev_user_key_.assign(ikey.user_key.data(), ikey.user_key.size());
+        prev_known = true;
+      }
       if (ikey.sequence > options_.read_seqno) continue;
       if (ikey.type == rocksdb::kTypeDeletion ||
           ikey.type == rocksdb::kTypeSingleDeletion)
@@ -132,6 +157,8 @@ void SAITableIterator::LoadNextBlockScan() {
         v.PinSlice(biter_->value(), nullptr);
         keys_buf_.push_back(std::move(k));
         values_buf_.push_back(std::move(v));
+        if (track_source_versions_)
+          shadowed_buf_.push_back(in_file_shadowed ? 1 : 0);
       }
     }
     if (!keys_buf_.empty()) {
@@ -163,6 +190,7 @@ void SAITableIterator::LoadNextBlockIndexed() {
     }
     keys_buf_.clear();
     values_buf_.clear();
+    shadowed_buf_.clear();
     Status s;
     BlockHandle bh;
     bh.set_offset(idx_->block_handles[block].offset);
@@ -190,23 +218,50 @@ void SAITableIterator::LoadNextBlockIndexed() {
     }
     size_t want = 0;
     uint32_t walk = 0;
+    // Whether the entry immediately before the next target was observed. The
+    // walk steps on every entry anyway, so unlike SABITableIterator's
+    // restart-point jumps only a block's first row is unresolvable.
+    bool prev_known = false;
     for (biter_->SeekToFirst(); biter_->Valid() && want < ordinals.size();
          biter_->Next(), ++walk) {
-      if (walk != ordinals[want]) continue;
-      ++want;
-      ParsedInternalKey ikey;
-      Status ps = rocksdb::ParseInternalKey(biter_->key(), &ikey, false);
-      if (!ps.ok()) continue;
-      if (ikey.sequence > options_.read_seqno) continue;
-      if (ikey.type == rocksdb::kTypeDeletion ||
-          ikey.type == rocksdb::kTypeSingleDeletion)
-        continue;
-      PinnableSlice k;
-      k.PinSelf(biter_->key());
-      PinnableSlice v;
-      v.PinSlice(biter_->value(), nullptr);
-      keys_buf_.push_back(std::move(k));
-      values_buf_.push_back(std::move(v));
+      if (walk == ordinals[want]) {
+        // Internal keys sort by user key ascending and seqno descending, so a
+        // preceding entry with the same user key means this row is an older
+        // in-file version. Unknown counts as shadowed, costing a re-fetch.
+        bool in_file_shadowed = true;
+        if (track_source_versions_) {
+          in_file_shadowed =
+              !prev_known ||
+              rocksdb::Slice(prev_user_key_) == ExtractUserKey(biter_->key());
+        }
+        ++want;
+        ParsedInternalKey ikey;
+        Status ps = rocksdb::ParseInternalKey(biter_->key(), &ikey, false);
+        if (ps.ok() && ikey.sequence <= options_.read_seqno &&
+            ikey.type != rocksdb::kTypeDeletion &&
+            ikey.type != rocksdb::kTypeSingleDeletion) {
+          PinnableSlice k;
+          k.PinSelf(biter_->key());
+          PinnableSlice v;
+          v.PinSlice(biter_->value(), nullptr);
+          keys_buf_.push_back(std::move(k));
+          values_buf_.push_back(std::move(v));
+          if (track_source_versions_)
+            shadowed_buf_.push_back(in_file_shadowed ? 1 : 0);
+        }
+      }
+      // Remember this entry only when it is the immediate predecessor of the
+      // next target; the key buffer is decoded in place, so it must be copied
+      // before Next() overwrites it.
+      if (track_source_versions_) {
+        if (want < ordinals.size() && walk + 1 == ordinals[want]) {
+          rocksdb::Slice puk = ExtractUserKey(biter_->key());
+          prev_user_key_.assign(puk.data(), puk.size());
+          prev_known = true;
+        } else {
+          prev_known = false;
+        }
+      }
     }
     if (!keys_buf_.empty()) {
       buf_idx_ = 0;
