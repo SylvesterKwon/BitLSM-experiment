@@ -20,8 +20,10 @@ scratch
 # Root workload TSV traces only (anchored) — keeps src/honk/workloads/*.json
 # configs tracked AND searchable in editors that honor .gitignore.
 # workloads/sql/ (vendored benchmark query sets + MANIFEST) IS tracked.
+# workloads/read_seq/ (small synthetic read query sets, ~1MB total) IS tracked.
 /workloads/*
 !/workloads/sql/
+!/workloads/read_seq/
 
 # Superpowers plans/scratch (not tracked)
 docs/superpowers/
