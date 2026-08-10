@@ -185,6 +185,21 @@ def make_result_dir(exp_name: str) -> str:
     return os.path.join(PROJECT_ROOT, "results", f"{ts}_{exp_name}")
 
 
+def resolve_workload_paths(raw) -> list:
+    """Normalize a config's ``workload`` entry into a list of absolute paths.
+
+    Accepts a single path or a list of them. Relative paths are resolved
+    against PROJECT_ROOT (not the caller's cwd), so param sets can be written
+    machine-independently as ``workloads/foo.tsv``. Absolute paths pass
+    through unchanged.
+    """
+    paths = raw if isinstance(raw, list) else [raw]
+    return [
+        p if os.path.isabs(p) else os.path.normpath(os.path.join(PROJECT_ROOT, p))
+        for p in paths
+    ]
+
+
 def cooldown_sleep(seconds: int):
     """Sleep with countdown display."""
     for remaining in range(seconds, 0, -1):
