@@ -43,6 +43,25 @@ static long ReadStatusKb(const char* field) {
   return 0;
 }
 
+// One field of /proc/self/io in bytes. `rchar` counts bytes handed to the
+// process by read syscalls, cache hit or not; `read_bytes` counts only what
+// the block layer actually fetched. With direct I/O the two track each other,
+// and a large gap is the signature of the OS page cache serving reads the
+// experiment believes are going to disk.
+static long long ReadIoCounter(const char* field) {
+  ifstream f("/proc/self/io");
+  string line;
+  const size_t n = strlen(field);
+  while (getline(f, line)) {
+    if (line.compare(0, n, field) == 0 && line.size() > n && line[n] == ':') {
+      long long v = 0;
+      sscanf(line.c_str() + n + 1, "%lld", &v);
+      return v;
+    }
+  }
+  return 0;
+}
+
 // Block-cache counters read per query.
 //
 // Ticker attribution is NOT the same split as cache charging. RocksDB charges
@@ -218,7 +237,8 @@ int main(int argc, char* argv[]) {
       read_csv << "query_id,query_attr_num,filter_attrs,time_elapsed_ms,"
                   "records_matched,records_total,selectivity_actual,"
                   "rss_kb,peak_rss_kb,keyidx_hit,keyidx_miss,"
-                  "keyidx_bytes_insert,dataudi_hit,dataudi_miss\n";
+                  "keyidx_bytes_insert,dataudi_hit,dataudi_miss,"
+                  "rchar_mb,disk_read_mb\n";
     }
   };
 
@@ -418,6 +438,8 @@ int main(int argc, char* argv[]) {
           cout << "[interleave] QUERY #" << reads << " at " << writes << " records, " << latency << "us\n";
         } else {
           auto cache_before = CacheCounters::Read();
+          const long long rchar_before = ReadIoCounter("rchar");
+          const long long disk_before = ReadIoCounter("read_bytes");
           auto scan_result = binding->Scan(query);
           if (!scan_result.ok) {
             // The scan stopped on an error; `matched` is a partial count.
@@ -441,6 +463,9 @@ int main(int argc, char* argv[]) {
                      << ReadStatusKb("VmHWM") << "," << cache.keyidx_hit << ","
                      << cache.keyidx_miss << "," << cache.keyidx_bytes_insert
                      << "," << cache.dataudi_hit << "," << cache.dataudi_miss
+                     << "," << (ReadIoCounter("rchar") - rchar_before) / (1 << 20)
+                     << ","
+                     << (ReadIoCounter("read_bytes") - disk_before) / (1 << 20)
                      << "\n";
             read_csv.flush();
           }
