@@ -15,7 +15,10 @@
 #include "db/memtable.h"
 #include "db/version_set.h"
 #include "file/readahead_file_info.h"
+#include "sai_blob_source.h"
 #include "sai_index.h"
+#include "sai_index_registry.h"
+#include "sai_ondemand.h"
 #include "sai_plan.h"
 #include "table/block_based/block_based_table_reader.h"
 #include "table/block_based/block_prefetcher.h"
@@ -102,6 +105,13 @@ class SAITableIterator : public SAIInternalIterator {
   // destroyed in reverse order, so this must die last.
   rocksdb::CachableEntry<rocksdb::Block_kUserDefinedIndex> udi_entry_;
   SAIIndexReader* idx_ = nullptr;  // points into udi_entry_; null on failure
+  // On-demand mode (plan.index_ctx set): the directory is owned by the
+  // registry and outlives every scan, while the source reads blob ranges for
+  // this file. Declared before the cursors, which read through the source, so
+  // reverse-order destruction tears them down first.
+  const SAIFileDirectory* dir_ = nullptr;
+  std::unique_ptr<SAIFileBlobSource> src_;
+  std::unique_ptr<SAIIndexOnDemand> ondemand_;
   bit_lsm::BitLSMQuery query_;
   SAIPlan plan_;
 
@@ -140,6 +150,19 @@ class SAITableIterator : public SAIInternalIterator {
   // Previous entry's user key, copied because the block iterator decodes keys
   // in place and Next() overwrites the buffer.
   std::string prev_user_key_;
+
+  // Index access, resolved against whichever mode this iterator opened in.
+  bool IndexLoaded() const { return idx_ != nullptr || dir_ != nullptr; }
+  size_t BlockCount() const {
+    return dir_ ? dir_->block_handles.size() : idx_->block_handles.size();
+  }
+  const rocksdb::UserDefinedIndexBuilder::BlockHandle& BlockAt(uint32_t i) const {
+    return dir_ ? dir_->block_handles[i] : idx_->block_handles[i];
+  }
+  void LocateRow(uint32_t row, uint32_t& block_idx, uint32_t& ordinal) const {
+    if (dir_) dir_->Locate(row, block_idx, ordinal);
+    else idx_->Locate(row, block_idx, ordinal);
+  }
 
   void BuildCursor();          // index mode ctor helper
   void MaterializeCandidates();  // index mode: drain cursor to (block, ord)
@@ -270,6 +293,9 @@ class SAIIterator : public SAIInternalIterator {
   bit_lsm::BitLSMOptions options_;
   bit_lsm::BitLSMQuery query_;
   int intersection_limit_;
+  // Empty registry = resident index reads. Held by value so plan_.index_ctx
+  // can point at it for the whole scan.
+  SAIIndexContext index_ctx_;
   SAIPlan plan_;
   std::vector<std::string> batch_keys_;
   std::vector<std::string> batch_values_;
@@ -307,7 +333,8 @@ class SAIIterator : public SAIInternalIterator {
  public:
   SAIIterator(rocksdb::DB* db, rocksdb::ColumnFamilyHandle* cfh,
               bit_lsm::BitLSMOptions options, bit_lsm::BitLSMQuery query,
-              int intersection_limit);
+              int intersection_limit,
+              SAIIndexContext index_ctx = SAIIndexContext());
   ~SAIIterator() override;
   void SeekToFirst() override;
   void Next() override;

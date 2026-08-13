@@ -18,12 +18,23 @@ void SAIBinding::Open(int argc, char* argv[], const std::string& db_path,
   cxx.add_options()("intersection_limit",
                     "Max predicates joined by index intersection (<=0: all)",
                     cxxopts::value<int>()->default_value("2"))
+                   ("index_mode",
+                    "resident (whole blob in memory) or ondemand (read blob "
+                    "ranges per lookup, Cassandra-like residency)",
+                    cxxopts::value<std::string>()->default_value("resident"))
                    ("max_background_jobs", "",
                     cxxopts::value<int>()->default_value("6"))
                    ("exp_type", "",
                     cxxopts::value<std::string>()->default_value("write_seq"));
   auto result = cxx.parse(argc, argv);
   intersection_limit_ = result["intersection_limit"].as<int>();
+  const std::string index_mode = result["index_mode"].as<std::string>();
+  if (index_mode != "resident" && index_mode != "ondemand") {
+    std::cerr << "Unknown --index_mode: " << index_mode
+              << " (expected resident|ondemand)\n";
+    std::exit(1);
+  }
+  index_mode_ = index_mode;
   bool wa_mode = (result["exp_type"].as<std::string>() == "write_seq_wa");
 
   rocksdb::Options rocksdb_options;
@@ -43,7 +54,8 @@ void SAIBinding::Open(int argc, char* argv[], const std::string& db_path,
   ApplyRecordCfBloom(table_options);
 
   db_ = std::make_unique<sai::SAIDB>(db_path, opts, rocksdb_options,
-                                     table_options, intersection_limit_);
+                                     table_options, intersection_limit_,
+                                     index_mode_ == "ondemand");
 }
 
 void SAIBinding::Put(const std::string& pk, const std::vector<Attr>& attrs,
@@ -95,6 +107,18 @@ void SAIBinding::WaitForQuiescence() {
   db_->GetInternalDB()->WaitForCompact(wfco);
 }
 
-void SAIBinding::Close() { db_.reset(); }
+void SAIBinding::Close() {
+  // What the on-demand path cost and what it kept resident. The registry sits
+  // outside the block cache budget (like RocksDB's own per-table state), so a
+  // run should state its size rather than assume it is negligible.
+  if (db_ && index_mode_ == "ondemand") {
+    const sai::SAIBlobSourceStats st = sai::GetSAIBlobSourceStats();
+    std::cout << "[sai] index pages: " << st.page_hits << " cached, "
+              << st.page_misses << " read (" << (st.bytes_read >> 20)
+              << " MB); registry: " << db_->IndexRegistrySize() << " files, "
+              << (db_->IndexRegistryMemoryUsage() >> 20) << " MB resident\n";
+  }
+  db_.reset();
+}
 
 }  // namespace experiment

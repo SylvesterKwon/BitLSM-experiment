@@ -17,10 +17,12 @@ namespace experiment::sai {
 
 SAIDB::SAIDB(const string& db_path, const bit_lsm::BitLSMOptions& bit_lsm_options,
              const Options& rocksdb_options,
-             const BlockBasedTableOptions& table_options, int intersection_limit)
+             const BlockBasedTableOptions& table_options, int intersection_limit,
+             bool ondemand_index)
     : db_path_(db_path),
       bit_lsm_options_(bit_lsm_options),
-      intersection_limit_(intersection_limit) {
+      intersection_limit_(intersection_limit),
+      ondemand_index_(ondemand_index) {
   // SAIIndexReader points into the cache entry's blob instead of copying it,
   // which is only sound while the block owns its bytes. Memory-mapped reads
   // are the one path where a block can reference file-mapped memory it does
@@ -35,7 +37,24 @@ SAIDB::SAIDB(const string& db_path, const bit_lsm::BitLSMOptions& bit_lsm_option
   BlockBasedTableOptions opts = table_options;
   opts.user_defined_index_factory =
       make_shared<SAIIndexFactory>(bit_lsm_options_);
+  if (ondemand_index_) {
+    // RocksDB reads and parses the blob once when it opens a table, and with
+    // cache_index_and_filter_blocks off it then pins that entry in the table
+    // reader for the file's lifetime -- the whole index resident, defeating
+    // the point of reading ranges on demand. Caching the entry instead lets it
+    // age out, after which nothing re-fetches it: queries go through the
+    // registry and the blob source.
+    opts.cache_index_and_filter_blocks = true;
+    // Registry directories and blob pages are keyed by file number, so a
+    // reader that outlives its file would serve another file's bytes.
+    rocksdb_options_.listeners.push_back(
+        std::make_shared<SAIRegistryCleaner>(&registry_));
+  }
   rocksdb_options_.table_factory.reset(NewBlockBasedTableFactory(opts));
+  // Read back what the factory settled on: with no explicit block_cache it
+  // creates one, and that is the cache the blob pages must share.
+  block_cache_ = rocksdb_options_.table_factory->GetOptions<BlockBasedTableOptions>()
+                     ->block_cache;
 
   ColumnFamilyOptions cf_opts(rocksdb_options_);
   cf_opts.level_compaction_dynamic_level_bytes = true;
@@ -77,8 +96,13 @@ std::unique_ptr<SAIIterator> SAIDB::NewIterator(bit_lsm::BitLSMQuery& query) {
                 return a.attr_idx < b.attr_idx;
               });
   }
+  SAIIndexContext ctx;
+  if (ondemand_index_) {
+    ctx.registry = &registry_;
+    ctx.cache = block_cache_;
+  }
   return std::make_unique<SAIIterator>(db_, cf_handles_[0], bit_lsm_options_,
-                                       query, intersection_limit_);
+                                       query, intersection_limit_, ctx);
 }
 
 }  // namespace experiment::sai

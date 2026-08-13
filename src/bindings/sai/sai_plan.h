@@ -11,12 +11,16 @@
 // (config/CassandraRelevantProperties.java:489).
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <string>
 #include <vector>
 #include "bit_lsm_option.h"
 #include "bit_lsm_query.h"
+#include "rocksdb/cache.h"
 
 namespace experiment::sai {
+
+class SAIIndexRegistry;
 
 struct SAIFact {
   bool is_cat = false;
@@ -28,9 +32,22 @@ struct SAIFact {
   uint64_t est = 0;  // filled by the ranking pass
 };
 
+// How a scan reaches index bytes. Null registry (the default) means the
+// resident path: RocksDB's user-defined index reader, whole blob in memory.
+// A non-null registry selects the on-demand path, where a small per-SSTable
+// directory stays resident and lookups read blob ranges through the block
+// cache (sai_blob_source.h, sai_ondemand.h).
+struct SAIIndexContext {
+  SAIIndexRegistry* registry = nullptr;
+  std::shared_ptr<rocksdb::Cache> cache;
+};
+
 struct SAIPlan {
   std::vector<SAIFact> chosen;  // facts used for index intersection (<= limit)
   bool full_scan = false;       // no usable facts -> embedded-style scan of all blocks
+  // Threaded down to every per-SST iterator alongside the plan itself, which
+  // is the only per-query state the iterator stack already carries.
+  const SAIIndexContext* index_ctx = nullptr;
 };
 
 std::vector<SAIFact> ExtractFacts(const bit_lsm::BitLSMQuery& q,

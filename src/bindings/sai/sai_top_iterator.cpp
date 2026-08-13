@@ -25,7 +25,8 @@ using namespace rocksdb;
 
 SAIIterator::SAIIterator(DB* db, ColumnFamilyHandle* cfh,
                          bit_lsm::BitLSMOptions options,
-                         bit_lsm::BitLSMQuery query, int intersection_limit)
+                         bit_lsm::BitLSMQuery query, int intersection_limit,
+                         SAIIndexContext index_ctx)
     : db_(db),
       db_impl_(static_cast<DBImpl*>(db_)),
       cfh_(cfh),
@@ -38,12 +39,15 @@ SAIIterator::SAIIterator(DB* db, ColumnFamilyHandle* cfh,
       options_(options),
       query_(query),
       intersection_limit_(intersection_limit),
+      index_ctx_(std::move(index_ctx)),
       latest_user_key_added("") {
   // 3. Save snapshot's seqno to options
   options_.read_seqno = snapshot_->GetSequenceNumber();
 
   // Choose index predicates (Cassandra SAI conjunction heuristic).
   BuildPlan();
+  // Every per-SST iterator reads its index the same way this pass did.
+  plan_.index_ctx = &index_ctx_;
 
   // 4. Arm the shadow check (port of BitLSM PR #41). The scan already reads
   // the row it is about to re-fetch, so the re-fetch is redundant whenever no
@@ -342,6 +346,24 @@ void SAIIterator::BuildPlan() {
                                &handle, sv_->mutable_cf_options);
       if (!s.ok()) continue;  // unreadable table contributes nothing
       auto* bbt = static_cast<BlockBasedTable*>(cache_interface.Value(handle));
+      if (index_ctx_.registry != nullptr) {
+        // On-demand: an estimate reads a trie leaf or a run of leaf summaries,
+        // not the file's whole index. Cassandra's planner works the same way,
+        // off per-segment metadata rather than the postings themselves.
+        const SAIFileDirectory* dir =
+            index_ctx_.registry->Get(meta->fd.GetNumber(), bbt, index_ctx_.cache);
+        if (dir == nullptr) {
+          cache_interface.Release(handle);
+          continue;
+        }
+        SAIFileBlobSource src(bbt->get_rep()->file.get(), dir->blob_offset,
+                              dir->blob_size, meta->fd.GetNumber(),
+                              index_ctx_.cache);
+        SAIIndexOnDemand idx(dir, &src);
+        for (auto& f : facts) f.est += idx.Estimate(f);
+        cache_interface.Release(handle);
+        continue;
+      }
       // Holds the SAI entry for this file's harvest: a block cache pin when
       // cache_index_and_filter_blocks is on (evictable after release), or an
       // unowned reference to the table-lifetime pin in Rep when off. The

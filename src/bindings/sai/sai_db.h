@@ -11,6 +11,7 @@
 #include <vector>
 #include "bit_lsm_option.h"
 #include "bit_lsm_query.h"
+#include "sai_index_registry.h"
 
 using Attr =
     std::variant<std::monostate, int64_t, uint64_t, double, std::string>;
@@ -32,17 +33,31 @@ class SAIDB {
   rocksdb::Options rocksdb_options_;
   bit_lsm::BitLSMOptions bit_lsm_options_;
   int intersection_limit_;
+  // On-demand index reads (Cassandra-like residency) instead of the resident
+  // whole-blob reader. Off by default so existing experiments are unchanged
+  // and the two modes can be compared as an A/B.
+  bool ondemand_index_ = false;
+  // Only populated in on-demand mode: per-SSTable directories, plus the
+  // listener that retires them with their files.
+  SAIIndexRegistry registry_;
+  std::shared_ptr<rocksdb::Cache> block_cache_;
 
  public:
   SAIDB(const std::string& db_path, const bit_lsm::BitLSMOptions& bit_lsm_options,
         const rocksdb::Options& rocksdb_options,
         const rocksdb::BlockBasedTableOptions& table_options,
-        int intersection_limit);
+        int intersection_limit, bool ondemand_index = false);
   ~SAIDB();
   rocksdb::Status Put(const std::string& pk, const std::vector<Attr>& attrs,
                       const std::string& payload);
   std::unique_ptr<SAIIterator> NewIterator(bit_lsm::BitLSMQuery& query);
   rocksdb::DB* GetInternalDB() { return db_; }
+  // Resident bytes the registry holds outside the block cache budget, so a run
+  // can report the figure rather than assume it is negligible.
+  size_t IndexRegistryMemoryUsage() const {
+    return registry_.ApproximateMemoryUsage();
+  }
+  size_t IndexRegistrySize() const { return registry_.Size(); }
 };
 
 }  // namespace experiment::sai

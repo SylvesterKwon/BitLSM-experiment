@@ -42,21 +42,42 @@ SAITableIterator::SAITableIterator(BlockBasedTable* bbt,
       source_level_(source_level),
       file_number_(file_number),
       source_has_range_del_(source_has_range_del) {
-  // Holds the SAI entry for this iterator's lifetime: a block cache pin when
-  // cache_index_and_filter_blocks is on (evictable after release), or an
-  // unowned reference to the table-lifetime pin in Rep when off. Mirrors
-  // SABITableIterator (third_party/BitLSM/src/include/sabi_table_iterator.cpp).
-  Status s = bbt_->GetUserDefinedIndexReader(ReadOptions(), &udi_entry_);
-  if (!s.ok()) {
-    // Every failure here is fatal for the scan, NotFound (an SST carrying no
-    // SAI block) included: the query path has no fallback scan, so skipping
-    // this file would silently drop every row it holds. Record the status so
-    // the parent iterators stop instead of reading it as "no matching rows".
-    std::cerr << "Failed to load SAI index: " << s.ToString() << "\n";
-    status_ = s;
-    return;  // stays !Valid(); SeekToFirst is a no-op
+  if (plan_.index_ctx != nullptr && plan_.index_ctx->registry != nullptr) {
+    // On-demand mode: the directory lives in the registry for the DB's
+    // lifetime, and blob ranges are read per lookup. Nothing about this file's
+    // index is pinned for the scan.
+    dir_ = plan_.index_ctx->registry->Get(file_number_, bbt_,
+                                          plan_.index_ctx->cache);
+    if (dir_ == nullptr) {
+      // Same rule as the resident path below: a file whose index will not load
+      // cannot be skipped silently.
+      std::cerr << "Failed to load SAI index directory for file "
+                << file_number_ << "\n";
+      status_ = Status::Corruption("SAI index directory unavailable");
+      return;
+    }
+    src_ = std::make_unique<SAIFileBlobSource>(
+        bbt_->get_rep()->file.get(), dir_->blob_offset, dir_->blob_size,
+        file_number_, plan_.index_ctx->cache);
+    ondemand_ = std::make_unique<SAIIndexOnDemand>(dir_, src_.get());
+  } else {
+    // Resident mode: holds the SAI entry for this iterator's lifetime -- a
+    // block cache pin when cache_index_and_filter_blocks is on (evictable
+    // after release), or an unowned reference to the table-lifetime pin in Rep
+    // when off. Mirrors SABITableIterator
+    // (third_party/BitLSM/src/include/sabi_table_iterator.cpp).
+    Status s = bbt_->GetUserDefinedIndexReader(ReadOptions(), &udi_entry_);
+    if (!s.ok()) {
+      // Every failure here is fatal for the scan, NotFound (an SST carrying no
+      // SAI block) included: the query path has no fallback scan, so skipping
+      // this file would silently drop every row it holds. Record the status so
+      // the parent iterators stop instead of reading it as "no matching rows".
+      std::cerr << "Failed to load SAI index: " << s.ToString() << "\n";
+      status_ = s;
+      return;  // stays !Valid(); SeekToFirst is a no-op
+    }
+    idx_ = static_cast<SAIIndexReader*>(udi_entry_.GetValue()->reader());
   }
-  idx_ = static_cast<SAIIndexReader*>(udi_entry_.GetValue()->reader());
 
   if (!plan_.full_scan) {
     BuildCursor();
@@ -73,7 +94,7 @@ void SAITableIterator::MaterializeCandidates() {
   // and only one per-SST iterator is materialized at a time on a level.
   while (cursor_ && cursor_->Valid()) {
     uint32_t block, ordinal;
-    idx_->Locate(cursor_->Row(), block, ordinal);
+    LocateRow(cursor_->Row(), block, ordinal);
     cand_block_.push_back(block);
     cand_ordinal_.push_back(ordinal);
     cursor_->Next();
@@ -90,7 +111,7 @@ void SAITableIterator::BuildCursor() {
   // KeyRangeIntersectionIterator.buildIterator:322-331).
   std::vector<std::unique_ptr<RowCursor>> children;
   for (const SAIFact& f : plan_.chosen) {
-    auto c = idx_->OpenCursor(f);
+    auto c = ondemand_ ? ondemand_->OpenCursor(f) : idx_->OpenCursor(f);
     if (!c || !c->Valid()) {
       cursor_.reset();
       return;
@@ -109,7 +130,7 @@ void SAITableIterator::BuildCursor() {
 }
 
 void SAITableIterator::LoadNextBlockScan() {
-  const uint32_t B = static_cast<uint32_t>(idx_->block_handles.size());
+  const uint32_t B = static_cast<uint32_t>(BlockCount());
   while (true) {
     ++cur_block_idx_;
     if (cur_block_idx_ >= static_cast<int32_t>(B)) {
@@ -121,8 +142,8 @@ void SAITableIterator::LoadNextBlockScan() {
     shadowed_buf_.clear();
     Status s;
     BlockHandle bh;
-    bh.set_offset(idx_->block_handles[cur_block_idx_].offset);
-    bh.set_size(idx_->block_handles[cur_block_idx_].size);
+    bh.set_offset(BlockAt(cur_block_idx_).offset);
+    bh.set_size(BlockAt(cur_block_idx_).size);
     // Readahead is RocksDB's own: the implicit ramp engages once reads
     // look sequential and resets when they do not.
     ReadOptions read_options;
@@ -209,8 +230,8 @@ void SAITableIterator::LoadNextBlockIndexed() {
     shadowed_buf_.clear();
     Status s;
     BlockHandle bh;
-    bh.set_offset(idx_->block_handles[block].offset);
-    bh.set_size(idx_->block_handles[block].size);
+    bh.set_offset(BlockAt(block).offset);
+    bh.set_size(BlockAt(block).size);
     ReadOptions read_options;
     block_prefetcher_.PrefetchIfNeeded(
         bbt_->get_rep(), bh, read_options.readahead_size,
@@ -312,7 +333,7 @@ void SAITableIterator::SeekToFirst() {
     return;
   }
   // The SAI block failed to load in the constructor: nothing to scan.
-  if (idx_ == nullptr) {
+  if (!IndexLoaded()) {
     valid_ = false;
     return;
   }
