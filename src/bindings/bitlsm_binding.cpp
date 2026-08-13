@@ -16,12 +16,22 @@ void BitLSMBinding::Open(int argc, char* argv[], const std::string& db_path,
   cxx.allow_unrecognised_options();
   cxx.add_options()("rho", "BitLSM rho threshold",
                     cxxopts::value<double>()->default_value("0.1"))
+                   ("index_mode",
+                    "resident (whole SABI blob in memory) or ondemand (read "
+                    "bin bitmaps per query)",
+                    cxxopts::value<std::string>()->default_value("resident"))
                    ("max_background_jobs", "",
                     cxxopts::value<int>()->default_value("6"))
                    ("exp_type", "",
                     cxxopts::value<std::string>()->default_value("write_seq"));
   auto result = cxx.parse(argc, argv);
   rho_ = result["rho"].as<double>();
+  index_mode_ = result["index_mode"].as<std::string>();
+  if (index_mode_ != "resident" && index_mode_ != "ondemand") {
+    std::cerr << "Unknown --index_mode: " << index_mode_
+              << " (expected resident|ondemand)\n";
+    std::exit(1);
+  }
   bool wa_mode = (result["exp_type"].as<std::string>() == "write_seq_wa");
 
   rocksdb::Options rocksdb_options;
@@ -42,6 +52,7 @@ void BitLSMBinding::Open(int argc, char* argv[], const std::string& db_path,
 
   BitLSMOptions bitlsm_opts = opts;
   bitlsm_opts.rho = rho_;
+  bitlsm_opts.ondemand_index = (index_mode_ == "ondemand");
   db_ = std::make_unique<bit_lsm::BitLSM>(db_path, bitlsm_opts,
                                             rocksdb_options, table_options);
 }
@@ -99,7 +110,10 @@ void BitLSMBinding::WaitForQuiescence() {
 void BitLSMBinding::Close() { db_.reset(); }
 
 std::string BitLSMBinding::ParamSuffix() const {
-  return "_rho" + benchmark::format_double(rho_);
+  // The mode only shows up when it is not the default, so existing result
+  // files keep their names.
+  return "_rho" + benchmark::format_double(rho_) +
+         (index_mode_ == "resident" ? "" : "_" + index_mode_);
 }
 
 }  // namespace experiment

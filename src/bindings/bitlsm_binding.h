@@ -9,6 +9,10 @@ namespace experiment {
 class BitLSMBinding : public Binding {
   std::unique_ptr<bit_lsm::BitLSM> db_;
   double rho_ = 0.1;
+  // "resident" materialises every bin's bitmap when a table opens; "ondemand"
+  // reads a bin only when a query names it. Read path only -- the SST format
+  // is identical, so one DB serves both.
+  std::string index_mode_ = "resident";
   std::shared_ptr<rocksdb::Statistics> stats_;
 
  public:
