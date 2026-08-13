@@ -81,7 +81,7 @@ void SAILevelIterator::LoadFile(size_t idx) {
 
   // 3. Read BlockBasedTable
   const ReadOptions& read_options = ReadOptions();
-  const FileOptions& file_options = FileOptions();
+  const FileOptions& file_options = *cfd_->soptions();
   TableCache::TypedHandle* new_table_handle = nullptr;
   const FileMetaData* file_meta = files_[idx];
   const bool no_io = false;

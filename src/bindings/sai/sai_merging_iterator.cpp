@@ -57,8 +57,8 @@ SAIMergingIterator::SAIMergingIterator(SuperVersion* sv,
   for (FileMetaData* meta : l0_files) {
     TableCache::TypedHandle* table_handle = nullptr;
     ReadOptions ro;
-    Status s = tc_->FindTable(ro, FileOptions(), *icmp_, *meta, &table_handle,
-                              cf_opts_);
+    Status s = tc_->FindTable(ro, *cfd_->soptions(), *icmp_, *meta,
+                              &table_handle, cf_opts_);
     if (!s.ok()) {
       // Skipping the file would silently drop every row it holds, so record
       // the failure; SeekToFirst() refuses to scan once status_ is non-OK.

@@ -338,7 +338,7 @@ void SAIIterator::BuildPlan() {
   for (int level = 0; level < vsi->num_non_empty_levels(); ++level) {
     for (FileMetaData* meta : vsi->LevelFiles(level)) {
       TableCache::TypedHandle* handle = nullptr;
-      Status s = tc->FindTable(ReadOptions(), FileOptions(), *icmp, *meta,
+      Status s = tc->FindTable(ReadOptions(), *cfd_->soptions(), *icmp, *meta,
                                &handle, sv_->mutable_cf_options);
       if (!s.ok()) continue;  // unreadable table contributes nothing
       auto* bbt = static_cast<BlockBasedTable*>(cache_interface.Value(handle));
