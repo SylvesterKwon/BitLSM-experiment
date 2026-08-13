@@ -1,0 +1,41 @@
+{
+  "db_path_base": "/scratch/honk",
+  "workload": "/home/dohyun/Workloads/write_seq_2025_all.tsv",
+  "common_params": {
+    "indexed_attrs": "PULocationID,DOLocationID,tpep_pickup_datetime,tpep_dropoff_datetime,fare_amount,passenger_count"
+  },
+  "methods": [
+    {
+      "name": "bitlsm",
+      "params": {
+        "rho": [
+          0.01
+        ]
+      }
+    },
+    {
+      "name": "sai",
+      "params": {
+        "intersection_limit": 2
+      }
+    },
+    {
+      "name": "si-ck",
+      "params": {}
+    },
+    {
+      "name": "si-lu",
+      "params": {}
+    },
+    {
+      "name": "no-index",
+      "params": {}
+    },
+    {
+      "name": "embedded",
+      "params": {
+        "bloom_bits": 10
+      }
+    }
+  ]
+}
