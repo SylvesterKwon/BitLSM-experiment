@@ -21,6 +21,16 @@ SAIDB::SAIDB(const string& db_path, const bit_lsm::BitLSMOptions& bit_lsm_option
     : db_path_(db_path),
       bit_lsm_options_(bit_lsm_options),
       intersection_limit_(intersection_limit) {
+  // SAIIndexReader points into the cache entry's blob instead of copying it,
+  // which is only sound while the block owns its bytes. Memory-mapped reads
+  // are the one path where a block can reference file-mapped memory it does
+  // not own (BlockFetcher::GetBlockContents), so refuse that combination
+  // loudly rather than let it corrupt reads later.
+  if (rocksdb_options.allow_mmap_reads) {
+    throw std::runtime_error(
+        "SAI does not support allow_mmap_reads: the index reader borrows the "
+        "block cache entry's blob");
+  }
   rocksdb_options_ = rocksdb_options;
   BlockBasedTableOptions opts = table_options;
   opts.user_defined_index_factory =

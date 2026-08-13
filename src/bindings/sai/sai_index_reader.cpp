@@ -9,9 +9,8 @@ using namespace rocksdb;
 SAIIndexReader::SAIIndexReader(Slice& index_block,
                                const bit_lsm::BitLSMOptions& options)
     : options_(options) {
-  owned_.assign(index_block.data(), index_block.size());
-  base_ = owned_.data();
-  const char* end = base_ + owned_.size();
+  base_ = index_block.data();
+  const char* end = base_ + index_block.size();
   assert(GetU32(end - 4) == 0x53414931 && "bad SAI blob magic");
   entries_total_ = GetU32(end - 8);
   const uint32_t n_attrs = GetU32(end - 12);

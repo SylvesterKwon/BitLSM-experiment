@@ -54,12 +54,13 @@ class SAIIndexReader : public rocksdb::UserDefinedIndexReader {
     return nullptr;  // scanning is driven by SAITableIterator, not this.
   }
   // The block cache charges this on top of the raw block bytes
-  // (Block_kUserDefinedIndex::ApproximateMemoryUsage), so it must cover every
-  // heap structure the reader keeps resident: the blob copy plus the Section-A
-  // vectors parsed out of it in the constructor. Undercounting here leaks
-  // memory past the block_cache budget.
+  // (Block_kUserDefinedIndex::ApproximateMemoryUsage), so it counts only what
+  // the reader allocates itself: the Section-A vectors parsed out of the blob
+  // in the constructor. The blob bytes are NOT counted here -- the reader
+  // points into the cache entry's own buffer rather than copying it (see
+  // base_ below), so counting them would charge the same bytes twice.
   size_t ApproximateMemoryUsage() const override {
-    return sizeof(*this) + owned_.capacity() +
+    return sizeof(*this) +
            entry_count_psum.capacity() * sizeof(uint32_t) +
            block_handles.capacity() *
                sizeof(rocksdb::UserDefinedIndexBuilder::BlockHandle) +
@@ -77,7 +78,11 @@ class SAIIndexReader : public rocksdb::UserDefinedIndexReader {
  private:
   const char* Region(uint32_t attr_idx) const { return base_ + region_off_[attr_idx]; }
   bit_lsm::BitLSMOptions options_;
-  std::string owned_;
+  // Unowned pointer into the block cache entry's blob. The reader is a member
+  // of Block_kUserDefinedIndex, which owns those bytes and destroys its members
+  // before its BlockContents base, so the blob always outlives this pointer.
+  // Requires the block to own its bytes, which holds for every path except
+  // memory-mapped reads -- SAIDB rejects allow_mmap_reads for that reason.
   const char* base_ = nullptr;
   std::vector<uint32_t> region_off_;
   uint32_t entries_total_ = 0;
