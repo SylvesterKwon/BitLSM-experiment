@@ -107,7 +107,20 @@ void BitLSMBinding::WaitForQuiescence() {
   db_->GetInternalDB()->WaitForCompact(wfco);
 }
 
-void BitLSMBinding::Close() { db_.reset(); }
+void BitLSMBinding::Close() {
+  // What the on-demand path cost and what it kept resident. The registry sits
+  // outside the block cache budget (like RocksDB's own per-table state), so a
+  // run should state its size rather than assume it is negligible.
+  if (db_ && index_mode_ == "ondemand") {
+    const bit_lsm::SABIBlobSourceStats st = bit_lsm::GetSABIBlobSourceStats();
+    std::cout << "[bitlsm] index pages: " << st.page_hits << " cached, "
+              << st.page_misses << " read (" << (st.bytes_read >> 20)
+              << " MB), " << st.bitmaps_loaded << " bitmaps; registry: "
+              << db_->IndexRegistrySize() << " files, "
+              << (db_->IndexRegistryMemoryUsage() >> 20) << " MB resident\n";
+  }
+  db_.reset();
+}
 
 std::string BitLSMBinding::ParamSuffix() const {
   // The mode only shows up when it is not the default, so existing result
