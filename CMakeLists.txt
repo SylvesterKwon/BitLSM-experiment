@@ -122,6 +122,22 @@ foreach(EXP_SRC ${EXPERIMENT_SOURCES})
     message(STATUS "Experiment executable added: ${EXP_NAME}")
 endforeach()
 
+# TOOLS (offline inspectors; reach into RocksDB internals like the bindings do)
+file(GLOB TOOL_SOURCES "src/tools/*.cpp")
+foreach(TOOL_SRC ${TOOL_SOURCES})
+    get_filename_component(TOOL_NAME ${TOOL_SRC} NAME_WE)
+    add_executable(${TOOL_NAME} ${TOOL_SRC})
+    target_include_directories(${TOOL_NAME} PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/bindings
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/honk_player
+        ${EMBEDDED_ROCKSDB_DIR}
+        ${EMBEDDED_ROCKSDB_DIR}/include
+    )
+    target_link_directories(${TOOL_NAME} PRIVATE /usr/local/lib)
+    target_link_libraries(${TOOL_NAME} PRIVATE ${COMMON_LINK_LIBS} experiment_bindings)
+    message(STATUS "Tool executable added: ${TOOL_NAME}")
+endforeach()
+
 # SAI unit-test executables (assert-based standalone mains)
 file(GLOB SAI_TEST_SOURCES "src/bindings/sai/test/*.cpp")
 foreach(TEST_SRC ${SAI_TEST_SOURCES})

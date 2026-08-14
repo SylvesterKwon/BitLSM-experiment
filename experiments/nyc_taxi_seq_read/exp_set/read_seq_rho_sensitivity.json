@@ -3,7 +3,8 @@
   "workload": [
     "workloads/read_seq/read_seq_sel0.0001_k3_r300.tsv",
     "workloads/read_seq/read_seq_sel0.0001_k2_r300.tsv",
-    "workloads/read_seq/read_seq_sel0.0001_k1_r300.tsv"
+    "workloads/read_seq/read_seq_sel0.0001_k1_r300.tsv",
+    "workloads/read_seq/read_seq_sel0.0001_k4_r300.tsv"
   ],
   "common_params": {
     "indexed_attrs": "PULocationID,DOLocationID,tpep_pickup_datetime,tpep_dropoff_datetime,fare_amount,passenger_count"
@@ -14,11 +15,14 @@
       "query_limit": 100,
       "params": {
         "rho": [
+          0.0002,
+          0.0005,
           0.001,
-          0.003,
+          0.002,
+          0.005,
           0.01,
-          0.03,
-          0.0625,
+          0.02,
+          0.05,
           0.1
         ]
       }
