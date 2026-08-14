@@ -129,11 +129,6 @@ class EmbeddedTableIterator : public EmbeddedInternalIterator {
   // lazily by PrefetchIfNeeded once the block access pattern turns
   // near-sequential, so a sparse candidate-block set never triggers readahead.
   rocksdb::BlockPrefetcher block_prefetcher_;
-  // Readahead window for this scan, chosen up front from the full candidate
-  // block list. Non-zero takes PrefetchIfNeeded's explicit branch, which
-  // merges reads across pruned blocks instead of requiring the exact adjacency
-  // the implicit ramp demands; 0 leaves the implicit ramp in place.
-  size_t scan_readahead_size_ = 0;
   std::vector<rocksdb::PinnableSlice> keys_buf_;
   std::vector<rocksdb::PinnableSlice> values_buf_;
   int32_t buf_idx_ = 0;  // cursor within the buffered matches

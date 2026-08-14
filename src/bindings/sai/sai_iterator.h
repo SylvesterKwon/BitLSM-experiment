@@ -121,11 +121,6 @@ class SAITableIterator : public SAIInternalIterator {
   // lazily by PrefetchIfNeeded once the block access pattern turns
   // near-sequential, so a sparse candidate set never triggers readahead.
   rocksdb::BlockPrefetcher block_prefetcher_;
-  // Readahead window for this scan, chosen up front from the full candidate
-  // block list. Non-zero takes PrefetchIfNeeded's explicit branch, which
-  // merges reads across non-candidate blocks instead of requiring the exact
-  // adjacency the implicit ramp demands; 0 leaves the implicit ramp in place.
-  size_t scan_readahead_size_ = 0;
   std::vector<rocksdb::PinnableSlice> keys_buf_;
   std::vector<rocksdb::PinnableSlice> values_buf_;
   int32_t buf_idx_ = 0;
@@ -148,7 +143,6 @@ class SAITableIterator : public SAIInternalIterator {
 
   void BuildCursor();          // index mode ctor helper
   void MaterializeCandidates();  // index mode: drain cursor to (block, ord)
-  void PlanScanReadahead();      // size the window from the candidate blocks
   void LoadNextBlockScan();    // full-scan mode (EmbeddedTableIterator port)
   void LoadNextBlockIndexed(); // index mode: next block holding candidates
 
