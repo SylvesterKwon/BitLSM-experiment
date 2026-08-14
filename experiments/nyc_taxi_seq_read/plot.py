@@ -27,6 +27,7 @@ METHOD_ORDER = [
     "si-ck_strategy_pf",
     "si-ck_strategy_im",
     "embedded_bloom_bits10",
+    "sai_il2",
     "bitlsm_rho0.03",
     "bitlsm_rho0.01",
     "bitlsm_rho0.003",
@@ -38,6 +39,7 @@ METHOD_LABELS = {
     "si-ck_strategy_pf": "Composite (Post Filtering)",
     "si-ck_strategy_im": "Composite (Intersection)",
     "embedded_bloom_bits10": "Bloom + Zone Map",
+    "sai_il2": "SAI (limit=2)",
     "bitlsm_rho0.03": r"BitLSM ($\rho$=0.03)",
     "bitlsm_rho0.01": r"BitLSM ($\rho$=0.01)",
     "bitlsm_rho0.003": r"BitLSM ($\rho$=0.003)",
@@ -49,6 +51,7 @@ METHOD_COLORS = {
     "si-lu_strategy_im": "#4CC850",
     "si-lu_strategy_pf": "#4CC850",
     "embedded_bloom_bits10": "#1FA8A0",
+    "sai_il2": "#2F6FD0",
     "bitlsm_rho0.03": "#F08C7C",
     "bitlsm_rho0.01": "#E04040",
     "bitlsm_rho0.003": "#9B1B1B",
@@ -159,8 +162,12 @@ def plot_grid(data, output_dir):
                     patch.set_facecolor(color)
                     patch.set_hatch(hatch)
 
+            # Log scale: a single cell spans ~0.4s (SAI at high selectivity)
+            # to ~250s (post-filtering at low selectivity). On a linear axis
+            # the fast methods collapse onto the baseline and are unreadable.
+            # (ticklabel_format is incompatible with a log axis.)
+            ax.set_yscale("log")
             ax.set_xticks([])
-            ax.ticklabel_format(axis="y", style="plain")
             ax.tick_params(axis="x", length=0)
             ax.tick_params(axis="y", length=2, width=0.3, direction="in")
             ax.grid(False)

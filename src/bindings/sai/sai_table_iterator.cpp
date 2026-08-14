@@ -18,7 +18,6 @@
 
 #include "sai_iterator.h"
 #include "sai_value_codec.h"
-#include "../scan_readahead.h"
 #include "table/block_based/block_based_table_reader.h"
 #include "table/block_based/block_based_table_reader_impl.h"
 #include "util/coding.h"
@@ -63,7 +62,6 @@ SAITableIterator::SAITableIterator(BlockBasedTable* bbt,
     BuildCursor();
     MaterializeCandidates();
   }
-  PlanScanReadahead();
 }
 
 void SAITableIterator::MaterializeCandidates() {
@@ -83,29 +81,6 @@ void SAITableIterator::MaterializeCandidates() {
   cursor_.reset();  // fully consumed; the materialized pairs replace it
 }
 
-void SAITableIterator::PlanScanReadahead() {
-  if (idx_ == nullptr) return;
-  // Candidate blocks in file order: every block in full-scan mode, the
-  // distinct blocks the materialized candidates land in otherwise.
-  std::vector<BlockHandle> blocks;
-  auto push_block = [&](uint32_t bi) {
-    BlockHandle bh;
-    bh.set_offset(idx_->block_handles[bi].offset);
-    bh.set_size(idx_->block_handles[bi].size);
-    blocks.push_back(bh);
-  };
-  if (plan_.full_scan) {
-    blocks.reserve(idx_->block_handles.size());
-    for (uint32_t bi = 0; bi < idx_->block_handles.size(); ++bi) push_block(bi);
-  } else {
-    for (size_t i = 0; i < cand_block_.size(); ++i) {
-      if (i > 0 && cand_block_[i] == cand_block_[i - 1]) continue;
-      push_block(cand_block_[i]);
-    }
-  }
-  scan_readahead_size_ = PlanScanReadaheadSize(
-      blocks, bbt_->get_rep()->table_options.max_auto_readahead_size);
-}
 
 void SAITableIterator::BuildCursor() {
   // Corresponds to Cassandra's per-SSTable index search: one posting iterator
@@ -148,12 +123,9 @@ void SAITableIterator::LoadNextBlockScan() {
     BlockHandle bh;
     bh.set_offset(idx_->block_handles[cur_block_idx_].offset);
     bh.set_size(idx_->block_handles[cur_block_idx_].size);
-    // Standard iterator readahead. A non-zero scan_readahead_size_ takes
-    // PrefetchIfNeeded's explicit branch, which skips the adjacency check and
-    // serves every candidate inside the window from one read; 0 falls back to
-    // the implicit ramp.
+    // Readahead is RocksDB's own: the implicit ramp engages once reads
+    // look sequential and resets when they do not.
     ReadOptions read_options;
-    read_options.readahead_size = scan_readahead_size_;
     block_prefetcher_.PrefetchIfNeeded(
         bbt_->get_rep(), bh, read_options.readahead_size,
         /*is_for_compaction=*/false, /*no_sequential_checking=*/false,
@@ -239,11 +211,7 @@ void SAITableIterator::LoadNextBlockIndexed() {
     BlockHandle bh;
     bh.set_offset(idx_->block_handles[block].offset);
     bh.set_size(idx_->block_handles[block].size);
-    // Same planned readahead as the full-scan path above. In index mode the
-    // candidate blocks are often sparse, and the planner declines to open a
-    // window when merging across the gaps would cost more than it saves.
     ReadOptions read_options;
-    read_options.readahead_size = scan_readahead_size_;
     block_prefetcher_.PrefetchIfNeeded(
         bbt_->get_rep(), bh, read_options.readahead_size,
         /*is_for_compaction=*/false, /*no_sequential_checking=*/false,
@@ -320,11 +288,6 @@ void SAITableIterator::LoadNextBlockIndexed() {
 
 void SAITableIterator::GetReadaheadState(
     ReadaheadFileInfo* readahead_file_info) {
-  // Only the implicit ramp has state worth carrying. An explicit window was
-  // sized for this file's candidate layout, and handing it to the next file
-  // would seed that file's implicit ramp with a window its own layout never
-  // justified.
-  if (scan_readahead_size_ > 0) return;
   if (block_prefetcher_.prefetch_buffer() != nullptr) {
     block_prefetcher_.prefetch_buffer()->GetReadaheadState(
         &(readahead_file_info->data_block_readahead_info));

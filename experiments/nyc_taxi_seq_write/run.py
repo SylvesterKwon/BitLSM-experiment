@@ -23,14 +23,16 @@ from run_common import (
     make_result_dir,
     maybe_run_as_daemon,
     parse_method_filter,
+    PROJECT_ROOT,
     reset_hardware,
+    resolve_workload_paths,
     run_process,
     setup_logging,
     teardown_logging,
 )
 
 EXP_DIR = os.path.dirname(os.path.abspath(__file__))
-BINARY = "build/bin/honk_player"
+BINARY = os.path.join(PROJECT_ROOT, "build", "bin", "honk_player")
 
 DB_PARAMS = ["rho", "bloom_bits"]
 
@@ -66,8 +68,7 @@ def run(config_path: str, dry_run: bool, method_filter: list,
     exp_name      = os.path.basename(EXP_DIR)
     exp_label     = f"{exp_name}_{exp_set_name}"
     db_path_base  = config["db_path_base"]
-    raw_workload  = config["workload"]
-    workloads     = raw_workload if isinstance(raw_workload, list) else [raw_workload]
+    workloads     = resolve_workload_paths(config["workload"])
     methods       = config["methods"]
     common_params = config.get("common_params", {})
     output_dir    = make_result_dir(exp_label)

@@ -28,6 +28,7 @@
     },
     {
       "name": "bitlsm",
+      "query_limit": 50,
       "params": {
         "rho": [
           0.03,
@@ -38,6 +39,7 @@
     },
     {
       "name": "si-ck",
+      "query_limit": 50,
       "params": {
         "read_strategy": [
           "im",
@@ -47,6 +49,7 @@
     },
     {
       "name": "si-lu",
+      "query_limit": 50,
       "params": {
         "read_strategy": [
           "im",
@@ -56,12 +59,14 @@
     },
     {
       "name": "embedded",
+      "query_limit": 50,
       "params": {
         "bloom_bits": 10
       }
     },
     {
       "name": "sai",
+      "query_limit": 50,
       "params": {
         "intersection_limit": 2
       }

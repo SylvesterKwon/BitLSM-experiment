@@ -26,7 +26,6 @@
 #include "embedded_value_codec.h"
 #include "embedded_bloom.h"
 #include "embedded_index.h"
-#include "../scan_readahead.h"
 #include "table/block_based/block_based_table_reader.h"
 #include "table/block_based/block_based_table_reader_impl.h"  // Required: provides NewDataBlockIterator<> template definition
 #include "util/coding.h"  // RocksDB internal: DecodeFixed32/DecodeFixed64
@@ -226,8 +225,6 @@ void EmbeddedTableIterator::SelectCandidateBlocks() {
   // first block is read. Zone maps prune at block granularity, so the layout
   // is fully known here and the window is a calculation rather than the guess
   // a reactive heuristic has to make.
-  scan_readahead_size_ = PlanScanReadaheadSize(
-      candidate_blocks_, bbt_->get_rep()->table_options.max_auto_readahead_size);
 }
 
 void EmbeddedTableIterator::LoadNextBlock() {
@@ -246,13 +243,9 @@ void EmbeddedTableIterator::LoadNextBlock() {
     // Same NewDataBlockIterator<DataBlockIter> call shape as
     // SABITableIterator::GetAllByIndexesFromDataBlock. Resetting biter_ unpins
     // the previously held block before opening the new one.
-    // Standard iterator readahead. A non-zero scan_readahead_size_ takes
-    // PrefetchIfNeeded's explicit branch, which skips the adjacency check and
-    // serves every candidate inside the window from one read; 0 falls back to
-    // the implicit ramp, which only allocates its buffer after enough
-    // sequential reads and so stays cheap for a sparse candidate set.
+    // Readahead is RocksDB's own: the implicit ramp engages once reads
+    // look sequential and resets when they do not.
     ReadOptions read_options;
-    read_options.readahead_size = scan_readahead_size_;
     block_prefetcher_.PrefetchIfNeeded(
         bbt_->get_rep(), candidate_blocks_[cur_block_idx_],
         read_options.readahead_size,
@@ -332,11 +325,6 @@ void EmbeddedTableIterator::LoadNextBlock() {
 
 void EmbeddedTableIterator::GetReadaheadState(
     ReadaheadFileInfo* readahead_file_info) {
-  // Only the implicit ramp has state worth carrying. An explicit window was
-  // sized for this file's candidate layout, and handing it to the next file
-  // would seed that file's implicit ramp with a window its own layout never
-  // justified.
-  if (scan_readahead_size_ > 0) return;
   if (block_prefetcher_.prefetch_buffer() != nullptr) {
     block_prefetcher_.prefetch_buffer()->GetReadaheadState(
         &(readahead_file_info->data_block_readahead_info));
