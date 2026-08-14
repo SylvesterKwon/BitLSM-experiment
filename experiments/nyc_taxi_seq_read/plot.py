@@ -162,8 +162,12 @@ def plot_grid(data, output_dir):
                     patch.set_facecolor(color)
                     patch.set_hatch(hatch)
 
+            # Log scale: a single cell spans ~0.4s (SAI at high selectivity)
+            # to ~250s (post-filtering at low selectivity). On a linear axis
+            # the fast methods collapse onto the baseline and are unreadable.
+            # (ticklabel_format is incompatible with a log axis.)
+            ax.set_yscale("log")
             ax.set_xticks([])
-            ax.ticklabel_format(axis="y", style="plain")
             ax.tick_params(axis="x", length=0)
             ax.tick_params(axis="y", length=2, width=0.3, direction="in")
             ax.grid(False)
