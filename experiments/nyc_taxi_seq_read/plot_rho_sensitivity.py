@@ -9,6 +9,12 @@ Two figures, both with rho on a log x-axis running coarse (left) to fine
      the SABI block keeps growing after pruning has saturated. c=1 has not
      turned by the edge of the grid, so its optimum lies below the smallest rho
      measured.
+
+     The curves are plotted exactly as measured. Higher c necessarily draws in
+     lower-cardinality attributes, because reaching a fixed total selectivity
+     with more predicates requires weaker ones -- that is a property of
+     multi-predicate queries, not a sampling artifact, so it is not filtered
+     out.
   2. rho_sensitivity_ingestion.pdf — what that resolution costs to build:
      DB size and background CPU side by side, both normalized to no-index.
 
@@ -42,17 +48,11 @@ HZ = 100                  # USER_HZ for /proc/<pid>/task/<tid>/stat ticks
 C_COLORS = {1: "#9B1B1B", 2: "#E04040", 3: "#F08C7C"}
 C_MARKERS = {1: "o", 2: "s", 3: "D"}
 
-# passenger_count saturates at its distinct-value count (10 bins) for every rho,
-# so a predicate on it costs bitmap work and buys no extra pruning no matter how
-# fine the index gets. The query sets sample it at very different rates, which
-# is enough on its own to invert the c=2 / c=3 ordering at fine rho.
-SATURATING_ATTRS = {"passenger_count"}
-
 READ_RE = re.compile(r"_k(\d)_.*_bitlsm_rho([\d.]+)_read_log\.csv$")
 THREAD_RE = re.compile(r"_(no-index|bitlsm_rho[\d.]+)_thread_log\.csv$")
 
 
-def read_cells(read_dir, refinable_only):
+def read_cells(read_dir):
     """{(c, rho): [latency_s, ...]} from the read sweep's per-query logs."""
     cells = {}
     for path in sorted(glob.glob(os.path.join(read_dir, "*_read_log.csv"))):
@@ -63,10 +63,6 @@ def read_cells(read_dir, refinable_only):
         lat = []
         with open(path) as f:
             for row in csv.DictReader(f):
-                if refinable_only:
-                    attrs = {a.strip() for a in row["filter_attrs"].split(",")}
-                    if attrs & SATURATING_ATTRS:
-                        continue
                 lat.append(int(row["time_elapsed_ms"]) / 1000)
         if lat:
             cells[(c, rho)] = lat
@@ -124,7 +120,7 @@ def style_rho_axis(ax, rhos):
     ax.tick_params(which="both", direction="in", top=False, right=False)
 
 
-def plot_latency(cells, out_dir, stat, refinable_only):
+def plot_latency(cells, out_dir, stat):
     rhos = sorted({rho for _, rho in cells})
     if not rhos:
         print("  no read cells found, skipping latency figure")
@@ -148,8 +144,7 @@ def plot_latency(cells, out_dir, stat, refinable_only):
     ax.legend(frameon=False, handlelength=1.6, borderaxespad=0.3)
 
     fig.tight_layout()
-    suffix = "_refinable" if refinable_only else ""
-    out = os.path.join(out_dir, f"rho_sensitivity_latency{suffix}.pdf")
+    out = os.path.join(out_dir, "rho_sensitivity_latency.pdf")
     fig.savefig(out, dpi=150, bbox_inches="tight")
     plt.close(fig)
     print(f"  wrote {out}")
@@ -198,23 +193,19 @@ def main():
                         help="Where to write the PDFs (default: read_dir)")
     parser.add_argument("--stat", choices=["mean", "median"], default="mean",
                         help="Per-cell statistic for the latency curves")
-    parser.add_argument("--refinable-only", action="store_true",
-                        help="Drop queries touching a saturating attribute "
-                             "(passenger_count), which the three query sets "
-                             "sample at very different rates")
     args = parser.parse_args()
 
     out_dir = args.output_dir or args.read_dir
     os.makedirs(out_dir, exist_ok=True)
 
-    cells = read_cells(args.read_dir, args.refinable_only)
+    cells = read_cells(args.read_dir)
     counts = sorted({c for c, _ in cells})
     print(f"read cells: {len(cells)} "
           f"(c = {counts}, "
           f"{len({r for _, r in cells})} rho values, "
           f"{min((len(v) for v in cells.values()), default=0)}-"
           f"{max((len(v) for v in cells.values()), default=0)} queries each)")
-    plot_latency(cells, out_dir, args.stat, args.refinable_only)
+    plot_latency(cells, out_dir, args.stat)
 
     if args.write_dir:
         sizes, bg = ingestion_costs(args.write_dir)
