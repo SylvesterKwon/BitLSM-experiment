@@ -200,6 +200,18 @@ def plot_db_size(sizes, output_dir):
     plt.close(fig)
 
 
+def _annotate_baseline(ax, bar_height, text):
+    """Write the baseline's absolute value inside its bar.
+
+    The no-index bar already carries its ratio (1.00) above it from
+    _bar_axis; stacking the absolute value at the same anchor collides with
+    it. Placing it inside the bar keeps both readable and cannot overflow
+    the axes.
+    """
+    ax.text(0, bar_height / 2, text, ha="center", va="center",
+            rotation=90, color="white")
+
+
 def plot_normalized(data, sizes, output_dir):
     """Two-column figure: write time and DB size normalized to no-index."""
     if "no-index" not in data:
@@ -226,13 +238,13 @@ def plot_normalized(data, sizes, output_dir):
 
     _bar_axis(axes[0][0], time_methods, time_ratios,
               "Total Write Time Ratio", lambda v: f"{v:.2f}")
-    axes[0][0].text(0, time_ratios[0], f"  {time_baseline / 1000:.1f}s",
-                    ha="center", va="bottom", rotation=90)
+    _annotate_baseline(axes[0][0], time_ratios[0],
+                       f"{time_baseline / 1000:.1f}s")
     if size_methods:
         _bar_axis(axes[0][1], size_methods, size_ratios,
                   "DB Size Ratio", lambda v: f"{v:.2f}")
-        axes[0][1].text(0, size_ratios[0], f"  {sizes['no-index'] / 1e9:.1f} GB",
-                        ha="center", va="bottom", rotation=90)
+        _annotate_baseline(axes[0][1], size_ratios[0],
+                           f"{sizes['no-index'] / 1e9:.1f} GB")
 
     fig.tight_layout(w_pad=2.0)
 
