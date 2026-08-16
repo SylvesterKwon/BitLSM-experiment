@@ -17,7 +17,7 @@ constexpr uint32_t kMaxPostingBlockBytes = 4 + 1 + (127 * 32 + 7) / 8;
 constexpr uint32_t kSummaryBytes = 32;
 }  // namespace
 
-bool TrieLookupOnDemand(SAIBlobSource& src, uint32_t trie_off,
+bool TrieLookupOnDemand(BlobSource& src, uint32_t trie_off,
                         std::string_view term, TrieEntry& e) {
   std::string buf;
   uint32_t node = trie_off + src.U32(trie_off);  // root
@@ -50,7 +50,7 @@ bool TrieLookupOnDemand(SAIBlobSource& src, uint32_t trie_off,
   return true;
 }
 
-PostingsCursorOnDemand::PostingsCursorOnDemand(SAIBlobSource* src,
+PostingsCursorOnDemand::PostingsCursorOnDemand(BlobSource* src,
                                                uint32_t list_off)
     : src_(src), list_off_(list_off) {
   std::string buf;
@@ -136,7 +136,7 @@ void PostingsCursorOnDemand::AdvanceTo(uint32_t t) {
   pos_ = static_cast<uint32_t>(it - decoded_.begin());
 }
 
-ContReaderOnDemand::ContReaderOnDemand(SAIBlobSource* src, uint32_t region_off)
+ContReaderOnDemand::ContReaderOnDemand(BlobSource* src, uint32_t region_off)
     : src_(src), region_off_(region_off) {
   n_blocks_ = src_->U32(region_off_);
   summaries_off_ = region_off_ + 4;
@@ -158,7 +158,14 @@ ContReaderOnDemand::BlockRange ContReaderOnDemand::Overlap(double lo,
   while (f < n_blocks_ && !block_overlaps(f)) ++f;
   if (f == n_blocks_) return r;
   uint32_t l = n_blocks_ - 1;
-  while (!block_overlaps(l)) --l;  // f exists, so this terminates
+  // f exists, so this terminates -- unless a blob read that succeeded during
+  // the forward scan fails on retry here (a genuine I/O error, not just a
+  // cache miss); guard the underflow so a flaky read degrades to "no match"
+  // instead of wrapping `l` and returning a garbage block range.
+  while (!block_overlaps(l)) {
+    if (l == 0) return r;
+    --l;
+  }
   r = {f, l, true};
   return r;
 }
@@ -178,7 +185,7 @@ namespace {
 // fall in range for a boundary leaf.
 class BlockCursorOnDemand : public RowCursor {
  public:
-  BlockCursorOnDemand(SAIBlobSource* src, uint32_t region_off,
+  BlockCursorOnDemand(BlobSource* src, uint32_t region_off,
                       uint32_t summary_off, double lo, bool lo_inc, double hi,
                       bool hi_inc, bool boundary) {
     std::string buf;
@@ -309,7 +316,7 @@ std::unique_ptr<RowCursor> ContReaderOnDemand::OpenCursor(double lo, bool lo_inc
   return std::make_unique<MergedCursorOnDemand>(std::move(blocks));
 }
 
-uint64_t OnDemandEstimate(SAIBlobSource& src,
+uint64_t OnDemandEstimate(BlobSource& src,
                           const std::vector<uint32_t>& region_off,
                           const SAIFact& f) {
   const uint32_t region = region_off[f.attr_idx];
@@ -324,7 +331,7 @@ uint64_t OnDemandEstimate(SAIBlobSource& src,
 }
 
 std::unique_ptr<RowCursor> OnDemandOpenCursor(
-    SAIBlobSource* src, const std::vector<uint32_t>& region_off,
+    BlobSource* src, const std::vector<uint32_t>& region_off,
     const SAIFact& f) {
   const uint32_t region = region_off[f.attr_idx];
   if (f.is_cat) {

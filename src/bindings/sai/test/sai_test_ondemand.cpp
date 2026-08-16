@@ -1,7 +1,7 @@
 // Pins the on-demand readers to the resident ones: both run over the same
 // blob bytes and must agree on every estimate and every posting set. The
 // on-demand path duplicates the decode logic (it fetches through a
-// SAIBlobSource rather than dereferencing a materialised blob), and this test
+// BlobSource rather than dereferencing a materialised blob), and this test
 // is what keeps the two implementations from drifting. It also pins the
 // metadata-only reader's contract: everything it serves must be an owned
 // copy, so the raw blob can be freed (and here: scribbled) after
@@ -14,7 +14,7 @@
 #include <string>
 #include <vector>
 
-#include "sai_blob_source.h"
+#include "blob_source.h"
 #include "sai_index.h"
 #include "sai_ondemand.h"
 #include "sai_value_codec.h"
@@ -110,7 +110,7 @@ int main() {
   // On-demand decode over the live blob, driven through the same fact-level
   // entry points the metadata reader routes to (with a memory source standing
   // in for the SST file).
-  SAIMemBlobSource src(blob.data(), blob.size());
+  experiment::MemBlobSource src(blob.data(), blob.size());
   const std::vector<uint32_t>& region_off = resident.RegionOffsets();
   auto od_estimate = [&](const SAIFact& f) {
     return OnDemandEstimate(src, region_off, f);

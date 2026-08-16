@@ -1,7 +1,7 @@
 #pragma once
 // On-demand readers over a SAI blob: same formats as the resident readers in
 // sai_trie/sai_postings/sai_cont_index, but every field is fetched through a
-// SAIBlobSource instead of dereferenced from a fully materialised blob.
+// BlobSource instead of dereferenced from a fully materialised blob.
 //
 // This is the SAI baseline's memory behaviour brought in line with Cassandra:
 // a term lookup walks trie nodes one read at a time, a posting list is decoded
@@ -23,7 +23,7 @@
 #include <string_view>
 #include <vector>
 
-#include "sai_blob_source.h"
+#include "blob_source.h"
 #include "sai_plan.h"
 #include "sai_postings.h"
 #include "sai_trie.h"
@@ -35,7 +35,7 @@ namespace experiment::sai {
 // the comparison; treat it as fatal (same stance as SABIReader's allocation
 // failure in sabi_reader.cpp). Term-absent and range-empty outcomes leave
 // ok() true and are not errors.
-inline void FailIfError(const SAIBlobSource& src) {
+inline void FailIfError(const BlobSource& src) {
   if (!src.ok()) {
     std::fprintf(stderr, "[sai] on-demand index blob read failed; aborting\n");
     std::abort();
@@ -46,14 +46,14 @@ inline void FailIfError(const SAIBlobSource& src) {
 // within the blob (the attribute region's first u32 plus the region offset).
 // Returns false when the term is absent OR a read failed; callers distinguish
 // via src.ok().
-bool TrieLookupOnDemand(SAIBlobSource& src, uint32_t trie_off,
+bool TrieLookupOnDemand(BlobSource& src, uint32_t trie_off,
                         std::string_view term, TrieEntry& e);
 
 // Posting list cursor that holds one block at a time, like Cassandra's
 // PostingsReader; `list_off` is the list's offset within the blob.
 class PostingsCursorOnDemand : public RowCursor {
  public:
-  PostingsCursorOnDemand(SAIBlobSource* src, uint32_t list_off);
+  PostingsCursorOnDemand(BlobSource* src, uint32_t list_off);
   bool Valid() const override { return valid_; }
   uint32_t Row() const override { return decoded_[pos_]; }
   void Next() override;
@@ -62,7 +62,7 @@ class PostingsCursorOnDemand : public RowCursor {
  private:
   void LoadBlock(uint32_t block_idx);
 
-  SAIBlobSource* src_;
+  BlobSource* src_;
   uint32_t list_off_;
   uint32_t skip_off_ = 0;
   uint32_t n_ = 0, nblocks_ = 0;
@@ -77,7 +77,7 @@ class PostingsCursorOnDemand : public RowCursor {
 // the overlapping leaves are decoded.
 class ContReaderOnDemand {
  public:
-  ContReaderOnDemand(SAIBlobSource* src, uint32_t region_off);
+  ContReaderOnDemand(BlobSource* src, uint32_t region_off);
   uint64_t Estimate(double lo, bool lo_inc, double hi, bool hi_inc);
   std::unique_ptr<RowCursor> OpenCursor(double lo, bool lo_inc, double hi,
                                         bool hi_inc);
@@ -92,7 +92,7 @@ class ContReaderOnDemand {
   double BlockMax(uint32_t b) { return src_->F64(summaries_off_ + b * 32 + 8); }
   uint32_t BlockCount(uint32_t b) { return src_->U32(summaries_off_ + b * 32 + 16); }
 
-  SAIBlobSource* src_;
+  BlobSource* src_;
   uint32_t region_off_;
   uint32_t n_blocks_ = 0;
   uint32_t summaries_off_ = 0;
@@ -102,13 +102,13 @@ class ContReaderOnDemand {
 // but reading through a source. `region_off` is the attribute-region table
 // the reader parsed out of the blob footer (owned copies; blob-relative
 // offsets). The metadata-only SAIIndexReader routes here with a
-// SAIFileBlobSource; sai_test_ondemand drives the same code over a
-// SAIMemBlobSource.
-uint64_t OnDemandEstimate(SAIBlobSource& src,
+// FileBlobSource; sai_test_ondemand drives the same code over a
+// MemBlobSource.
+uint64_t OnDemandEstimate(BlobSource& src,
                           const std::vector<uint32_t>& region_off,
                           const SAIFact& f);
 std::unique_ptr<RowCursor> OnDemandOpenCursor(
-    SAIBlobSource* src, const std::vector<uint32_t>& region_off,
+    BlobSource* src, const std::vector<uint32_t>& region_off,
     const SAIFact& f);
 
 // Owns the blob source its inner cursor reads through, so a cursor returned
@@ -118,7 +118,7 @@ std::unique_ptr<RowCursor> OnDemandOpenCursor(
 // source it reads from.
 class OwningCursorOnDemand : public RowCursor {
  public:
-  OwningCursorOnDemand(std::unique_ptr<SAIBlobSource> src,
+  OwningCursorOnDemand(std::unique_ptr<BlobSource> src,
                        std::unique_ptr<RowCursor> inner)
       : src_(std::move(src)), inner_(std::move(inner)) {}
   bool Valid() const override { return inner_->Valid(); }
@@ -133,7 +133,7 @@ class OwningCursorOnDemand : public RowCursor {
   }
 
  private:
-  std::unique_ptr<SAIBlobSource> src_;
+  std::unique_ptr<BlobSource> src_;
   std::unique_ptr<RowCursor> inner_;
 };
 

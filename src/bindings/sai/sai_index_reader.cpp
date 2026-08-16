@@ -1,5 +1,5 @@
 #include "sai_index.h"
-#include "sai_blob_source.h"
+#include "blob_source.h"
 #include "sai_coding.h"
 #include "sai_ondemand.h"
 #include <algorithm>
@@ -47,7 +47,7 @@ SAIIndexReader::SAIIndexReader(Slice& index_block,
 uint64_t SAIIndexReader::Estimate(const SAIFact& f) const {
   if (metadata_only_) {
     assert(table_ != nullptr);  // SetTable ran before any query (pinned path)
-    SAIFileBlobSource src(table_);
+    FileBlobSource src(table_);
     const uint64_t est = OnDemandEstimate(src, region_off_, f);
     FailIfError(src);
     return est;
@@ -64,7 +64,7 @@ uint64_t SAIIndexReader::Estimate(const SAIFact& f) const {
 std::unique_ptr<RowCursor> SAIIndexReader::OpenCursor(const SAIFact& f) const {
   if (metadata_only_) {
     assert(table_ != nullptr);
-    auto src = std::make_unique<SAIFileBlobSource>(table_);
+    auto src = std::make_unique<FileBlobSource>(table_);
     auto inner = OnDemandOpenCursor(src.get(), region_off_, f);
     // A read failure is fatal (FailIfError); a clean nullptr means the term
     // is absent or the range overlaps nothing -- same contract as resident.

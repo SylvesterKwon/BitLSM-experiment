@@ -1,4 +1,4 @@
-#include "sai_blob_source.h"
+#include "blob_source.h"
 
 #include <atomic>
 #include <cassert>
@@ -10,7 +10,7 @@
 #include "rocksdb/advanced_cache.h"
 #include "table/block_based/block_based_table_reader.h"
 
-namespace experiment::sai {
+namespace experiment {
 using namespace rocksdb;
 
 namespace {
@@ -20,46 +20,45 @@ std::atomic<uint64_t> g_page_misses{0};
 std::atomic<uint64_t> g_bytes_read{0};
 
 // One cached blob page: a heap buffer the cache owns.
-struct SAIBlobPage {
+struct BlobPage {
   std::unique_ptr<char[]> data;
   size_t size = 0;
 };
 
-void DeleteSAIBlobPage(Cache::ObjectPtr obj, MemoryAllocator* /*allocator*/) {
-  delete static_cast<SAIBlobPage*>(obj);
+void DeleteBlobPage(Cache::ObjectPtr obj, MemoryAllocator* /*allocator*/) {
+  delete static_cast<BlobPage*>(obj);
 }
 
 // Charged as an index block: these pages are index bytes, and the budget
 // experiment reasons about index versus data residency. Same role BitLSM's
 // on-demand bins use (sabi_reader.cpp SABICachedBinHelper).
-const Cache::CacheItemHelper* SAIBlobPageHelper() {
+const Cache::CacheItemHelper* BlobPageHelper() {
   static const Cache::CacheItemHelper helper(CacheEntryRole::kIndexBlock,
-                                             &DeleteSAIBlobPage);
+                                             &DeleteBlobPage);
   return &helper;
 }
 
 }  // namespace
 
-SAIOndemandStats GetSAIOndemandStats() {
+BlobSourceStats GetBlobSourceStats() {
   return {g_page_hits.load(std::memory_order_relaxed),
           g_page_misses.load(std::memory_order_relaxed),
           g_bytes_read.load(std::memory_order_relaxed)};
 }
 
-void ResetSAIOndemandStats() {
+void ResetBlobSourceStats() {
   g_page_hits.store(0, std::memory_order_relaxed);
   g_page_misses.store(0, std::memory_order_relaxed);
   g_bytes_read.store(0, std::memory_order_relaxed);
 }
 
-SAIFileBlobSource::SAIFileBlobSource(const BlockBasedTable* table)
+FileBlobSource::FileBlobSource(const BlockBasedTable* table)
     : table_(table),
       blob_offset_(table->get_rep()->udi_handle.offset()),
       blob_size_(table->get_rep()->udi_handle.size()) {}
 
-bool SAIFileBlobSource::ReadFromPage(uint64_t page_off, uint64_t data_begin,
-                                     uint32_t page_len, uint32_t in_page,
-                                     uint32_t n, char* dst) {
+bool FileBlobSource::ReadFromPage(uint64_t data_begin, uint32_t page_len,
+                                  uint32_t in_page, uint32_t n, char* dst) {
   const auto* rep = table_->get_rep();
   // no_block_cache=true (or a caller-supplied null block_cache) leaves this
   // null; degrade to uncached reads below rather than crash (same guard as
@@ -68,16 +67,17 @@ bool SAIFileBlobSource::ReadFromPage(uint64_t page_off, uint64_t data_begin,
   // Same mint as BitLSM's on-demand bins: the file's own cache-key base plus
   // the page's file offset. Every reader of this file derives the identical
   // key, so pages are shared without any registry of our own. Keyed by
-  // data_begin, not page_off: the first page's aligned-down page_off lies
-  // BEFORE the blob and could equal a data block's start offset (same >>2
-  // key space), a type-confusing collision. data_begin is clamped inside
-  // the UDI extent, which no other block occupies, and distinct pages'
-  // data_begins never share a >>2 bucket, so keys stay unique.
+  // data_begin, not the aligned-down page boundary: the first page's
+  // aligned-down boundary lies BEFORE the blob and could equal a data
+  // block's start offset (same >>2 key space), a type-confusing collision.
+  // data_begin is clamped inside the UDI extent, which no other block
+  // occupies, and distinct pages' data_begins never share a >>2 bucket, so
+  // keys stay unique.
   const CacheKey key = rep->base_cache_key.WithOffset(data_begin >> 2);
 
   if (cache != nullptr) {
     if (Cache::Handle* h = cache->BasicLookup(key.AsSlice(), /*stats=*/nullptr)) {
-      auto* page = static_cast<SAIBlobPage*>(cache->Value(h));
+      auto* page = static_cast<BlobPage*>(cache->Value(h));
       assert(page->size == page_len);
       std::memcpy(dst, page->data.get() + in_page, n);
       cache->Release(h);
@@ -86,7 +86,7 @@ bool SAIFileBlobSource::ReadFromPage(uint64_t page_off, uint64_t data_begin,
     }
   }
 
-  auto page = std::make_unique<SAIBlobPage>();
+  auto page = std::make_unique<BlobPage>();
   page->data = std::make_unique<char[]>(page_len);
   page->size = page_len;
   Slice result;
@@ -96,7 +96,7 @@ bool SAIFileBlobSource::ReadFromPage(uint64_t page_off, uint64_t data_begin,
   // device-page read, never a straddle.
   IOStatus s = rep->file->Read(IOOptions(), data_begin, page_len, &result,
                                page->data.get(), /*aligned_buf=*/nullptr);
-  if (!s.ok() || result.size() < static_cast<size_t>(in_page) + n) {
+  if (!s.ok() || result.size() < page_len) {
     ok_ = false;
     return false;
   }
@@ -113,16 +113,16 @@ bool SAIFileBlobSource::ReadFromPage(uint64_t page_off, uint64_t data_begin,
   if (cache != nullptr) {
     // Insert without taking a handle: the bytes are already copied out, and a
     // refused insert (strict capacity) only costs a re-read next time.
-    SAIBlobPage* raw = page.release();
-    Status is = cache->Insert(key.AsSlice(), raw, SAIBlobPageHelper(),
-                              sizeof(SAIBlobPage) + raw->size);
+    BlobPage* raw = page.release();
+    Status is = cache->Insert(key.AsSlice(), raw, BlobPageHelper(),
+                              sizeof(BlobPage) + raw->size);
     if (!is.ok()) delete raw;
   }
   return true;
 }
 
-const char* SAIFileBlobSource::Read(uint32_t rel_off, uint32_t len,
-                                    std::string& scratch) {
+const char* FileBlobSource::Read(uint32_t rel_off, uint32_t len,
+                                 std::string& scratch) {
   scratch.resize(len);
   if (len == 0) return scratch.data();
   if (static_cast<uint64_t>(rel_off) + len > blob_size_) {
@@ -137,13 +137,13 @@ const char* SAIFileBlobSource::Read(uint32_t rel_off, uint32_t len,
     // window, regardless of where the blob starts. The first and last pages
     // of a blob are short -- bytes outside [blob_offset_, blob_end) belong
     // to other blocks (or the block trailer) and are never cached here.
-    const uint64_t page_off = abs & ~static_cast<uint64_t>(kSAIBlobPageSize - 1);
+    const uint64_t page_off = abs & ~static_cast<uint64_t>(kBlobPageSize - 1);
     const uint64_t data_begin = std::max(page_off, blob_offset_);
-    const uint64_t data_end = std::min(page_off + kSAIBlobPageSize, blob_end);
+    const uint64_t data_end = std::min(page_off + kBlobPageSize, blob_end);
     const uint32_t page_len = static_cast<uint32_t>(data_end - data_begin);
     const uint32_t in_page = static_cast<uint32_t>(abs - data_begin);
     const uint32_t n = std::min(len - done, page_len - in_page);
-    if (!ReadFromPage(page_off, data_begin, page_len, in_page, n,
+    if (!ReadFromPage(data_begin, page_len, in_page, n,
                       scratch.data() + done)) {
       return scratch.data();
     }
@@ -152,4 +152,4 @@ const char* SAIFileBlobSource::Read(uint32_t rel_off, uint32_t len,
   return scratch.data();
 }
 
-}  // namespace experiment::sai
+}  // namespace experiment
