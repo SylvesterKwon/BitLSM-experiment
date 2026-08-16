@@ -67,8 +67,13 @@ bool SAIFileBlobSource::ReadFromPage(uint64_t page_off, uint64_t data_begin,
   Cache* cache = rep->table_options.block_cache.get();
   // Same mint as BitLSM's on-demand bins: the file's own cache-key base plus
   // the page's file offset. Every reader of this file derives the identical
-  // key, so pages are shared without any registry of our own.
-  const CacheKey key = rep->base_cache_key.WithOffset(page_off >> 2);
+  // key, so pages are shared without any registry of our own. Keyed by
+  // data_begin, not page_off: the first page's aligned-down page_off lies
+  // BEFORE the blob and could equal a data block's start offset (same >>2
+  // key space), a type-confusing collision. data_begin is clamped inside
+  // the UDI extent, which no other block occupies, and distinct pages'
+  // data_begins never share a >>2 bucket, so keys stay unique.
+  const CacheKey key = rep->base_cache_key.WithOffset(data_begin >> 2);
 
   if (cache != nullptr) {
     if (Cache::Handle* h = cache->BasicLookup(key.AsSlice(), /*stats=*/nullptr)) {
