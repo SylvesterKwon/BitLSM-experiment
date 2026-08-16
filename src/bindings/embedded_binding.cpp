@@ -18,9 +18,13 @@ void EmbeddedBinding::Open(int argc, char* argv[], const std::string& db_path,
                     cxxopts::value<uint32_t>()->default_value("10"))
                    ("max_background_jobs", "",
                     cxxopts::value<int>()->default_value("6"))
+                   ("scan_prefetch_depth",
+                    "Scan data-block reads kept in flight (0 = one at a time)",
+                    cxxopts::value<uint32_t>()->default_value("0"))
                    ("exp_type", "",
                     cxxopts::value<std::string>()->default_value("write_seq"));
   auto result = cxx.parse(argc, argv);
+  scan_prefetch_depth_ = result["scan_prefetch_depth"].as<uint32_t>();
   bloom_bits_ = result["bloom_bits"].as<uint32_t>();
   bool wa_mode = (result["exp_type"].as<std::string>() == "write_seq_wa");
 
@@ -41,7 +45,9 @@ void EmbeddedBinding::Open(int argc, char* argv[], const std::string& db_path,
   // index's own per-block categorical Bloom (Qader SIGMOD'18).
   ApplyRecordCfBloom(table_options);
 
-  db_ = std::make_unique<embedded::EmbeddedDB>(db_path, opts, rocksdb_options,
+  BitLSMOptions scan_opts = opts;
+  scan_opts.scan_prefetch_depth = scan_prefetch_depth_;
+  db_ = std::make_unique<embedded::EmbeddedDB>(db_path, scan_opts, rocksdb_options,
                                                 table_options, bloom_bits_);
 }
 
