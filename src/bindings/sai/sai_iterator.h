@@ -15,6 +15,7 @@
 #include "db/memtable.h"
 #include "db/version_set.h"
 #include "file/readahead_file_info.h"
+#include "block_prefetch_queue.h"
 #include "sai_index.h"
 #include "sai_plan.h"
 #include "table/block_based/block_based_table_reader.h"
@@ -121,6 +122,13 @@ class SAITableIterator : public SAIInternalIterator {
   // lazily by PrefetchIfNeeded once the block access pattern turns
   // near-sequential, so a sparse candidate set never triggers readahead.
   rocksdb::BlockPrefetcher block_prefetcher_;
+  // Same queue BitLSM's scan uses (block_prefetch_queue.h). MaterializeCandidates
+  // already drains the posting intersection before the first block is read, so
+  // the block set is known here too and the two methods differ in what they
+  // select, not in how they fetch it.
+  std::vector<std::pair<uint32_t, rocksdb::BlockHandle>> prefetch_targets_;
+  bit_lsm::BlockPrefetchQueue prefetch_queue_;
+  size_t prefetch_pos_ = 0;
   std::vector<rocksdb::PinnableSlice> keys_buf_;
   std::vector<rocksdb::PinnableSlice> values_buf_;
   int32_t buf_idx_ = 0;

@@ -16,6 +16,7 @@
 #include <bit_lsm_shadow_check.h>
 
 #include "db/version_set.h"
+#include "block_prefetch_queue.h"
 #include "embedded_index.h"
 #include "file/readahead_file_info.h"
 #include "table/block_based/block_based_table_reader.h"
@@ -129,6 +130,11 @@ class EmbeddedTableIterator : public EmbeddedInternalIterator {
   // lazily by PrefetchIfNeeded once the block access pattern turns
   // near-sequential, so a sparse candidate-block set never triggers readahead.
   rocksdb::BlockPrefetcher block_prefetcher_;
+  // Same queue BitLSM's scan uses (block_prefetch_queue.h). Zone maps prune at
+  // block granularity, so candidate_blocks_ is complete before the first read
+  // and the block set is as knowable here as it is there.
+  std::vector<std::pair<uint32_t, rocksdb::BlockHandle>> prefetch_targets_;
+  bit_lsm::BlockPrefetchQueue prefetch_queue_;
   std::vector<rocksdb::PinnableSlice> keys_buf_;
   std::vector<rocksdb::PinnableSlice> values_buf_;
   int32_t buf_idx_ = 0;  // cursor within the buffered matches

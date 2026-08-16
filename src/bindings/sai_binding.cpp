@@ -20,9 +20,13 @@ void SAIBinding::Open(int argc, char* argv[], const std::string& db_path,
                     cxxopts::value<int>()->default_value("2"))
                    ("max_background_jobs", "",
                     cxxopts::value<int>()->default_value("6"))
+                   ("scan_prefetch_depth",
+                    "Scan data-block reads kept in flight (0 = one at a time)",
+                    cxxopts::value<uint32_t>()->default_value("0"))
                    ("exp_type", "",
                     cxxopts::value<std::string>()->default_value("write_seq"));
   auto result = cxx.parse(argc, argv);
+  scan_prefetch_depth_ = result["scan_prefetch_depth"].as<uint32_t>();
   intersection_limit_ = result["intersection_limit"].as<int>();
   bool wa_mode = (result["exp_type"].as<std::string>() == "write_seq_wa");
 
@@ -42,7 +46,9 @@ void SAIBinding::Open(int argc, char* argv[], const std::string& db_path,
   ApplyRocksdbCommonTableOptions(table_options);
   ApplyRecordCfBloom(table_options);
 
-  db_ = std::make_unique<sai::SAIDB>(db_path, opts, rocksdb_options,
+  BitLSMOptions scan_opts = opts;
+  scan_opts.scan_prefetch_depth = scan_prefetch_depth_;
+  db_ = std::make_unique<sai::SAIDB>(db_path, scan_opts, rocksdb_options,
                                      table_options, intersection_limit_);
 }
 

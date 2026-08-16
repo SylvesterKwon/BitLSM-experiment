@@ -56,7 +56,8 @@ EmbeddedTableIterator::EmbeddedTableIterator(BlockBasedTable* bbt,
       track_source_versions_(track_source_versions),
       source_level_(source_level),
       file_number_(file_number),
-      source_has_range_del_(source_has_range_del) {
+      source_has_range_del_(source_has_range_del),
+      prefetch_queue_(bbt, options_.scan_prefetch_depth) {
   // Holds the index entry for this iterator's lifetime: a block cache pin
   // when cache_index_and_filter_blocks is on (evictable after release), or an
   // unowned reference to the table-lifetime pin in Rep when off. Mirrors
@@ -221,10 +222,12 @@ void EmbeddedTableIterator::SelectCandidateBlocks() {
     }
   }
 
-  // Plan this scan's readahead from the finished candidate list, before the
-  // first block is read. Zone maps prune at block granularity, so the layout
-  // is fully known here and the window is a calculation rather than the guess
-  // a reactive heuristic has to make.
+  // The candidate list is complete here, before the first block is read, so
+  // the queue can start filling straight away.
+  prefetch_targets_.reserve(candidate_blocks_.size());
+  for (size_t i = 0; i < candidate_blocks_.size(); ++i)
+    prefetch_targets_.push_back({static_cast<uint32_t>(i), candidate_blocks_[i]});
+  prefetch_queue_.Prepare(&prefetch_targets_);
 }
 
 void EmbeddedTableIterator::LoadNextBlock() {
@@ -246,15 +249,21 @@ void EmbeddedTableIterator::LoadNextBlock() {
     // Readahead is RocksDB's own: the implicit ramp engages once reads
     // look sequential and resets when they do not.
     ReadOptions read_options;
-    block_prefetcher_.PrefetchIfNeeded(
-        bbt_->get_rep(), candidate_blocks_[cur_block_idx_],
-        read_options.readahead_size,
-        /*is_for_compaction=*/false, /*no_sequential_checking=*/false,
-        read_options, /*readaheadsize_cb=*/nullptr,
-        /*is_async_io_prefetch=*/false);
+    // Prefetched by the queue, or else RocksDB's implicit ramp.
+    FilePrefetchBuffer* prefetch_buffer =
+        prefetch_queue_.BufferFor(static_cast<size_t>(cur_block_idx_));
+    if (prefetch_buffer == nullptr) {
+      block_prefetcher_.PrefetchIfNeeded(
+          bbt_->get_rep(), candidate_blocks_[cur_block_idx_],
+          read_options.readahead_size,
+          /*is_for_compaction=*/false, /*no_sequential_checking=*/false,
+          read_options, /*readaheadsize_cb=*/nullptr,
+          /*is_async_io_prefetch=*/false);
+      prefetch_buffer = block_prefetcher_.prefetch_buffer();
+    }
     DataBlockIter* new_biter = bbt_->NewDataBlockIterator<DataBlockIter>(
         read_options, candidate_blocks_[cur_block_idx_], nullptr,
-        BlockType::kData, nullptr, nullptr, block_prefetcher_.prefetch_buffer(),
+        BlockType::kData, nullptr, nullptr, prefetch_buffer,
         false, false, s, true);
     biter_.reset(new_biter);
     if (!s.ok()) {

@@ -13,6 +13,7 @@ class SAIBinding : public Binding {
   // Cassandra default: cassandra.sai.intersection_clause_limit = 2
   // (config/CassandraRelevantProperties.java:489). <=0 means "intersect all".
   int intersection_limit_ = 2;
+  uint32_t scan_prefetch_depth_ = 0;
   std::shared_ptr<rocksdb::Statistics> stats_;
 
  public:

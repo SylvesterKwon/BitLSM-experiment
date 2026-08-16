@@ -10,12 +10,25 @@
 #include <rocksdb/options.h>
 #include <rocksdb/table.h>
 
+#include "block_prefetch_queue.h"
+
 namespace experiment {
 
 // Direct I/O for user reads and flush/compaction. On unless EXP_DIRECT_IO=0
 // (buffered fallback, not for measurement runs). max_open_files and block_cache
 // are left at their RocksDB defaults on purpose.
 inline void ApplyRocksdbCommonOptions(rocksdb::Options& opts) {
+  // io_uring is a property of the machine, not of an index. RocksDB gates it
+  // behind a weak symbol the application defines, and MultiGet's batched block
+  // read takes the same rings, so every method that verifies candidates with
+  // MultiGet -- which is all of them -- depends on this being set. Left to
+  // BitLSM's constructor it would follow BitLSM's prefetch depth, and a
+  // baseline would silently be measured on the serialised path. Set here,
+  // before any DB opens, so the choice is the harness's and identical for
+  // everyone. EXP_IO_URING=0 turns it off for an A/B.
+  if (const char* e = std::getenv("EXP_IO_URING"); !e || e[0] != '0')
+    bit_lsm::EnableRocksDbIOUring();
+
   bool direct = true;
   if (const char* e = std::getenv("EXP_DIRECT_IO"); e && e[0] == '0')
     direct = false;

@@ -13,6 +13,7 @@ class EmbeddedBinding : public Binding {
   // bits-per-key ratio, not the set size, so this is set-size-independent.
   // (Qader 2018 used 100, retained as a sweepable point via --bloom_bits.)
   uint32_t bloom_bits_ = 10;
+  uint32_t scan_prefetch_depth_ = 0;
   std::shared_ptr<rocksdb::Statistics> stats_;
 
  public:

@@ -9,6 +9,7 @@ namespace experiment {
 class BitLSMBinding : public Binding {
   std::unique_ptr<bit_lsm::BitLSM> db_;
   double rho_ = 0.1;
+  uint32_t scan_prefetch_depth_ = 0;
   std::shared_ptr<rocksdb::Statistics> stats_;
 
  public:

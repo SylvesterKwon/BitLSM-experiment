@@ -41,7 +41,8 @@ SAITableIterator::SAITableIterator(BlockBasedTable* bbt,
       track_source_versions_(track_source_versions),
       source_level_(source_level),
       file_number_(file_number),
-      source_has_range_del_(source_has_range_del) {
+      source_has_range_del_(source_has_range_del),
+      prefetch_queue_(bbt, options_.scan_prefetch_depth) {
   // Holds the SAI entry for this iterator's lifetime: a block cache pin when
   // cache_index_and_filter_blocks is on (evictable after release), or an
   // unowned reference to the table-lifetime pin in Rep when off. Mirrors
@@ -61,6 +62,16 @@ SAITableIterator::SAITableIterator(BlockBasedTable* bbt,
   if (!plan_.full_scan) {
     BuildCursor();
     MaterializeCandidates();
+
+    // Distinct candidate blocks in file order, the shape the queue expects.
+    for (size_t i = 0; i < cand_block_.size(); ++i) {
+      if (i > 0 && cand_block_[i] == cand_block_[i - 1]) continue;
+      BlockHandle bh;
+      bh.set_offset(idx_->block_handles[cand_block_[i]].offset);
+      bh.set_size(idx_->block_handles[cand_block_[i]].size);
+      prefetch_targets_.push_back({cand_block_[i], bh});
+    }
+    prefetch_queue_.Prepare(&prefetch_targets_);
   }
 }
 
@@ -212,14 +223,20 @@ void SAITableIterator::LoadNextBlockIndexed() {
     bh.set_offset(idx_->block_handles[block].offset);
     bh.set_size(idx_->block_handles[block].size);
     ReadOptions read_options;
-    block_prefetcher_.PrefetchIfNeeded(
-        bbt_->get_rep(), bh, read_options.readahead_size,
-        /*is_for_compaction=*/false, /*no_sequential_checking=*/false,
-        read_options, /*readaheadsize_cb=*/nullptr,
-        /*is_async_io_prefetch=*/false);
+    // Prefetched by the queue, or else RocksDB's implicit ramp.
+    FilePrefetchBuffer* prefetch_buffer =
+        prefetch_queue_.BufferFor(prefetch_pos_++);
+    if (prefetch_buffer == nullptr) {
+      block_prefetcher_.PrefetchIfNeeded(
+          bbt_->get_rep(), bh, read_options.readahead_size,
+          /*is_for_compaction=*/false, /*no_sequential_checking=*/false,
+          read_options, /*readaheadsize_cb=*/nullptr,
+          /*is_async_io_prefetch=*/false);
+      prefetch_buffer = block_prefetcher_.prefetch_buffer();
+    }
     DataBlockIter* new_biter = bbt_->NewDataBlockIterator<DataBlockIter>(
         read_options, bh, nullptr, BlockType::kData, nullptr, nullptr,
-        block_prefetcher_.prefetch_buffer(), false, false, s, true);
+        prefetch_buffer, false, false, s, true);
     biter_.reset(new_biter);
     if (!s.ok()) {
       // The block the candidate rowIds point at is unreadable. Its rows
