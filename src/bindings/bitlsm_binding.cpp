@@ -21,11 +21,14 @@ void BitLSMBinding::Open(int argc, char* argv[], const std::string& db_path,
                    ("scan_prefetch_depth",
                     "Scan data-block reads kept in flight (0 = one at a time)",
                     cxxopts::value<uint32_t>()->default_value("0"))
+                   ("index_mode", "resident (default) or ondemand",
+                    cxxopts::value<std::string>()->default_value("resident"))
                    ("exp_type", "",
                     cxxopts::value<std::string>()->default_value("write_seq"));
   auto result = cxx.parse(argc, argv);
   scan_prefetch_depth_ = result["scan_prefetch_depth"].as<uint32_t>();
   rho_ = result["rho"].as<double>();
+  ondemand_index_ = (result["index_mode"].as<std::string>() == "ondemand");
   bool wa_mode = (result["exp_type"].as<std::string>() == "write_seq_wa");
 
   rocksdb::Options rocksdb_options;
@@ -47,6 +50,7 @@ void BitLSMBinding::Open(int argc, char* argv[], const std::string& db_path,
   BitLSMOptions bitlsm_opts = opts;
   bitlsm_opts.rho = rho_;
   bitlsm_opts.scan_prefetch_depth = scan_prefetch_depth_;
+  bitlsm_opts.ondemand_index = ondemand_index_;
   db_ = std::make_unique<bit_lsm::BitLSM>(db_path, bitlsm_opts,
                                             rocksdb_options, table_options);
 }
@@ -104,7 +108,8 @@ void BitLSMBinding::WaitForQuiescence() {
 void BitLSMBinding::Close() { db_.reset(); }
 
 std::string BitLSMBinding::ParamSuffix() const {
-  return "_rho" + benchmark::format_double(rho_);
+  return "_rho" + benchmark::format_double(rho_) +
+         (ondemand_index_ ? "_ondemand" : "");
 }
 
 }  // namespace experiment
