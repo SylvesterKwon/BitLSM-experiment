@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstdint>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -39,6 +40,11 @@ namespace {
 
 struct AttrStats {
   uint32_t bins = 0;
+  // Bins holding no row. A threshold repeated on a heavy value produces one,
+  // so this counts budget the binning policy asked for and cannot use --
+  // separately from cv, which only says whether the bins that do hold rows
+  // hold similar numbers of them.
+  uint32_t empty_bins = 0;
   uint64_t bytes = 0;
   uint64_t rows = 0;
   uint32_t n_array = 0;
@@ -53,7 +59,10 @@ struct AttrStats {
 void Summarize(const std::vector<uint64_t>& counts, AttrStats* out) {
   if (counts.empty()) return;
   double sum = 0;
-  for (uint64_t c : counts) sum += static_cast<double>(c);
+  for (uint64_t c : counts) {
+    sum += static_cast<double>(c);
+    if (c == 0) out->empty_bins++;
+  }
   out->mean = sum / counts.size();
   if (counts.size() < 2 || out->mean == 0) return;
   double var = 0;
@@ -72,6 +81,9 @@ int main(int argc, char* argv[]) {
   // clang-format off
   opts.add_options()
     ("db_path", "BitLSM DB to inspect", cxxopts::value<std::string>())
+    ("bins_for", "Also print every bin of this attribute: its value range, "
+                 "its row count, and where a few probe values land",
+     cxxopts::value<std::string>()->default_value(""))
     ("indexed_attrs", "Comma-separated taxi attrs, as used when building",
      cxxopts::value<std::string>()->default_value(""))
     ("rho", "rho the DB was built with (recorded in the output only)",
@@ -81,6 +93,7 @@ int main(int argc, char* argv[]) {
     ("output", "CSV path", cxxopts::value<std::string>());
   // clang-format on
   auto result = opts.parse(argc, argv);
+  const std::string bins_for = result["bins_for"].as<std::string>();
   if (!result.count("db_path") || !result.count("output")) {
     std::cerr << "Required: --db_path, --output\n";
     return 1;
@@ -131,7 +144,7 @@ int main(int argc, char* argv[]) {
   std::ofstream out(result["output"].as<std::string>());
   out << "rho,level,file_number,file_size,attr_idx,attr_name,role,bins,"
          "bitmap_bytes,rows_binned,distinct,n_array,n_bitset,n_run,"
-         "mean_rows_per_bin,cv\n";
+         "mean_rows_per_bin,cv,empty_bins\n";
 
   uint64_t files_seen = 0;
   for (int level = 0; level < ctx.storage_info->num_non_empty_levels();
@@ -186,6 +199,36 @@ int main(int argc, char* argv[]) {
         Summarize(counts, &st);
         offset += bins;
 
+        // --bins_for: the per-bin view the CSV cannot carry. Thresholds are
+        // okeys, so decode them back, and show which bin a probe value lands
+        // in -- that is what decides whether a range predicate can skip a bin
+        // or has to read it.
+        if (!bins_for.empty() && a < attr_names.size() &&
+            attr_names[a] == bins_for &&
+            roles[a] == bit_lsm::AttrRole::ORDERED) {
+          const auto& thresholds =
+              std::get<std::vector<uint64_t>>(bi.binning_policy[a]);
+          std::cout << std::setprecision(17) << "file " << f->fd.GetNumber()
+                    << " level " << level << " attr " << attr_names[a] << ": "
+                    << bins << " bins, " << st.empty_bins << " empty, distinct="
+                    << (a < reader->distinct_cnts.size()
+                            ? reader->distinct_cnts[a]
+                            : 0)
+                    << "\n";
+          for (uint32_t b = 0; b + 1 < thresholds.size() && b < bins; ++b) {
+            std::cout << "  bin " << b << "  ["
+                      << bit_lsm::OkeyToF64(thresholds[b]) << ", "
+                      << bit_lsm::OkeyToF64(thresholds[b + 1])
+                      << ")  rows=" << counts[b] << "\n";
+          }
+          for (double v : {-1.0, 0.0, 1.0, 2.0, 3.0}) {
+            const uint64_t k = bit_lsm::F64ToOkey(v);
+            auto it = std::upper_bound(thresholds.begin(), thresholds.end(), k);
+            std::cout << "  value " << v << " -> bin "
+                      << (std::distance(thresholds.begin(), it) - 1) << "\n";
+          }
+        }
+
         const char* role =
             roles[a] == bit_lsm::AttrRole::ORDERED ? "ORDERED" : "UNORDERED";
         const std::string name =
@@ -196,7 +239,8 @@ int main(int argc, char* argv[]) {
             << f->fd.GetFileSize() << "," << a << "," << name << "," << role
             << "," << st.bins << "," << st.bytes << "," << st.rows << ","
             << distinct << "," << st.n_array << "," << st.n_bitset << ","
-            << st.n_run << "," << st.mean << "," << st.cv << "\n";
+            << st.n_run << "," << st.mean << "," << st.cv << ","
+            << st.empty_bins << "\n";
       }
       udi.Reset();
       ctx.tc->get_cache().Release(handle);
