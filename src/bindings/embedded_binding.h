@@ -14,6 +14,7 @@ class EmbeddedBinding : public Binding {
   // (Qader 2018 used 100, retained as a sweepable point via --bloom_bits.)
   uint32_t bloom_bits_ = 10;
   uint32_t scan_prefetch_depth_ = 0;
+  bool ondemand_index_ = false;
   std::shared_ptr<rocksdb::Statistics> stats_;
 
  public:
@@ -27,7 +28,8 @@ class EmbeddedBinding : public Binding {
   void WaitForQuiescence() override;
   std::string Name() const override { return "embedded"; }
   std::string ParamSuffix() const override {
-    return "_bloom_bits" + std::to_string(bloom_bits_);
+    return "_bloom_bits" + std::to_string(bloom_bits_) +
+           (ondemand_index_ ? "_ondemand" : "");
   }
 };
 

@@ -170,10 +170,35 @@ void EmbeddedTableIterator::SelectCandidateBlocks() {
   }
 
   // --- Per-block: decode Section C in index order, test each fact. ---
+  // Ondemand mode reads Section C for each block through one FileBlobSource
+  // shared across the whole loop (constructed once, kept alive so its
+  // block-cache lookups build up across the sequential block walk); resident
+  // mode dereferences the owned blob copy directly. A read failure has no
+  // status channel through BlockFilterRegion's return value, so it is
+  // recorded on `src` and checked right after each read, before any byte of
+  // that block's region is interpreted (same stance as the SAI baseline's
+  // FailIfError: a silently-pruned block would under-return rows, not just
+  // mis-time them).
+  std::unique_ptr<BlobSource> src;
+  std::string region_scratch;
+  if (idx_->MetadataOnly()) src = idx_->MakeBlobSource();
+
   const uint32_t B = static_cast<uint32_t>(idx_->block_handles.size());
   for (uint32_t bi = 0; bi < B; ++bi) {
     size_t region_len = 0;
-    const char* region = idx_->BlockFilterRegion(bi, region_len);
+    const char* region =
+        src ? idx_->ReadBlockFilterRegion(bi, *src, region_scratch, region_len)
+            : idx_->BlockFilterRegion(bi, region_len);
+    if (src && !src->ok()) {
+      // A failed read can leave `region_scratch` holding stale bytes from an
+      // earlier iteration (std::string::resize keeps existing bytes when the
+      // new size does not grow it); parsing that as nbits/zonemap fields
+      // could walk far past the buffer. Stop before interpreting anything.
+      status_ = Status::IOError(
+          "EmbeddedTableIterator: ondemand filter-region read failed");
+      candidate_blocks_.clear();
+      return;
+    }
     const char* p = region;
 
     bool block_ok = true;
