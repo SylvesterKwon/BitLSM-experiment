@@ -14,6 +14,7 @@ class SAIBinding : public Binding {
   // (config/CassandraRelevantProperties.java:489). <=0 means "intersect all".
   int intersection_limit_ = 2;
   uint32_t scan_prefetch_depth_ = 0;
+  bool ondemand_index_ = false;
   std::shared_ptr<rocksdb::Statistics> stats_;
 
  public:
@@ -27,7 +28,8 @@ class SAIBinding : public Binding {
   void WaitForQuiescence() override;
   std::string Name() const override { return "sai"; }
   std::string ParamSuffix() const override {
-    return "_il" + std::to_string(intersection_limit_);
+    return "_il" + std::to_string(intersection_limit_) +
+           (ondemand_index_ ? "_ondemand" : "");
   }
 };
 
