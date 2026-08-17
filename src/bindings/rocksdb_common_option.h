@@ -80,6 +80,12 @@ inline void ApplyRocksdbCommonTableOptions(
       // its shard and concentrate eviction pressure there. 16 shards keeps
       // per-shard capacity well above one blob across this experiment's grid.
       copts.num_shard_bits = 4;
+      // Half the budget can hold high-priority entries (the LRUCacheOptions
+      // default, restated so the shared config is self-describing). Both
+      // methods' on-demand index entries insert at Priority::HIGH, so under
+      // pressure the index working set survives streaming data blocks the
+      // same way RocksDB's own index/filter blocks do.
+      copts.high_pri_pool_ratio = 0.5;
       return rocksdb::NewLRUCache(copts);
     }();
     topts.block_cache = budget_cache;

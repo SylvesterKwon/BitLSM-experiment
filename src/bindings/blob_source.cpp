@@ -113,9 +113,14 @@ bool FileBlobSource::ReadFromPage(uint64_t data_begin, uint32_t page_len,
   if (cache != nullptr) {
     // Insert without taking a handle: the bytes are already copied out, and a
     // refused insert (strict capacity) only costs a re-read next time.
+    // High priority, same as RocksDB's own convention for index/filter blocks
+    // (cache_index_and_filter_blocks_with_high_priority): index pages should
+    // not be evicted by streaming data-block traffic. BitLSM's on-demand bin
+    // entries use the same priority, keeping the treatment symmetric.
     BlobPage* raw = page.release();
     Status is = cache->Insert(key.AsSlice(), raw, BlobPageHelper(),
-                              sizeof(BlobPage) + raw->size);
+                              sizeof(BlobPage) + raw->size,
+                              /*handle=*/nullptr, Cache::Priority::HIGH);
     if (!is.ok()) delete raw;
   }
   return true;
