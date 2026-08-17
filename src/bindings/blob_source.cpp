@@ -369,7 +369,16 @@ PinnedExtent FileBlobSource::FetchExtent(uint32_t rel_off, uint32_t len) {
   // Over-cap extents bypass the cache entirely (uncached read, pin-owned
   // buffer): unreachable at this workload's extent sizes, but a degenerate
   // extent must not wipe the cache.
-  const bool cacheable = cache != nullptr && len <= cap;
+  // Gate on the cache's own capacity as well as the absolute cap: with no
+  // EXP_BLOCK_CACHE_MB override RocksDB materializes a 32 MB default cache,
+  // where a multi-MB HIGH-priority extent would wipe or bypass it (and the
+  // default HyperClockCache does not guarantee duplicate-key replacement,
+  // which the len>=  hit guard relies on). Capacity/16 is 32 MB at the 512 MB
+  // budget floor, above every observed extent, so measured cells are
+  // unaffected.
+  const bool cacheable =
+      cache != nullptr &&
+      len <= std::min<uint64_t>(cap, cache->GetCapacity() / 16);
 
   if (cacheable) {
     if (Cache::Handle* h =
