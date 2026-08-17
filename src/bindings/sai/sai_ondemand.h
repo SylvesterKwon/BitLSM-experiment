@@ -42,15 +42,33 @@ inline void FailIfError(const BlobSource& src) {
   }
 }
 
+// Cursor-local extent cap. Cursors fetch their whole extent (a posting list,
+// a leaf span, the summary array) through the source in one bulk read and
+// decode from the local copy -- zero cache round trips per block -- unless the
+// extent exceeds this cap, in which case they degrade to the original
+// per-block reads. Defaults to kMaxLocalExtentBytes (unreachable at this
+// workload's extent sizes); the setter exists so sai_test_ondemand can pin
+// the fallback paths against the same oracle.
+uint64_t LocalExtentCap();
+void SetLocalExtentCapForTest(uint64_t cap);
+
 // Term lookup over the serialized trie. `trie_off` is the trie area's offset
 // within the blob (the attribute region's first u32 plus the region offset).
 // Returns false when the term is absent OR a read failed; callers distinguish
-// via src.ok().
+// via src.ok(). Stays a read per node: the walk is pointer-chasing, so there
+// is no extent to coalesce.
 bool TrieLookupOnDemand(BlobSource& src, uint32_t trie_off,
                         std::string_view term, TrieEntry& e);
 
-// Posting list cursor that holds one block at a time, like Cassandra's
-// PostingsReader; `list_off` is the list's offset within the blob.
+// Posting list cursor. At open it fetches the WHOLE list extent (header,
+// skip table, every block) through the source in one bulk read and decodes
+// 128-posting blocks and skip probes from that local buffer -- the source's
+// span path turns the fetch into grouped preads and still populates the
+// per-page cache, so reuse is unchanged but the per-block cache
+// lookup+memcpy round trips are gone. Lists over LocalExtentCap() (or a
+// source that cannot serve the bulk read) fall back to one block at a time,
+// like Cassandra's PostingsReader. `list_off` is the list's offset within
+// the blob.
 class PostingsCursorOnDemand : public RowCursor {
  public:
   PostingsCursorOnDemand(BlobSource* src, uint32_t list_off);
@@ -61,6 +79,7 @@ class PostingsCursorOnDemand : public RowCursor {
 
  private:
   void LoadBlock(uint32_t block_idx);
+  uint32_t SkipU32(uint32_t rel_to_list);  // read within the skip table
 
   BlobSource* src_;
   uint32_t list_off_;
@@ -69,12 +88,18 @@ class PostingsCursorOnDemand : public RowCursor {
   uint32_t cur_block_ = 0;
   std::vector<uint32_t> decoded_;
   std::string scratch_;
+  std::string local_;       // the whole list extent, fetched once at open
+  bool local_ok_ = false;   // false -> per-block fallback through src_
   uint32_t pos_ = 0;
   bool valid_ = false;
 };
 
-// Numeric attribute reader: summaries are probed through the source, and only
-// the overlapping leaves are decoded.
+// Numeric attribute reader. The summary array is fetched once at
+// construction (Overlap()'s scans and Estimate()'s per-block counts would
+// otherwise pay a cache round trip per 8-byte probe), and OpenCursor fetches
+// the overlapping leaves' contiguous data span once and decodes every leaf
+// from that local window. Both degrade to per-probe/per-block reads above
+// LocalExtentCap().
 class ContReaderOnDemand {
  public:
   ContReaderOnDemand(BlobSource* src, uint32_t region_off);
@@ -88,14 +113,21 @@ class ContReaderOnDemand {
     bool any;
   };
   BlockRange Overlap(double lo, bool lo_inc, double hi, bool hi_inc);
-  double BlockMin(uint32_t b) { return src_->F64(summaries_off_ + b * 32); }
-  double BlockMax(uint32_t b) { return src_->F64(summaries_off_ + b * 32 + 8); }
-  uint32_t BlockCount(uint32_t b) { return src_->U32(summaries_off_ + b * 32 + 16); }
+  double BlockMin(uint32_t b);
+  double BlockMax(uint32_t b);
+  uint32_t BlockCount(uint32_t b);
+  uint32_t ValuesOff(uint32_t b);
+  uint32_t PostingsOff(uint32_t b);
+  // Pointer to block b's 32-byte summary record: into the local array when
+  // fetched, else read through the source into `buf`.
+  const char* SummaryRec(uint32_t b, std::string& buf);
 
   BlobSource* src_;
   uint32_t region_off_;
   uint32_t n_blocks_ = 0;
   uint32_t summaries_off_ = 0;
+  std::string summaries_local_;  // whole summary array, fetched once
+  bool summaries_ok_ = false;    // false -> per-probe fallback through src_
 };
 
 // Fact-level entry points, the same surface as SAIIndexReader's query methods

@@ -1,6 +1,7 @@
 #include "sai_ondemand.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cassert>
 #include <queue>
 
@@ -15,7 +16,16 @@ constexpr uint32_t kMaxPostingBlockBytes = 4 + 1 + (127 * 32 + 7) / 8;
 // Summary record: [f64 min][f64 max][u32 count][u32 values_off][u32 perm_off]
 // [u32 postings_off].
 constexpr uint32_t kSummaryBytes = 32;
+
+std::atomic<uint64_t> g_local_extent_cap{kMaxLocalExtentBytes};
 }  // namespace
+
+uint64_t LocalExtentCap() {
+  return g_local_extent_cap.load(std::memory_order_relaxed);
+}
+void SetLocalExtentCapForTest(uint64_t cap) {
+  g_local_extent_cap.store(cap, std::memory_order_relaxed);
+}
 
 bool TrieLookupOnDemand(BlobSource& src, uint32_t trie_off,
                         std::string_view term, TrieEntry& e) {
@@ -59,24 +69,49 @@ PostingsCursorOnDemand::PostingsCursorOnDemand(BlobSource* src,
   n_ = GetU32(head);
   nblocks_ = GetU32(head + 4);
   skip_off_ = list_off_ + 8;
-  if (n_ > 0) {
-    LoadBlock(0);
-    valid_ = src_->ok();
+  if (n_ == 0) return;
+  // Fetch the whole list extent once. Its end is bounded by the last block's
+  // offset plus the worst-case encoded block size (the exact size depends on
+  // that block's bits-per-value, unknown until decoded); the clamp caps the
+  // over-read at the end of the blob, whose trailing bytes are simply never
+  // decoded.
+  const uint32_t last_rel = src_->U32(skip_off_ + (nblocks_ - 1) * 8);
+  if (!src_->ok()) return;
+  const uint64_t extent =
+      static_cast<uint64_t>(last_rel) + kMaxPostingBlockBytes;
+  if (extent <= LocalExtentCap()) {
+    src_->Read(list_off_, src_->Clamp(list_off_, static_cast<uint32_t>(extent)),
+               local_);
+    if (!src_->ok()) return;
+    local_ok_ = true;
   }
+  LoadBlock(0);
+  valid_ = src_->ok();
+}
+
+uint32_t PostingsCursorOnDemand::SkipU32(uint32_t rel_to_list) {
+  return local_ok_ ? GetU32(local_.data() + rel_to_list)
+                   : src_->U32(list_off_ + rel_to_list);
 }
 
 void PostingsCursorOnDemand::LoadBlock(uint32_t block_idx) {
   cur_block_ = block_idx;
-  const uint32_t rel_off = src_->U32(skip_off_ + block_idx * 8);
-  const uint32_t block_off = list_off_ + rel_off;
+  const uint32_t rel_off = SkipU32(8 + block_idx * 8);
   const uint32_t lo = block_idx * kPostingsBlockSize;
   const uint32_t cnt = std::min(n_, lo + kPostingsBlockSize) - lo;
-  // The encoded length depends on the block's bits-per-value, which is only
-  // known once the block is read, so take the worst case and let the source
-  // clamp it against the end of the blob.
-  const char* p =
-      src_->Read(block_off, src_->Clamp(block_off, kMaxPostingBlockBytes),
-                 scratch_);
+  const char* p;
+  if (local_ok_) {
+    // The local buffer holds the whole list; the decode below walks exactly
+    // the block's encoded bytes, all inside it.
+    p = local_.data() + rel_off;
+  } else {
+    // Per-block fallback: the encoded length depends on the block's
+    // bits-per-value, which is only known once the block is read, so take the
+    // worst case and let the source clamp it against the end of the blob.
+    const uint32_t block_off = list_off_ + rel_off;
+    p = src_->Read(block_off, src_->Clamp(block_off, kMaxPostingBlockBytes),
+                   scratch_);
+  }
   if (!src_->ok()) {
     valid_ = false;
     return;
@@ -116,10 +151,11 @@ void PostingsCursorOnDemand::Next() {
 
 void PostingsCursorOnDemand::AdvanceTo(uint32_t t) {
   if (!valid_ || Row() >= t) return;
-  // Walk the skip table for the first block whose max reaches t. Each probe is
-  // a 4-byte read; a page holds 512 of them.
+  // Walk the skip table for the first block whose max reaches t. The probes
+  // hit the local list buffer; only the per-block fallback reads through the
+  // source (a 4-byte read each; a page holds 512 of them).
   uint32_t b = cur_block_;
-  while (b < nblocks_ && src_->U32(skip_off_ + b * 8 + 4) < t) ++b;
+  while (b < nblocks_ && SkipU32(8 + b * 8 + 4) < t) ++b;
   if (b >= nblocks_ || !src_->ok()) {
     valid_ = false;
     return;
@@ -140,6 +176,44 @@ ContReaderOnDemand::ContReaderOnDemand(BlobSource* src, uint32_t region_off)
     : src_(src), region_off_(region_off) {
   n_blocks_ = src_->U32(region_off_);
   summaries_off_ = region_off_ + 4;
+  // Fetch the whole summary array in one bulk read: Overlap()'s scans and
+  // Estimate()'s per-block counts otherwise pay one cache round trip per
+  // 8-byte probe.
+  const uint64_t want = static_cast<uint64_t>(n_blocks_) * kSummaryBytes;
+  if (src_->ok() && n_blocks_ > 0 && want <= LocalExtentCap() &&
+      src_->Clamp(summaries_off_, static_cast<uint32_t>(want)) == want) {
+    src_->Read(summaries_off_, static_cast<uint32_t>(want), summaries_local_);
+    summaries_ok_ = src_->ok();
+  }
+}
+
+double ContReaderOnDemand::BlockMin(uint32_t b) {
+  return summaries_ok_ ? GetF64(summaries_local_.data() + b * kSummaryBytes)
+                       : src_->F64(summaries_off_ + b * kSummaryBytes);
+}
+double ContReaderOnDemand::BlockMax(uint32_t b) {
+  return summaries_ok_
+             ? GetF64(summaries_local_.data() + b * kSummaryBytes + 8)
+             : src_->F64(summaries_off_ + b * kSummaryBytes + 8);
+}
+uint32_t ContReaderOnDemand::BlockCount(uint32_t b) {
+  return summaries_ok_
+             ? GetU32(summaries_local_.data() + b * kSummaryBytes + 16)
+             : src_->U32(summaries_off_ + b * kSummaryBytes + 16);
+}
+uint32_t ContReaderOnDemand::ValuesOff(uint32_t b) {
+  return summaries_ok_
+             ? GetU32(summaries_local_.data() + b * kSummaryBytes + 20)
+             : src_->U32(summaries_off_ + b * kSummaryBytes + 20);
+}
+uint32_t ContReaderOnDemand::PostingsOff(uint32_t b) {
+  return summaries_ok_
+             ? GetU32(summaries_local_.data() + b * kSummaryBytes + 28)
+             : src_->U32(summaries_off_ + b * kSummaryBytes + 28);
+}
+const char* ContReaderOnDemand::SummaryRec(uint32_t b, std::string& buf) {
+  if (summaries_ok_) return summaries_local_.data() + b * kSummaryBytes;
+  return src_->Read(summaries_off_ + b * kSummaryBytes, kSummaryBytes, buf);
 }
 
 ContReaderOnDemand::BlockRange ContReaderOnDemand::Overlap(double lo,
@@ -182,15 +256,15 @@ uint64_t ContReaderOnDemand::Estimate(double lo, bool lo_inc, double hi,
 namespace {
 // One leaf's contribution, materialised the same way ContReader's BlockCursor
 // does it: whole postings for an interior leaf, or the postings whose values
-// fall in range for a boundary leaf.
+// fall in range for a boundary leaf. `srec` is the leaf's 32-byte summary
+// record (the caller already holds the summary array); `src` is normally a
+// WindowBlobSource over the query's contiguous leaf span, so every read
+// below lands in a local buffer.
 class BlockCursorOnDemand : public RowCursor {
  public:
-  BlockCursorOnDemand(BlobSource* src, uint32_t region_off,
-                      uint32_t summary_off, double lo, bool lo_inc, double hi,
-                      bool hi_inc, bool boundary) {
-    std::string buf;
-    const char* srec = src->Read(summary_off, kSummaryBytes, buf);
-    if (!src->ok()) return;
+  BlockCursorOnDemand(BlobSource* src, uint32_t region_off, const char* srec,
+                      double lo, bool lo_inc, double hi, bool hi_inc,
+                      bool boundary) {
     const uint32_t cnt = GetU32(srec + 16);
     const uint32_t values_off = region_off + GetU32(srec + 20);
     const uint32_t perm_off = region_off + GetU32(srec + 24);
@@ -302,16 +376,49 @@ std::unique_ptr<RowCursor> ContReaderOnDemand::OpenCursor(double lo, bool lo_inc
                                                           bool hi_inc) {
   const BlockRange br = Overlap(lo, lo_inc, hi, hi_inc);
   if (!br.any) return nullptr;
+  // The overlapping leaves' data is one contiguous blob range (the builder
+  // lays out values|perm|postings leaf by leaf in block order), so fetch it
+  // once and decode every leaf from the local window instead of paying a
+  // cache round trip per posting block / values probe. The window ends at the
+  // NEXT leaf's values offset plus posting-block slack (a leaf's postings
+  // cursor over-reads its list by at most one worst-case block, see
+  // PostingsCursorOnDemand), or, for the region's last leaf, at a worst-case
+  // bound on its postings size (cnt <= 1024 entries -> at most 8 blocks);
+  // both are clamped to the blob.
+  const uint32_t span_begin = region_off_ + ValuesOff(br.first_block);
+  uint64_t span_end;
+  if (br.last_block + 1 < n_blocks_) {
+    span_end = static_cast<uint64_t>(region_off_) +
+               ValuesOff(br.last_block + 1) + kMaxPostingBlockBytes;
+  } else {
+    const uint32_t cnt = BlockCount(br.last_block);
+    const uint32_t nb = (cnt + kPostingsBlockSize - 1) / kPostingsBlockSize;
+    span_end = static_cast<uint64_t>(region_off_) + PostingsOff(br.last_block) +
+               8 + static_cast<uint64_t>(nb) * (8 + kMaxPostingBlockBytes);
+  }
+  if (!src_->ok()) return nullptr;
+  std::unique_ptr<WindowBlobSource> win;
+  BlobSource* rd = src_;
+  if (span_end > span_begin && span_end - span_begin <= LocalExtentCap()) {
+    const uint32_t span_len =
+        src_->Clamp(span_begin, static_cast<uint32_t>(span_end - span_begin));
+    win = std::make_unique<WindowBlobSource>(src_, span_begin, span_len);
+    if (!win->ok()) return nullptr;  // read failed; the caller's FailIfError
+                                     // sees it on src_ and aborts
+    rd = win.get();
+  }
   std::vector<std::unique_ptr<BlockCursorOnDemand>> blocks;
+  std::string sbuf;
   for (uint32_t b = br.first_block; b <= br.last_block; ++b) {
-    const uint32_t summary_off = summaries_off_ + b * kSummaryBytes;
+    const char* srec = SummaryRec(b, sbuf);
+    if (!src_->ok()) return nullptr;
     // A leaf is interior when its whole [min, max] fits the query range.
-    const double mn = BlockMin(b), mx = BlockMax(b);
+    const double mn = GetF64(srec), mx = GetF64(srec + 8);
     const bool lo_ok = lo_inc ? (mn >= lo) : (mn > lo);
     const bool hi_ok = hi_inc ? (mx <= hi) : (mx < hi);
     const bool interior = lo_ok && hi_ok;
     blocks.push_back(std::make_unique<BlockCursorOnDemand>(
-        src_, region_off_, summary_off, lo, lo_inc, hi, hi_inc, !interior));
+        rd, region_off_, srec, lo, lo_inc, hi, hi_inc, !interior));
   }
   return std::make_unique<MergedCursorOnDemand>(std::move(blocks));
 }

@@ -119,6 +119,12 @@ int main() {
     return OnDemandOpenCursor(&src, region_off, f);
   };
 
+  // Sections 2-4 run twice: once with the default cursor-local extent cap
+  // (bulk-fetched posting lists / summary arrays / leaf-span windows) and
+  // once with the cap forced to 0, which drives every cursor down the
+  // per-block fallback paths. Both must agree with the oracle and the
+  // resident reader.
+  auto run_suite = [&]() {
   // 2. Categorical: same counts and same posting sets, present or absent.
   for (const std::string& t : vocab) {
     SAIFact f;
@@ -190,6 +196,12 @@ int main() {
     assert(!tail->Valid());
     assert(src.ok());
   }
+  };  // run_suite
+
+  run_suite();  // cursor-local buffers (default cap)
+  SetLocalExtentCapForTest(0);
+  run_suite();  // per-block fallback everywhere
+  SetLocalExtentCapForTest(experiment::kMaxLocalExtentBytes);
 
   std::printf("sai_test_ondemand OK\n");
   return 0;
