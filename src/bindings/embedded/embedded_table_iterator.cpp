@@ -171,14 +171,15 @@ void EmbeddedTableIterator::SelectCandidateBlocks() {
 
   // --- Per-block: decode Section C in index order, test each fact. ---
   // Ondemand mode reads Section C through one FileBlobSource shared across
-  // the whole loop, with the entire Section C span prefetched up front by a
+  // the whole loop, with the entire Section C span pinned up front by a
   // WindowBlobSource: the sweep below touches every block's payload and the
-  // section is one contiguous blob range, so the bulk read replaces a cache
-  // lookup+memcpy per block (and one pread per missing page) with grouped
-  // preads and local copies; the span read still populates the per-page
-  // cache, so cross-query reuse is unchanged. Sections over the sanity cap
-  // (unreachable at this workload's ~MB sections) degrade to the original
-  // per-page reads. Resident mode dereferences the owned blob copy directly.
+  // section is one contiguous blob range, so the span is fetched as ONE
+  // cache extent (FetchExtent) -- the first query per SST reads it with one
+  // pread, every later query pins the cached bytes with zero I/O -- and each
+  // per-block read is a local copy out of the pinned window. Cap 0
+  // (EXP_SAI_LOCAL_EXTENT_MB=0) disables extent fetching and keeps the
+  // original per-page reads. Resident mode dereferences the owned blob copy
+  // directly.
   // A read failure has no status channel through BlockFilterRegion's return
   // value, so it is recorded on the source and checked right after each read,
   // before any byte of that block's region is interpreted (same stance as the
@@ -195,7 +196,7 @@ void EmbeddedTableIterator::SelectCandidateBlocks() {
     if (B > 0) {
       const uint32_t c_begin = idx_->SectionCBegin();
       const uint32_t c_len = idx_->SectionCEnd() - c_begin;
-      if (c_len <= LocalExtentCap()) {
+      if (LocalExtentCap() != 0) {
         win = std::make_unique<WindowBlobSource>(src.get(), c_begin, c_len);
         if (!win->ok()) {
           status_ = Status::IOError(
