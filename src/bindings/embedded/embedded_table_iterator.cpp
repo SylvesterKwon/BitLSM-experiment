@@ -170,26 +170,50 @@ void EmbeddedTableIterator::SelectCandidateBlocks() {
   }
 
   // --- Per-block: decode Section C in index order, test each fact. ---
-  // Ondemand mode reads Section C for each block through one FileBlobSource
-  // shared across the whole loop (constructed once, kept alive so its
-  // block-cache lookups build up across the sequential block walk); resident
-  // mode dereferences the owned blob copy directly. A read failure has no
-  // status channel through BlockFilterRegion's return value, so it is
-  // recorded on `src` and checked right after each read, before any byte of
-  // that block's region is interpreted (same stance as the SAI baseline's
-  // FailIfError: a silently-pruned block would under-return rows, not just
-  // mis-time them).
-  std::unique_ptr<BlobSource> src;
-  std::string region_scratch;
-  if (idx_->MetadataOnly()) src = idx_->MakeBlobSource();
-
+  // Ondemand mode reads Section C through one FileBlobSource shared across
+  // the whole loop, with the entire Section C span prefetched up front by a
+  // WindowBlobSource: the sweep below touches every block's payload and the
+  // section is one contiguous blob range, so the bulk read replaces a cache
+  // lookup+memcpy per block (and one pread per missing page) with grouped
+  // preads and local copies; the span read still populates the per-page
+  // cache, so cross-query reuse is unchanged. Sections over the sanity cap
+  // (unreachable at this workload's ~MB sections) degrade to the original
+  // per-page reads. Resident mode dereferences the owned blob copy directly.
+  // A read failure has no status channel through BlockFilterRegion's return
+  // value, so it is recorded on the source and checked right after each read,
+  // before any byte of that block's region is interpreted (same stance as the
+  // SAI baseline's FailIfError: a silently-pruned block would under-return
+  // rows, not just mis-time them).
   const uint32_t B = static_cast<uint32_t>(idx_->block_handles.size());
+  std::unique_ptr<BlobSource> src;
+  std::unique_ptr<WindowBlobSource> win;
+  BlobSource* rd = nullptr;
+  std::string region_scratch;
+  if (idx_->MetadataOnly()) {
+    src = idx_->MakeBlobSource();
+    rd = src.get();
+    if (B > 0) {
+      const uint32_t c_begin = idx_->SectionCBegin();
+      const uint32_t c_len = idx_->SectionCEnd() - c_begin;
+      if (c_len <= kMaxLocalExtentBytes) {
+        win = std::make_unique<WindowBlobSource>(src.get(), c_begin, c_len);
+        if (!win->ok()) {
+          status_ = Status::IOError(
+              "EmbeddedTableIterator: ondemand Section C span read failed");
+          candidate_blocks_.clear();
+          return;
+        }
+        rd = win.get();
+      }
+    }
+  }
+
   for (uint32_t bi = 0; bi < B; ++bi) {
     size_t region_len = 0;
     const char* region =
-        src ? idx_->ReadBlockFilterRegion(bi, *src, region_scratch, region_len)
-            : idx_->BlockFilterRegion(bi, region_len);
-    if (src && !src->ok()) {
+        rd ? idx_->ReadBlockFilterRegion(bi, *rd, region_scratch, region_len)
+           : idx_->BlockFilterRegion(bi, region_len);
+    if (rd && !rd->ok()) {
       // A failed read can leave `region_scratch` holding stale bytes from an
       // earlier iteration (std::string::resize keeps existing bytes when the
       // new size does not grow it); parsing that as nbits/zonemap fields

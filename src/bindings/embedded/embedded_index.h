@@ -95,13 +95,21 @@ class EmbeddedIndexReader : public rocksdb::UserDefinedIndexReader {
   }
   // On-demand equivalent: reads Section C for block_idx through `src` into
   // `scratch`, returning a pointer to it and setting `len`. `src` is
-  // typically the one MakeBlobSource() returned for this query.
+  // typically a WindowBlobSource over the whole Section C span (see
+  // SelectCandidateBlocks), so the per-block read is a local copy, not a
+  // cache round trip.
   const char* ReadBlockFilterRegion(uint32_t block_idx, BlobSource& src,
                                     std::string& scratch, size_t& len) const {
     len = section_c_off_[block_idx + 1] - section_c_off_[block_idx];
     return src.Read(section_c_off_[block_idx], static_cast<uint32_t>(len),
                     scratch);
   }
+  // Section C's contiguous extent within the blob, [SectionCBegin,
+  // SectionCEnd): the per-block sweep touches every block's payload, so the
+  // ondemand path fetches this whole span with one bulk read. Only valid when
+  // the file has at least one block.
+  uint32_t SectionCBegin() const { return section_c_off_.front(); }
+  uint32_t SectionCEnd() const { return section_c_off_.back(); }
   bool FileZoneOverlaps(uint32_t cont_ordinal, double lo, bool lo_inc,
                         double hi, bool hi_inc) const {
     return file_zone_[cont_ordinal].overlaps(lo, lo_inc, hi, hi_inc);
