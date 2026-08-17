@@ -375,10 +375,13 @@ PinnedExtent FileBlobSource::FetchExtent(uint32_t rel_off, uint32_t len) {
     if (Cache::Handle* h =
             cache->BasicLookup(key.AsSlice(), /*stats=*/nullptr)) {
       auto* extent = static_cast<CachedExtent*>(cache->Value(h));
-      // Extent lengths are deterministic per start offset (each start is one
-      // specific index structure), so a hit always satisfies the request;
-      // the guard keeps a hypothetical shorter entry from serving a longer
-      // read -- release it and reload below (the insert replaces it).
+      // Extents sharing a start can differ in length: a per-range extent
+      // starts at its first interior leaf's postings, so two query ranges
+      // sharing that leaf but ending differently mint the same key with
+      // different lengths. A longer cached extent serves any shorter
+      // request (same file bytes); a shorter one cannot -- release it and
+      // reload below (the insert replaces the entry; pins on the old one
+      // keep it alive until they release).
       if (extent->len >= len) {
         g_extent_hits.fetch_add(1, std::memory_order_relaxed);
         return PinnedExtent(cache, h, extent->bytes.get(), extent->len);

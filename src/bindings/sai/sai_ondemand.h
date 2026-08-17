@@ -108,11 +108,13 @@ class PostingsCursorOnDemand : public RowCursor {
 // construction (Overlap()'s scans and Estimate()'s per-block counts would
 // otherwise pay a cache round trip per 8-byte probe); on a FileBlobSource it
 // is a shared cache extent, so only the first query per SST reads it.
-// OpenCursor gives each BOUNDARY leaf (at most the range's two ends) a
-// pinned window over its whole values|perm|postings record; interior leaves
-// only ever decode postings, so they skip the window and let their postings
-// cursor fetch exactly the list extent. Everything degrades to
-// per-probe/per-block reads when extent fetching is off (cap 0).
+// OpenCursor pins the INTERIOR leaves' postings as ONE per-range extent --
+// they form a contiguous run, so the cold path costs one contiguous read
+// per (attr, SST, query range), the fair mirror of BitLSM's
+// BinRange/LoadRun -- and gives each BOUNDARY leaf (at most the range's two
+// ends) its own pinned window over its whole values|perm|postings record.
+// Everything degrades to per-probe/per-block reads when extent fetching is
+// off (cap 0).
 class ContReaderOnDemand {
  public:
   ContReaderOnDemand(BlobSource* src, uint32_t region_off);

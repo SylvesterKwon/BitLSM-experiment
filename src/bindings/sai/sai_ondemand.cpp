@@ -393,16 +393,82 @@ std::unique_ptr<RowCursor> ContReaderOnDemand::OpenCursor(double lo, bool lo_inc
   if (!br.any) return nullptr;
   std::vector<std::unique_ptr<BlockCursorOnDemand>> blocks;
   std::string sbuf;
-  for (uint32_t b = br.first_block; b <= br.last_block; ++b) {
-    const char* srec = SummaryRec(b, sbuf);
-    if (!src_->ok()) return nullptr;
-    // A leaf is interior when its whole [min, max] fits the query range.
-    // Leaves are value-sorted and non-overlapping, so only the range's two
-    // END leaves can be boundary; everything strictly between is interior.
+  // A leaf is interior when its whole [min, max] fits the query range.
+  // Leaves are value-sorted and non-overlapping, so only the range's two
+  // END leaves can be boundary; everything strictly between is interior.
+  auto leaf_interior = [&](const char* srec) {
     const double mn = GetF64(srec), mx = GetF64(srec + 8);
     const bool lo_ok = lo_inc ? (mn >= lo) : (mn > lo);
     const bool hi_ok = hi_inc ? (mx <= hi) : (mx < hi);
-    const bool interior = lo_ok && hi_ok;
+    return lo_ok && hi_ok;
+  };
+  // The interior leaves therefore form one contiguous run [fi, li_end):
+  // trimming a boundary end off each side of [first_block, last_block]
+  // leaves exactly the interior set. Their postings are fetched as ONE
+  // per-range extent -- the byte span from the first interior leaf's
+  // postings to the last one's end (kMax slack for the bounded over-read,
+  // same rationale as the boundary window) -- pinned once and shared by
+  // every interior cursor, which decodes its own list out of the pinned
+  // bytes. This is the fair mirror of BitLSM's BinRange/LoadRun: one
+  // contiguous read per (attr, SST, query range) on the cold path instead
+  // of one tiny read per leaf. The span interleaves the interior leaves'
+  // values|perm between their postings (records are values|perm|postings
+  // back to back), so the coarse read carries dead bytes -- the accepted
+  // price of coarsening. The CACHE holds one entry per span, keyed at the
+  // span's start offset: two queries reuse it only when their ranges share
+  // a first interior leaf; a longer cached span serves a shorter request,
+  // a shorter one is reloaded and replaced (FetchExtent's length guard).
+  std::unique_ptr<WindowBlobSource> range_win;
+  if (LocalExtentCap() != 0) {
+    uint32_t fi = br.first_block;
+    uint32_t li_end = br.last_block + 1;  // exclusive
+    {
+      const char* fs = SummaryRec(fi, sbuf);
+      if (!src_->ok()) return nullptr;
+      if (!leaf_interior(fs)) ++fi;
+    }
+    if (fi < li_end) {
+      const char* ls = SummaryRec(li_end - 1, sbuf);
+      if (!src_->ok()) return nullptr;
+      if (!leaf_interior(ls)) --li_end;
+    }
+    if (fi < li_end) {
+      const char* fs = SummaryRec(fi, sbuf);
+      if (!src_->ok()) return nullptr;
+      const uint32_t span_begin_rel = GetU32(fs + 28);
+      const uint32_t last = li_end - 1;
+      uint64_t span_end_rel;
+      if (last + 1 < n_blocks_) {
+        span_end_rel = static_cast<uint64_t>(ValuesOff(last + 1)) +
+                       kMaxPostingBlockBytes;
+      } else {
+        const char* ls = SummaryRec(last, sbuf);
+        if (!src_->ok()) return nullptr;
+        const uint32_t cnt = GetU32(ls + 16);
+        const uint32_t nbk =
+            (cnt + kPostingsBlockSize - 1) / kPostingsBlockSize;
+        span_end_rel = static_cast<uint64_t>(GetU32(ls + 28)) + 8 +
+                       static_cast<uint64_t>(nbk) *
+                           (8 + kMaxPostingBlockBytes);
+      }
+      if (!src_->ok()) return nullptr;
+      if (span_end_rel > span_begin_rel &&
+          span_end_rel - span_begin_rel <=
+              std::numeric_limits<uint32_t>::max()) {
+        const uint32_t span_len = src_->Clamp(
+            region_off_ + span_begin_rel,
+            static_cast<uint32_t>(span_end_rel - span_begin_rel));
+        range_win = std::make_unique<WindowBlobSource>(
+            src_, region_off_ + span_begin_rel, span_len);
+        if (!range_win->ok()) return nullptr;  // read failed; the caller's
+                                               // FailIfError sees it on src_
+      }
+    }
+  }
+  for (uint32_t b = br.first_block; b <= br.last_block; ++b) {
+    const char* srec = SummaryRec(b, sbuf);
+    if (!src_->ok()) return nullptr;
+    const bool interior = leaf_interior(srec);
     // The leaf's postings extent is known from the summary array alone:
     // records are contiguous, so leaf b's postings end exactly where leaf
     // b+1's values begin (worst-case-bounded for the region's last leaf,
@@ -431,23 +497,25 @@ std::unique_ptr<RowCursor> ContReaderOnDemand::OpenCursor(double lo, bool lo_inc
         plen = static_cast<uint32_t>(pend - postings_rel);
       }
     }
-    // An interior leaf reads ONLY its postings, and PostingsCursorOnDemand
-    // fetches exactly the list extent by itself, so it goes straight to
-    // the source -- fetching the leaf's values+perm would be pure waste
-    // (~10 KB dead weight against ~4 KB of postings per 1024-entry leaf). A
+    // An interior leaf reads ONLY its postings, out of the shared per-range
+    // extent pinned above (its postings cursor's FetchExtent resolves to a
+    // local copy from the range window, never a second cache entry). A
     // boundary leaf also binary-searches the values array and reads a perm
-    // slice, so it gets a pinned window over its whole values|perm|postings
-    // record: from its values offset to the next leaf's values offset plus
-    // one worst-case posting block of slack (the postings cursor's bounded
-    // over-read), or for the region's last leaf to a worst-case bound on its
-    // postings size (cnt <= 1024 entries -> at most 8 blocks); both clamped
-    // to the blob. The bounds are fully determined by the leaf, so every
-    // query pins the identical extent -- cross-query reuse via the cache.
-    // Cap 0 skips the window (FetchExtent would decline anyway): per-block
-    // reads throughout, byte-identical to the pre-extent path.
+    // slice, so it gets its own pinned window over its whole
+    // values|perm|postings record: from its values offset to the next
+    // leaf's values offset plus one worst-case posting block of slack (the
+    // postings cursor's bounded over-read), or for the region's last leaf
+    // to a worst-case bound on its postings size (cnt <= 1024 entries ->
+    // at most 8 blocks); both clamped to the blob. The bounds are fully
+    // determined by the leaf, so every query pins the identical extent --
+    // cross-query reuse via the cache. Cap 0 skips both windows
+    // (FetchExtent would decline anyway): per-block reads throughout,
+    // byte-identical to the pre-extent path.
     std::unique_ptr<WindowBlobSource> win;
     BlobSource* rd = src_;
-    if (!interior && LocalExtentCap() != 0) {
+    if (interior && range_win != nullptr) {
+      rd = range_win.get();
+    } else if (!interior && LocalExtentCap() != 0) {
       const uint32_t span_begin = region_off_ + GetU32(srec + 20);
       uint64_t span_end;
       if (b + 1 < n_blocks_) {
