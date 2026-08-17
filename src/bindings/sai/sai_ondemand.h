@@ -42,15 +42,12 @@ inline void FailIfError(const BlobSource& src) {
   }
 }
 
-// Cursor-local extent cap. Cursors fetch their whole extent (a posting list,
-// a leaf span, the summary array) through the source in one bulk read and
-// decode from the local copy -- zero cache round trips per block -- unless the
-// extent exceeds this cap, in which case they degrade to the original
-// per-block reads. Defaults to kMaxLocalExtentBytes (unreachable at this
-// workload's extent sizes); the setter exists so sai_test_ondemand can pin
-// the fallback paths against the same oracle.
-uint64_t LocalExtentCap();
-void SetLocalExtentCapForTest(uint64_t cap);
+// Cursors fetch their whole extent (a posting list, a boundary leaf's
+// record, the summary array) through the source in one bulk read and decode
+// from the local copy -- zero cache round trips per block -- unless the extent
+// exceeds LocalExtentCap() (blob_source.h: EXP_SAI_LOCAL_EXTENT_MB, 0 =
+// per-block reads throughout), in which case they degrade to the original
+// per-block reads.
 
 // Term lookup over the serialized trie. `trie_off` is the trie area's offset
 // within the blob (the attribute region's first u32 plus the region offset).
@@ -96,9 +93,11 @@ class PostingsCursorOnDemand : public RowCursor {
 
 // Numeric attribute reader. The summary array is fetched once at
 // construction (Overlap()'s scans and Estimate()'s per-block counts would
-// otherwise pay a cache round trip per 8-byte probe), and OpenCursor fetches
-// the overlapping leaves' contiguous data span once and decodes every leaf
-// from that local window. Both degrade to per-probe/per-block reads above
+// otherwise pay a cache round trip per 8-byte probe). OpenCursor gives each
+// BOUNDARY leaf (at most the range's two ends) a local window over its whole
+// values|perm|postings record; interior leaves only ever decode postings, so
+// they skip the window and let their postings cursor bulk-fetch exactly the
+// list extent. Everything degrades to per-probe/per-block reads above
 // LocalExtentCap().
 class ContReaderOnDemand {
  public:
@@ -117,7 +116,6 @@ class ContReaderOnDemand {
   double BlockMax(uint32_t b);
   uint32_t BlockCount(uint32_t b);
   uint32_t ValuesOff(uint32_t b);
-  uint32_t PostingsOff(uint32_t b);
   // Pointer to block b's 32-byte summary record: into the local array when
   // fetched, else read through the source into `buf`.
   const char* SummaryRec(uint32_t b, std::string& buf);

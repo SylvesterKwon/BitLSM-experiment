@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cassert>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 
@@ -44,7 +45,26 @@ const Cache::CacheItemHelper* BlobPageHelper() {
   return &helper;
 }
 
+// EXP_SAI_LOCAL_EXTENT_MB, else the compile-time default. Function-local
+// static so the env var is read once, before any cursor consults the cap.
+std::atomic<uint64_t>& LocalExtentCapVar() {
+  static std::atomic<uint64_t> cap{[] {
+    if (const char* mb = std::getenv("EXP_SAI_LOCAL_EXTENT_MB")) {
+      return static_cast<uint64_t>(std::atoll(mb)) << 20;
+    }
+    return kMaxLocalExtentBytes;
+  }()};
+  return cap;
+}
+
 }  // namespace
+
+uint64_t LocalExtentCap() {
+  return LocalExtentCapVar().load(std::memory_order_relaxed);
+}
+void SetLocalExtentCapForTest(uint64_t cap) {
+  LocalExtentCapVar().store(cap, std::memory_order_relaxed);
+}
 
 BlobSourceStats GetBlobSourceStats() {
   return {g_page_hits.load(std::memory_order_relaxed),

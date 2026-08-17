@@ -199,9 +199,9 @@ int main() {
   };  // run_suite
 
   run_suite();  // cursor-local buffers (default cap)
-  SetLocalExtentCapForTest(0);
+  experiment::SetLocalExtentCapForTest(0);
   run_suite();  // per-block fallback everywhere
-  SetLocalExtentCapForTest(experiment::kMaxLocalExtentBytes);
+  experiment::SetLocalExtentCapForTest(experiment::kMaxLocalExtentBytes);
 
   std::printf("sai_test_ondemand OK\n");
   return 0;

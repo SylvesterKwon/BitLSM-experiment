@@ -171,10 +171,19 @@ class MemBlobSource : public BlobSource {
 };
 
 // Sanity cap for reader-local extent buffers (whole posting lists, leaf
-// spans, Section C): the extents this workload produces are at most a few
+// records, Section C): the extents this workload produces are at most a few
 // hundred KB to a few MB per SST, so the cap should be unreachable; anything
 // over it degrades to per-block reads instead of allocating without bound.
 inline constexpr uint64_t kMaxLocalExtentBytes = 64ull << 20;
+
+// The active cap. Defaults to kMaxLocalExtentBytes; EXP_SAI_LOCAL_EXTENT_MB
+// overrides it (in MB, read once at first use) for A/Bs, with 0 disabling
+// reader-local extents entirely -- the cursors then run their original
+// per-block reads on top of the still-active span coalescing in
+// FileBlobSource::Read. The setter exists so sai_test_ondemand can pin the
+// fallback paths against the same oracle.
+uint64_t LocalExtentCap();
+void SetLocalExtentCapForTest(uint64_t cap);
 
 // Prefetches one contiguous window of the blob through `under` -- a single
 // bulk span read -- and serves every read inside the window from the local

@@ -195,7 +195,7 @@ void EmbeddedTableIterator::SelectCandidateBlocks() {
     if (B > 0) {
       const uint32_t c_begin = idx_->SectionCBegin();
       const uint32_t c_len = idx_->SectionCEnd() - c_begin;
-      if (c_len <= kMaxLocalExtentBytes) {
+      if (c_len <= LocalExtentCap()) {
         win = std::make_unique<WindowBlobSource>(src.get(), c_begin, c_len);
         if (!win->ok()) {
           status_ = Status::IOError(
