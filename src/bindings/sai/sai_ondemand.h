@@ -43,11 +43,13 @@ inline void FailIfError(const BlobSource& src) {
 }
 
 // Cursors fetch their whole extent (a posting list, a boundary leaf's
-// record, the summary array) through the source in one bulk read and decode
-// from the local copy -- zero cache round trips per block -- unless the extent
-// exceeds LocalExtentCap() (blob_source.h: EXP_SAI_LOCAL_EXTENT_MB, 0 =
-// per-block reads throughout), in which case they degrade to the original
-// per-block reads.
+// record, the summary array) as ONE pinned cache extent
+// (BlobSource::FetchExtent) and decode from the pinned bytes -- zero cache
+// round trips per block, and over a FileBlobSource the extent is a shared
+// block-cache entry, so later queries touching the same structure reuse it
+// with zero I/O. LocalExtentCap() == 0 (blob_source.h:
+// EXP_SAI_LOCAL_EXTENT_MB) makes FetchExtent return empty pins and every
+// cursor degrade to its original per-block reads.
 
 // Term lookup over the serialized trie. `trie_off` is the trie area's offset
 // within the blob (the attribute region's first u32 plus the region offset).
@@ -58,17 +60,27 @@ bool TrieLookupOnDemand(BlobSource& src, uint32_t trie_off,
                         std::string_view term, TrieEntry& e);
 
 // Posting list cursor. At open it fetches the WHOLE list extent (header,
-// skip table, every block) through the source in one bulk read and decodes
-// 128-posting blocks and skip probes from that local buffer -- the source's
-// span path turns the fetch into grouped preads and still populates the
-// per-page cache, so reuse is unchanged but the per-block cache
-// lookup+memcpy round trips are gone. Lists over LocalExtentCap() (or a
-// source that cannot serve the bulk read) fall back to one block at a time,
-// like Cassandra's PostingsReader. `list_off` is the list's offset within
-// the blob.
+// skip table, every block) as one pinned extent and decodes 128-posting
+// blocks and skip probes from the pinned bytes -- on a FileBlobSource the
+// first open reads the list with one pread and caches it, every later open
+// of the same list pins the cached bytes with zero I/O. When FetchExtent
+// declines (cap 0, or a read failure) the cursor falls back to one block at
+// a time, like Cassandra's PostingsReader. `list_off` is the list's offset
+// within the blob.
+//
+// `known_extent_len`: callers that can bound the whole list extent from a
+// directory they already hold (ContReaderOnDemand: leaf records are
+// contiguous, so leaf b's postings end exactly where leaf b+1's values
+// begin) pass the bound so the cursor fetches its extent FIRST and decodes
+// the header out of the pinned bytes -- a cold open is then exactly one
+// extent read. With 0 (categorical lists: the trie leaf gives no length)
+// the header and last skip entry are read through the source first to size
+// the fetch, costing one page-granular read ahead of the extent on a cold
+// open.
 class PostingsCursorOnDemand : public RowCursor {
  public:
-  PostingsCursorOnDemand(BlobSource* src, uint32_t list_off);
+  PostingsCursorOnDemand(BlobSource* src, uint32_t list_off,
+                         uint32_t known_extent_len = 0);
   bool Valid() const override { return valid_; }
   uint32_t Row() const override { return decoded_[pos_]; }
   void Next() override;
@@ -85,20 +97,22 @@ class PostingsCursorOnDemand : public RowCursor {
   uint32_t cur_block_ = 0;
   std::vector<uint32_t> decoded_;
   std::string scratch_;
-  std::string local_;       // the whole list extent, fetched once at open
-  bool local_ok_ = false;   // false -> per-block fallback through src_
+  PinnedExtent local_;     // the whole list extent, pinned for the cursor's
+                           // lifetime (cache entry, or owned on fallback)
+  bool local_ok_ = false;  // false -> per-block fallback through src_
   uint32_t pos_ = 0;
   bool valid_ = false;
 };
 
-// Numeric attribute reader. The summary array is fetched once at
+// Numeric attribute reader. The summary array is pinned once at
 // construction (Overlap()'s scans and Estimate()'s per-block counts would
-// otherwise pay a cache round trip per 8-byte probe). OpenCursor gives each
-// BOUNDARY leaf (at most the range's two ends) a local window over its whole
-// values|perm|postings record; interior leaves only ever decode postings, so
-// they skip the window and let their postings cursor bulk-fetch exactly the
-// list extent. Everything degrades to per-probe/per-block reads above
-// LocalExtentCap().
+// otherwise pay a cache round trip per 8-byte probe); on a FileBlobSource it
+// is a shared cache extent, so only the first query per SST reads it.
+// OpenCursor gives each BOUNDARY leaf (at most the range's two ends) a
+// pinned window over its whole values|perm|postings record; interior leaves
+// only ever decode postings, so they skip the window and let their postings
+// cursor fetch exactly the list extent. Everything degrades to
+// per-probe/per-block reads when extent fetching is off (cap 0).
 class ContReaderOnDemand {
  public:
   ContReaderOnDemand(BlobSource* src, uint32_t region_off);
@@ -124,8 +138,8 @@ class ContReaderOnDemand {
   uint32_t region_off_;
   uint32_t n_blocks_ = 0;
   uint32_t summaries_off_ = 0;
-  std::string summaries_local_;  // whole summary array, fetched once
-  bool summaries_ok_ = false;    // false -> per-probe fallback through src_
+  PinnedExtent summaries_;     // whole summary array, pinned once
+  bool summaries_ok_ = false;  // false -> per-probe fallback through src_
 };
 
 // Fact-level entry points, the same surface as SAIIndexReader's query methods

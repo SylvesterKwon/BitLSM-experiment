@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <limits>
 #include <queue>
 
 #include "sai_coding.h"
@@ -51,35 +52,58 @@ bool TrieLookupOnDemand(BlobSource& src, uint32_t trie_off,
 }
 
 PostingsCursorOnDemand::PostingsCursorOnDemand(BlobSource* src,
-                                               uint32_t list_off)
+                                               uint32_t list_off,
+                                               uint32_t known_extent_len)
     : src_(src), list_off_(list_off) {
+  skip_off_ = list_off_ + 8;
+  if (known_extent_len != 0) {
+    // The caller bounded the whole list extent from a directory it already
+    // holds, so fetch FIRST and decode the header from the pinned bytes: a
+    // cold open costs exactly one extent read (no page-granular header read
+    // ahead of it), a cached one costs zero I/O.
+    local_ = src_->FetchExtent(list_off_,
+                               src_->Clamp(list_off_, known_extent_len));
+    if (!src_->ok()) return;
+    if (local_.size() >= 8) {
+      local_ok_ = true;
+      n_ = GetU32(local_.data());
+      nblocks_ = GetU32(local_.data() + 4);
+      if (n_ == 0) return;
+      LoadBlock(0);
+      valid_ = src_->ok();
+      return;
+    }
+    local_.Release();  // cap 0 (empty pin): per-block fallback below
+  }
   std::string buf;
   const char* head = src_->Read(list_off_, 8, buf);
   if (!src_->ok()) return;
   n_ = GetU32(head);
   nblocks_ = GetU32(head + 4);
-  skip_off_ = list_off_ + 8;
   if (n_ == 0) return;
-  // Fetch the whole list extent once. Its end is bounded by the last block's
-  // offset plus the worst-case encoded block size (the exact size depends on
-  // that block's bits-per-value, unknown until decoded); the clamp caps the
-  // over-read at the end of the blob, whose trailing bytes are simply never
-  // decoded.
+  // No caller-supplied bound: size the extent from the header and the last
+  // skip entry just read. Its end is the last block's offset plus the
+  // worst-case encoded block size (the exact size depends on that block's
+  // bits-per-value, unknown until decoded); the clamp caps the over-read at
+  // the end of the blob, whose trailing bytes are simply never decoded. The
+  // extent length is fully determined by list_off_, so every open of this
+  // list requests the identical extent -- on a FileBlobSource the first
+  // open caches it and later opens pin it with zero I/O. An empty pin
+  // (cap 0) falls back to per-block reads.
   const uint32_t last_rel = src_->U32(skip_off_ + (nblocks_ - 1) * 8);
   if (!src_->ok()) return;
   const uint64_t extent =
       static_cast<uint64_t>(last_rel) + kMaxPostingBlockBytes;
-  if (extent <= LocalExtentCap()) {
-    src_->Read(list_off_, src_->Clamp(list_off_, static_cast<uint32_t>(extent)),
-               local_);
-    if (!src_->ok()) return;
-    local_ok_ = true;
-  }
+  local_ = src_->FetchExtent(
+      list_off_, src_->Clamp(list_off_, static_cast<uint32_t>(extent)));
+  if (!src_->ok()) return;
+  local_ok_ = local_.data() != nullptr;
   LoadBlock(0);
   valid_ = src_->ok();
 }
 
 uint32_t PostingsCursorOnDemand::SkipU32(uint32_t rel_to_list) {
+  // local_.data() serves both pin flavors (cache entry or owned buffer).
   return local_ok_ ? GetU32(local_.data() + rel_to_list)
                    : src_->U32(list_off_ + rel_to_list);
 }
@@ -91,7 +115,7 @@ void PostingsCursorOnDemand::LoadBlock(uint32_t block_idx) {
   const uint32_t cnt = std::min(n_, lo + kPostingsBlockSize) - lo;
   const char* p;
   if (local_ok_) {
-    // The local buffer holds the whole list; the decode below walks exactly
+    // The pinned extent holds the whole list; the decode below walks exactly
     // the block's encoded bytes, all inside it.
     p = local_.data() + rel_off;
   } else {
@@ -166,38 +190,40 @@ ContReaderOnDemand::ContReaderOnDemand(BlobSource* src, uint32_t region_off)
     : src_(src), region_off_(region_off) {
   n_blocks_ = src_->U32(region_off_);
   summaries_off_ = region_off_ + 4;
-  // Fetch the whole summary array in one bulk read: Overlap()'s scans and
+  // Pin the whole summary array as one extent: Overlap()'s scans and
   // Estimate()'s per-block counts otherwise pay one cache round trip per
-  // 8-byte probe.
+  // 8-byte probe. The uint32 guard keeps the Clamp cast exact for a
+  // corrupt/absurd n_blocks_; the Clamp check keeps a truncated blob on the
+  // per-probe path (whose reads then fail cleanly) instead of fetching a
+  // short extent.
   const uint64_t want = static_cast<uint64_t>(n_blocks_) * kSummaryBytes;
-  if (src_->ok() && n_blocks_ > 0 && want <= LocalExtentCap() &&
+  if (src_->ok() && n_blocks_ > 0 &&
+      want <= std::numeric_limits<uint32_t>::max() &&
       src_->Clamp(summaries_off_, static_cast<uint32_t>(want)) == want) {
-    src_->Read(summaries_off_, static_cast<uint32_t>(want), summaries_local_);
-    summaries_ok_ = src_->ok();
+    summaries_ =
+        src_->FetchExtent(summaries_off_, static_cast<uint32_t>(want));
+    summaries_ok_ = summaries_.data() != nullptr;
   }
 }
 
 double ContReaderOnDemand::BlockMin(uint32_t b) {
-  return summaries_ok_ ? GetF64(summaries_local_.data() + b * kSummaryBytes)
+  return summaries_ok_ ? GetF64(summaries_.data() + b * kSummaryBytes)
                        : src_->F64(summaries_off_ + b * kSummaryBytes);
 }
 double ContReaderOnDemand::BlockMax(uint32_t b) {
-  return summaries_ok_
-             ? GetF64(summaries_local_.data() + b * kSummaryBytes + 8)
-             : src_->F64(summaries_off_ + b * kSummaryBytes + 8);
+  return summaries_ok_ ? GetF64(summaries_.data() + b * kSummaryBytes + 8)
+                       : src_->F64(summaries_off_ + b * kSummaryBytes + 8);
 }
 uint32_t ContReaderOnDemand::BlockCount(uint32_t b) {
-  return summaries_ok_
-             ? GetU32(summaries_local_.data() + b * kSummaryBytes + 16)
-             : src_->U32(summaries_off_ + b * kSummaryBytes + 16);
+  return summaries_ok_ ? GetU32(summaries_.data() + b * kSummaryBytes + 16)
+                       : src_->U32(summaries_off_ + b * kSummaryBytes + 16);
 }
 uint32_t ContReaderOnDemand::ValuesOff(uint32_t b) {
-  return summaries_ok_
-             ? GetU32(summaries_local_.data() + b * kSummaryBytes + 20)
-             : src_->U32(summaries_off_ + b * kSummaryBytes + 20);
+  return summaries_ok_ ? GetU32(summaries_.data() + b * kSummaryBytes + 20)
+                       : src_->U32(summaries_off_ + b * kSummaryBytes + 20);
 }
 const char* ContReaderOnDemand::SummaryRec(uint32_t b, std::string& buf) {
-  if (summaries_ok_) return summaries_local_.data() + b * kSummaryBytes;
+  if (summaries_ok_) return summaries_.data() + b * kSummaryBytes;
   return src_->Read(summaries_off_ + b * kSummaryBytes, kSummaryBytes, buf);
 }
 
@@ -243,21 +269,23 @@ namespace {
 // does it: whole postings for an interior leaf, or the postings whose values
 // fall in range for a boundary leaf. `srec` is the leaf's 32-byte summary
 // record (the caller already holds the summary array). For a BOUNDARY leaf,
-// `src` is normally a WindowBlobSource over that leaf's whole record, so the
-// values binary search and perm read land in a local buffer; an interior
-// leaf reads only its postings, which PostingsCursorOnDemand bulk-fetches by
-// itself, so it needs no window.
+// `src` is normally a WindowBlobSource pinning that leaf's whole record, so
+// the values binary search and perm read land in the pinned bytes (and the
+// postings cursor's FetchExtent resolves to a local copy out of the window,
+// not a second overlapping cache entry); an interior leaf reads only its
+// postings, which PostingsCursorOnDemand fetches by itself, so it needs no
+// window.
 class BlockCursorOnDemand : public RowCursor {
  public:
   BlockCursorOnDemand(BlobSource* src, uint32_t region_off, const char* srec,
                       double lo, bool lo_inc, double hi, bool hi_inc,
-                      bool boundary) {
+                      bool boundary, uint32_t postings_extent_len) {
     const uint32_t cnt = GetU32(srec + 16);
     const uint32_t values_off = region_off + GetU32(srec + 20);
     const uint32_t perm_off = region_off + GetU32(srec + 24);
     const uint32_t postings_off = region_off + GetU32(srec + 28);
 
-    PostingsCursorOnDemand pc(src, postings_off);
+    PostingsCursorOnDemand pc(src, postings_off, postings_extent_len);
     if (!boundary) {
       rows_.reserve(cnt);
       while (pc.Valid()) {
@@ -375,20 +403,51 @@ std::unique_ptr<RowCursor> ContReaderOnDemand::OpenCursor(double lo, bool lo_inc
     const bool lo_ok = lo_inc ? (mn >= lo) : (mn > lo);
     const bool hi_ok = hi_inc ? (mx <= hi) : (mx < hi);
     const bool interior = lo_ok && hi_ok;
+    // The leaf's postings extent is known from the summary array alone:
+    // records are contiguous, so leaf b's postings end exactly where leaf
+    // b+1's values begin (worst-case-bounded for the region's last leaf,
+    // clamped by the fetch). Handing the bound to the postings cursor lets
+    // it fetch its extent FIRST and decode the header from the pinned bytes
+    // -- without it, every cold interior leaf would pay a page-granular
+    // header read for bytes its extent is about to fetch anyway (the
+    // dominant page traffic of a numeric range: one 4 KB page per ~2 KB
+    // list).
+    uint32_t plen = 0;
+    if (LocalExtentCap() != 0) {  // cap 0: the bound would go unused
+      const uint32_t postings_rel = GetU32(srec + 28);
+      uint64_t pend;
+      if (b + 1 < n_blocks_) {
+        pend = ValuesOff(b + 1);
+        if (!src_->ok()) return nullptr;
+      } else {
+        const uint32_t cnt = GetU32(srec + 16);
+        const uint32_t nbk =
+            (cnt + kPostingsBlockSize - 1) / kPostingsBlockSize;
+        pend = static_cast<uint64_t>(postings_rel) + 8 +
+               static_cast<uint64_t>(nbk) * (8 + kMaxPostingBlockBytes);
+      }
+      if (pend > postings_rel &&
+          pend - postings_rel <= std::numeric_limits<uint32_t>::max()) {
+        plen = static_cast<uint32_t>(pend - postings_rel);
+      }
+    }
     // An interior leaf reads ONLY its postings, and PostingsCursorOnDemand
-    // bulk-fetches exactly the list extent by itself, so it goes straight to
+    // fetches exactly the list extent by itself, so it goes straight to
     // the source -- fetching the leaf's values+perm would be pure waste
     // (~10 KB dead weight against ~4 KB of postings per 1024-entry leaf). A
     // boundary leaf also binary-searches the values array and reads a perm
-    // slice, so it gets a local window over its whole values|perm|postings
+    // slice, so it gets a pinned window over its whole values|perm|postings
     // record: from its values offset to the next leaf's values offset plus
     // one worst-case posting block of slack (the postings cursor's bounded
     // over-read), or for the region's last leaf to a worst-case bound on its
     // postings size (cnt <= 1024 entries -> at most 8 blocks); both clamped
-    // to the blob.
+    // to the blob. The bounds are fully determined by the leaf, so every
+    // query pins the identical extent -- cross-query reuse via the cache.
+    // Cap 0 skips the window (FetchExtent would decline anyway): per-block
+    // reads throughout, byte-identical to the pre-extent path.
     std::unique_ptr<WindowBlobSource> win;
     BlobSource* rd = src_;
-    if (!interior) {
+    if (!interior && LocalExtentCap() != 0) {
       const uint32_t span_begin = region_off_ + GetU32(srec + 20);
       uint64_t span_end;
       if (b + 1 < n_blocks_) {
@@ -402,7 +461,8 @@ std::unique_ptr<RowCursor> ContReaderOnDemand::OpenCursor(double lo, bool lo_inc
                    static_cast<uint64_t>(nb) * (8 + kMaxPostingBlockBytes);
       }
       if (!src_->ok()) return nullptr;
-      if (span_end > span_begin && span_end - span_begin <= LocalExtentCap()) {
+      if (span_end > span_begin &&
+          span_end - span_begin <= std::numeric_limits<uint32_t>::max()) {
         const uint32_t span_len = src_->Clamp(
             span_begin, static_cast<uint32_t>(span_end - span_begin));
         win = std::make_unique<WindowBlobSource>(src_, span_begin, span_len);
@@ -412,7 +472,7 @@ std::unique_ptr<RowCursor> ContReaderOnDemand::OpenCursor(double lo, bool lo_inc
       }
     }
     blocks.push_back(std::make_unique<BlockCursorOnDemand>(
-        rd, region_off_, srec, lo, lo_inc, hi, hi_inc, !interior));
+        rd, region_off_, srec, lo, lo_inc, hi, hi_inc, !interior, plen));
   }
   return std::make_unique<MergedCursorOnDemand>(std::move(blocks));
 }
