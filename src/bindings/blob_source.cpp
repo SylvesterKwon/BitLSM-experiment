@@ -20,6 +20,8 @@ std::atomic<uint64_t> g_page_hits{0};
 std::atomic<uint64_t> g_page_misses{0};
 std::atomic<uint64_t> g_bytes_read{0};
 std::atomic<uint64_t> g_span_reads{0};
+std::atomic<uint64_t> g_extent_hits{0};
+std::atomic<uint64_t> g_extent_misses{0};
 
 // A read touching at least this many pages takes the bulk span path. Two is
 // strictly better than the per-page loop already: the cache lookups are the
@@ -42,6 +44,18 @@ void DeleteBlobPage(Cache::ObjectPtr obj, MemoryAllocator* /*allocator*/) {
 const Cache::CacheItemHelper* BlobPageHelper() {
   static const Cache::CacheItemHelper helper(CacheEntryRole::kIndexBlock,
                                              &DeleteBlobPage);
+  return &helper;
+}
+
+void DeleteCachedExtent(Cache::ObjectPtr obj, MemoryAllocator* /*allocator*/) {
+  delete static_cast<CachedExtent*>(obj);
+}
+
+// Same role and priority as the pages: extents are index bytes competing in
+// the same budget (and the same role BitLSM's on-demand bins carry).
+const Cache::CacheItemHelper* CachedExtentHelper() {
+  static const Cache::CacheItemHelper helper(CacheEntryRole::kIndexBlock,
+                                             &DeleteCachedExtent);
   return &helper;
 }
 
@@ -70,7 +84,9 @@ BlobSourceStats GetBlobSourceStats() {
   return {g_page_hits.load(std::memory_order_relaxed),
           g_page_misses.load(std::memory_order_relaxed),
           g_bytes_read.load(std::memory_order_relaxed),
-          g_span_reads.load(std::memory_order_relaxed)};
+          g_span_reads.load(std::memory_order_relaxed),
+          g_extent_hits.load(std::memory_order_relaxed),
+          g_extent_misses.load(std::memory_order_relaxed)};
 }
 
 void ResetBlobSourceStats() {
@@ -78,6 +94,20 @@ void ResetBlobSourceStats() {
   g_page_misses.store(0, std::memory_order_relaxed);
   g_bytes_read.store(0, std::memory_order_relaxed);
   g_span_reads.store(0, std::memory_order_relaxed);
+  g_extent_hits.store(0, std::memory_order_relaxed);
+  g_extent_misses.store(0, std::memory_order_relaxed);
+}
+
+PinnedExtent BlobSource::FetchExtent(uint32_t rel_off, uint32_t len) {
+  if (len == 0 || LocalExtentCap() == 0) return {};
+  auto extent = std::make_unique<CachedExtent>();
+  extent->bytes = std::make_unique<char[]>(len);
+  extent->len = len;
+  std::string scratch;
+  const char* p = Read(rel_off, len, scratch);
+  if (!ok()) return {};
+  std::memcpy(extent->bytes.get(), p, len);
+  return PinnedExtent(std::move(extent));
 }
 
 FileBlobSource::FileBlobSource(const BlockBasedTable* table)
@@ -310,6 +340,94 @@ bool FileBlobSource::ReadStretch(uint64_t data_begin, uint64_t data_end,
     }
   }
   return true;
+}
+
+PinnedExtent FileBlobSource::FetchExtent(uint32_t rel_off, uint32_t len) {
+  const uint64_t cap = LocalExtentCap();
+  if (len == 0 || cap == 0) return {};  // cap 0: extent fetching disabled
+  if (static_cast<uint64_t>(rel_off) + len > blob_size_) {
+    ok_ = false;
+    return {};
+  }
+  const auto* rep = table_->get_rep();
+  Cache* cache = rep->table_options.block_cache.get();
+  const uint64_t abs = blob_offset_ + rel_off;  // FILE offset of the extent
+  // Key mint -- collision-critical. Extents live in the SAME file-offset
+  // space as the page keys above (data_begin >> 2), and an extent's start
+  // CAN coincide with a page's data_begin (a posting list opening exactly at
+  // a page boundary, or at the blob's clamped first page): a raw
+  // WithOffset(abs >> 2) would type-confuse a CachedExtent with a BlobPage.
+  // So extent keys are tagged out of every other keyspace with bit 63: real
+  // file offsets never reach 2^63 (nor do RocksDB's own block-offset keys or
+  // our >>2 page keys), so a tagged key collides with neither. Two distinct
+  // extents can't share a key either: extent starts are starts of distinct
+  // index structures at least 4 bytes apart (a posting list is >= 21 bytes,
+  // a leaf record >= 10, the summary array >= 32), so their >>2 buckets
+  // differ.
+  const CacheKey key =
+      rep->base_cache_key.WithOffset((abs >> 2) | (1ULL << 63));
+  // Over-cap extents bypass the cache entirely (uncached read, pin-owned
+  // buffer): unreachable at this workload's extent sizes, but a degenerate
+  // extent must not wipe the cache.
+  const bool cacheable = cache != nullptr && len <= cap;
+
+  if (cacheable) {
+    if (Cache::Handle* h =
+            cache->BasicLookup(key.AsSlice(), /*stats=*/nullptr)) {
+      auto* extent = static_cast<CachedExtent*>(cache->Value(h));
+      // Extent lengths are deterministic per start offset (each start is one
+      // specific index structure), so a hit always satisfies the request;
+      // the guard keeps a hypothetical shorter entry from serving a longer
+      // read -- release it and reload below (the insert replaces it).
+      if (extent->len >= len) {
+        g_extent_hits.fetch_add(1, std::memory_order_relaxed);
+        return PinnedExtent(cache, h, extent->bytes.get(), extent->len);
+      }
+      cache->Release(h);
+    }
+  }
+
+  // Miss: ONE pread of the whole extent, straight into the entry's buffer.
+  // Deliberately NOT the page path -- per-page entries are not populated for
+  // these bytes; the extent entry replaces them wholesale, and chunking a
+  // copy into pages would only duplicate the bytes in cache.
+  // RandomAccessFileReader::Read realigns offset and length itself under
+  // direct I/O, so an unaligned extent is still one clean read.
+  auto extent = std::make_unique<CachedExtent>();
+  extent->bytes = std::make_unique<char[]>(len);
+  extent->len = len;
+  Slice result;
+  IOStatus s = rep->file->Read(IOOptions(), abs, len, &result,
+                               extent->bytes.get(), /*aligned_buf=*/nullptr);
+  if (!s.ok() || result.size() < len) {
+    ok_ = false;
+    return {};
+  }
+  // A direct-I/O read can hand back its own aligned buffer rather than the
+  // scratch we passed, so copy from where the result actually points.
+  if (result.data() != extent->bytes.get()) {
+    std::memcpy(extent->bytes.get(), result.data(), len);
+  }
+  g_extent_misses.fetch_add(1, std::memory_order_relaxed);
+  g_bytes_read.fetch_add(len, std::memory_order_relaxed);
+
+  if (cacheable) {
+    // Insert WITH a handle: the caller is about to decode from these bytes,
+    // so the entry must stay pinned until its pin releases. HIGH priority,
+    // same convention as the pages and BitLSM's bins. A refused insert
+    // (strict capacity) falls through to the owned pin -- the extent then
+    // lives exactly as long as its pin, and only costs a re-read next time.
+    Cache::Handle* h = nullptr;
+    CachedExtent* raw = extent.get();
+    Status is = cache->Insert(key.AsSlice(), raw, CachedExtentHelper(),
+                              sizeof(CachedExtent) + len, &h,
+                              Cache::Priority::HIGH);
+    if (is.ok()) {
+      extent.release();  // cache owns it now; the handle keeps it pinned
+      return PinnedExtent(cache, h, raw->bytes.get(), raw->len);
+    }
+  }
+  return PinnedExtent(std::move(extent));
 }
 
 }  // namespace experiment

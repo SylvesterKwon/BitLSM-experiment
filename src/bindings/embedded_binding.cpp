@@ -118,7 +118,9 @@ void EmbeddedBinding::Close() {
     std::cerr << "[EmbeddedBinding] ondemand blob-page stats: hits="
               << stats.page_hits << " misses=" << stats.page_misses
               << " bytes_read=" << stats.bytes_read
-              << " span_reads=" << stats.span_reads << "\n";
+              << " span_reads=" << stats.span_reads
+              << " extent_hits=" << stats.extent_hits
+              << " extent_misses=" << stats.extent_misses << "\n";
   }
   db_.reset();
 }

@@ -26,7 +26,12 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <string>
+
+#include "rocksdb/advanced_cache.h"  // rocksdb::Cache / Cache::Handle, held
+                                     // by PinnedExtent (nested Handle cannot
+                                     // be forward-declared)
 
 namespace rocksdb {
 class BlockBasedTable;
@@ -56,9 +61,76 @@ struct BlobSourceStats {
   uint64_t span_reads = 0;   // bulk preads issued by the multi-page span path
                              // (each covers a run of consecutive missing
                              // pages, all counted in page_misses)
+  uint64_t extent_hits = 0;    // extent served from the block cache
+  uint64_t extent_misses = 0;  // extent read from the SST file (one pread
+                               // each; bytes counted in bytes_read)
 };
 BlobSourceStats GetBlobSourceStats();
 void ResetBlobSourceStats();
+
+// One reader-defined contiguous blob range (a whole posting list, a boundary
+// leaf's record, the summary array, Section C) as a single block-cache entry.
+// RAW extent bytes only -- decode stays per-query, it's cheap bitpacking; the
+// expensive parts an entry eliminates across queries are the re-read and the
+// per-page reassembly. Counterpart of BitLSM's SABICachedBin
+// (third_party/BitLSM/src/include/sabi.h), which caches its decoded unit the
+// same way.
+struct CachedExtent {
+  std::unique_ptr<char[]> bytes;
+  size_t len = 0;
+};
+
+// RAII pin over one fetched extent: keeps the cache entry alive for as long
+// as a cursor decodes from it, or owns the buffer outright when there was no
+// cache entry to pin (refused insert, null cache, over-cap or non-caching
+// source). Exact mirror of SABIPinnedBin's semantics: move-only, Release()
+// clears everything, `owned` is the fallback. data() == nullptr means
+// nothing was fetched (extent fetching disabled or the read failed).
+class PinnedExtent {
+ public:
+  PinnedExtent() = default;
+  PinnedExtent(rocksdb::Cache* cache, rocksdb::Cache::Handle* handle,
+               const char* data, size_t len)
+      : cache_(cache), handle_(handle), data_(data), len_(len) {}
+  explicit PinnedExtent(std::unique_ptr<CachedExtent> owned)
+      : owned_(std::move(owned)),
+        data_(owned_->bytes.get()),
+        len_(owned_->len) {}
+  PinnedExtent(PinnedExtent&& o) noexcept { *this = std::move(o); }
+  PinnedExtent& operator=(PinnedExtent&& o) noexcept {
+    Release();
+    cache_ = o.cache_;
+    handle_ = o.handle_;
+    owned_ = std::move(o.owned_);
+    data_ = o.data_;
+    len_ = o.len_;
+    o.cache_ = nullptr;
+    o.handle_ = nullptr;
+    o.data_ = nullptr;
+    o.len_ = 0;
+    return *this;
+  }
+  PinnedExtent(const PinnedExtent&) = delete;
+  PinnedExtent& operator=(const PinnedExtent&) = delete;
+  ~PinnedExtent() { Release(); }
+  void Release() {
+    if (cache_ != nullptr && handle_ != nullptr) cache_->Release(handle_);
+    cache_ = nullptr;
+    handle_ = nullptr;
+    owned_.reset();
+    data_ = nullptr;
+    len_ = 0;
+  }
+  const char* data() const { return data_; }
+  size_t size() const { return len_; }
+
+ private:
+  rocksdb::Cache* cache_ = nullptr;
+  rocksdb::Cache::Handle* handle_ = nullptr;
+  std::unique_ptr<CachedExtent> owned_;
+  const char* data_ = nullptr;
+  size_t len_ = 0;
+};
 
 class BlobSource {
  public:
@@ -72,6 +144,19 @@ class BlobSource {
   virtual const char* Read(uint32_t rel_off, uint32_t len,
                            std::string& scratch) = 0;
   virtual uint64_t BlobSize() const = 0;
+
+  // Fetches [rel_off, rel_off + len) as ONE extent, pinned for the caller's
+  // lifetime. FileBlobSource overrides this with a shared-block-cache entry
+  // per extent, so later queries reuse the bytes with zero I/O. This base
+  // implementation reads through Read() into a buffer the pin owns: used by
+  // MemBlobSource (tests run the same cursor code with no cache) and by
+  // WindowBlobSource (a sub-extent of an already-pinned window -- e.g. a
+  // boundary leaf's postings list -- stays a local copy instead of minting a
+  // second cache entry overlapping the window's). Returns an empty pin
+  // (data() == nullptr) when LocalExtentCap() is 0 -- extent fetching
+  // disabled, callers fall back to their per-block reads -- or when the read
+  // failed (ok() goes false, same channel as Read).
+  virtual PinnedExtent FetchExtent(uint32_t rel_off, uint32_t len);
 
   // Set when a read failed; the query path turns this into a hard stop rather
   // than silently returning fewer rows. Virtual so a wrapping source
@@ -124,6 +209,16 @@ class FileBlobSource : public BlobSource {
                    std::string& scratch) override;
   uint64_t BlobSize() const override { return blob_size_; }
 
+  // Extents become entries in the table's own block cache (HIGH priority,
+  // CacheEntryRole::kIndexBlock, charged like everything else the budget
+  // experiment reasons about), so an extent one query decoded is served to
+  // the next with zero I/O -- the exact analogue of BitLSM's on-demand bin
+  // cache (SABIReader::Bin/LoadRun). A miss is ONE pread of the whole
+  // extent, deliberately NOT chunked into per-page entries: the extent entry
+  // replaces the pages for these bytes. Over-cap extents and refused inserts
+  // degrade to a pin-owned buffer, null cache to an uncached read.
+  PinnedExtent FetchExtent(uint32_t rel_off, uint32_t len) override;
+
  private:
   // Copies [in_page, in_page + n) of the page's cached bytes into `dst`.
   // `data_begin` is the page's key identity (clamped inside the blob extent,
@@ -170,34 +265,36 @@ class MemBlobSource : public BlobSource {
   uint64_t size_;
 };
 
-// Sanity cap for reader-local extent buffers (whole posting lists, leaf
-// records, Section C): the extents this workload produces are at most a few
-// hundred KB to a few MB per SST, so the cap should be unreachable; anything
-// over it degrades to per-block reads instead of allocating without bound.
+// Sanity cap for cached/pinned extents (whole posting lists, leaf records,
+// Section C): the extents this workload produces are at most a few hundred
+// KB to a few MB per SST, so the cap should be unreachable. It bounds what
+// may enter the CACHE: an over-cap extent is still fetched in one read but
+// bypasses the cache (the pin owns the transient buffer), so a degenerate
+// huge extent can neither wipe the cache nor pin cache memory.
 inline constexpr uint64_t kMaxLocalExtentBytes = 64ull << 20;
 
 // The active cap. Defaults to kMaxLocalExtentBytes; EXP_SAI_LOCAL_EXTENT_MB
 // overrides it (in MB, read once at first use) for A/Bs, with 0 disabling
-// reader-local extents entirely -- the cursors then run their original
-// per-block reads on top of the still-active span coalescing in
-// FileBlobSource::Read. The setter exists so sai_test_ondemand can pin the
-// fallback paths against the same oracle.
+// extent fetching entirely -- FetchExtent then returns empty pins and the
+// cursors run their original per-block reads on top of the still-active
+// span coalescing in FileBlobSource::Read. The setter exists so
+// sai_test_ondemand can pin the fallback paths against the same oracle.
 uint64_t LocalExtentCap();
 void SetLocalExtentCapForTest(uint64_t cap);
 
-// Prefetches one contiguous window of the blob through `under` -- a single
-// bulk span read -- and serves every read inside the window from the local
-// copy, with zero cache round trips. Reads outside the window (and the whole
-// window when the prefetch failed) fall through to `under`. Used by readers
-// that are about to decode a known extent block by block: the underlying
-// span read still populates the per-page cache entries, so cross-query reuse
-// is unchanged; only the per-block lookup+memcpy traffic disappears.
+// Pins one contiguous window of the blob through `under`'s FetchExtent and
+// serves every read inside the window from the pinned bytes, with zero cache
+// round trips and zero copies of the window itself. Reads outside the window
+// (and the whole window when the fetch failed or extent fetching is off)
+// fall through to `under`. Used by readers that are about to decode a known
+// extent block by block; over a FileBlobSource the window IS the shared
+// cache entry, so later queries reopen it with zero I/O.
 class WindowBlobSource : public BlobSource {
  public:
   WindowBlobSource(BlobSource* under, uint32_t win_off, uint32_t win_len)
       : under_(under), win_off_(win_off) {
-    under_->Read(win_off, win_len, win_);
-    fetched_ = under_->ok();
+    win_ = under_->FetchExtent(win_off, win_len);
+    fetched_ = win_.data() != nullptr;
   }
   const char* Read(uint32_t rel_off, uint32_t len,
                    std::string& scratch) override {
@@ -214,7 +311,7 @@ class WindowBlobSource : public BlobSource {
  private:
   BlobSource* under_;
   uint32_t win_off_;
-  std::string win_;
+  PinnedExtent win_;  // pinned for the window's lifetime
   bool fetched_ = false;
 };
 
