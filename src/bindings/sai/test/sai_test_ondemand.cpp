@@ -120,11 +120,13 @@ int main() {
   };
 
   // Sections 2-4 run twice: once with the default cursor-local extent cap
-  // (bulk-fetched posting lists / summary arrays / leaf-span windows) and
+  // (bulk-fetched posting lists / summary arrays / boundary-leaf windows) and
   // once with the cap forced to 0, which drives every cursor down the
-  // per-block fallback paths. Both must agree with the oracle and the
-  // resident reader.
+  // per-block fallback paths. The fuzzer is reseeded at the top of each pass
+  // so both passes cover literally identical ranges; both must agree with the
+  // oracle and the resident reader.
   auto run_suite = [&]() {
+  gen.seed(1234);
   // 2. Categorical: same counts and same posting sets, present or absent.
   for (const std::string& t : vocab) {
     SAIFact f;
