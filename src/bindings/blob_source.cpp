@@ -18,6 +18,12 @@ namespace {
 std::atomic<uint64_t> g_page_hits{0};
 std::atomic<uint64_t> g_page_misses{0};
 std::atomic<uint64_t> g_bytes_read{0};
+std::atomic<uint64_t> g_span_reads{0};
+
+// A read touching at least this many pages takes the bulk span path. Two is
+// strictly better than the per-page loop already: the cache lookups are the
+// same, and any two adjacent misses become one pread instead of two.
+constexpr uint32_t kMinSpanPages = 2;
 
 // One cached blob page: a heap buffer the cache owns.
 struct BlobPage {
@@ -43,13 +49,15 @@ const Cache::CacheItemHelper* BlobPageHelper() {
 BlobSourceStats GetBlobSourceStats() {
   return {g_page_hits.load(std::memory_order_relaxed),
           g_page_misses.load(std::memory_order_relaxed),
-          g_bytes_read.load(std::memory_order_relaxed)};
+          g_bytes_read.load(std::memory_order_relaxed),
+          g_span_reads.load(std::memory_order_relaxed)};
 }
 
 void ResetBlobSourceStats() {
   g_page_hits.store(0, std::memory_order_relaxed);
   g_page_misses.store(0, std::memory_order_relaxed);
   g_bytes_read.store(0, std::memory_order_relaxed);
+  g_span_reads.store(0, std::memory_order_relaxed);
 }
 
 FileBlobSource::FileBlobSource(const BlockBasedTable* table)
@@ -134,6 +142,19 @@ const char* FileBlobSource::Read(uint32_t rel_off, uint32_t len,
     ok_ = false;
     return scratch.data();
   }
+  {
+    // Multi-page reads go bulk: one pread per run of missing pages instead of
+    // one per page. Same coalescing BitLSM's on-demand LoadRun applies to its
+    // bins; page-cache granularity and keys are unchanged.
+    const uint64_t abs = blob_offset_ + rel_off;
+    const uint64_t first_page = abs & ~static_cast<uint64_t>(kBlobPageSize - 1);
+    const uint64_t last_page =
+        (abs + len - 1) & ~static_cast<uint64_t>(kBlobPageSize - 1);
+    if (last_page - first_page >=
+        static_cast<uint64_t>(kMinSpanPages - 1) * kBlobPageSize) {
+      return ReadSpan(rel_off, len, scratch);
+    }
+  }
   const uint64_t blob_end = blob_offset_ + blob_size_;
   uint32_t done = 0;
   while (done < len) {
@@ -155,6 +176,120 @@ const char* FileBlobSource::Read(uint32_t rel_off, uint32_t len,
     done += n;
   }
   return scratch.data();
+}
+
+const char* FileBlobSource::ReadSpan(uint32_t rel_off, uint32_t len,
+                                     std::string& scratch) {
+  const auto* rep = table_->get_rep();
+  Cache* cache = rep->table_options.block_cache.get();
+  const uint64_t blob_end = blob_offset_ + blob_size_;
+  const uint64_t abs_begin = blob_offset_ + rel_off;
+  const uint64_t abs_end = abs_begin + len;
+
+  // Walk the extent's pages on the same file-anchored grid as the per-page
+  // path. Cached pages are copied out immediately (never re-read from disk);
+  // runs of consecutive missing pages are accumulated and fetched with one
+  // pread per run.
+  bool in_stretch = false;
+  uint64_t stretch_begin = 0, stretch_end = 0;
+  for (uint64_t page_off =
+           abs_begin & ~static_cast<uint64_t>(kBlobPageSize - 1);
+       page_off < abs_end; page_off += kBlobPageSize) {
+    const uint64_t data_begin = std::max(page_off, blob_offset_);
+    const uint64_t data_end = std::min(page_off + kBlobPageSize, blob_end);
+    bool hit = false;
+    if (cache != nullptr) {
+      const CacheKey key = rep->base_cache_key.WithOffset(data_begin >> 2);
+      if (Cache::Handle* h =
+              cache->BasicLookup(key.AsSlice(), /*stats=*/nullptr)) {
+        auto* page = static_cast<BlobPage*>(cache->Value(h));
+        assert(page->size == data_end - data_begin);
+        const uint64_t cb = std::max(data_begin, abs_begin);
+        const uint64_t ce = std::min(data_end, abs_end);
+        std::memcpy(scratch.data() + (cb - abs_begin),
+                    page->data.get() + (cb - data_begin), ce - cb);
+        cache->Release(h);
+        g_page_hits.fetch_add(1, std::memory_order_relaxed);
+        hit = true;
+      }
+    }
+    if (hit) {
+      if (in_stretch) {
+        in_stretch = false;
+        if (!ReadStretch(stretch_begin, stretch_end, abs_begin, abs_end,
+                         scratch.data())) {
+          return scratch.data();
+        }
+      }
+    } else {
+      if (!in_stretch) {
+        in_stretch = true;
+        stretch_begin = data_begin;
+      }
+      stretch_end = data_end;
+    }
+  }
+  if (in_stretch) {
+    ReadStretch(stretch_begin, stretch_end, abs_begin, abs_end,
+                scratch.data());
+  }
+  return scratch.data();
+}
+
+bool FileBlobSource::ReadStretch(uint64_t data_begin, uint64_t data_end,
+                                 uint64_t abs_begin, uint64_t abs_end,
+                                 char* out) {
+  const auto* rep = table_->get_rep();
+  Cache* cache = rep->table_options.block_cache.get();
+  const size_t n = static_cast<size_t>(data_end - data_begin);
+  auto buf = std::make_unique<char[]>(n);
+  Slice result;
+  // RandomAccessFileReader::Read realigns offset and length itself under
+  // direct I/O, so a stretch starting or ending mid-page is still fine.
+  IOStatus s = rep->file->Read(IOOptions(), data_begin, n, &result, buf.get(),
+                               /*aligned_buf=*/nullptr);
+  if (!s.ok() || result.size() < n) {
+    ok_ = false;
+    return false;
+  }
+  // A direct-I/O read can hand back its own buffer rather than the scratch
+  // we passed, so read from where the result actually points.
+  const char* bytes = result.data();
+  g_span_reads.fetch_add(1, std::memory_order_relaxed);
+  g_bytes_read.fetch_add(n, std::memory_order_relaxed);
+
+  // Chunk the stretch back into the identical data_begin-keyed pages the
+  // per-page path would have cached, so cross-query reuse granularity is
+  // unchanged. A refused insert (strict capacity) just skips caching that
+  // page; the caller already has its bytes.
+  const uint64_t blob_end = blob_offset_ + blob_size_;
+  for (uint64_t page_off =
+           data_begin & ~static_cast<uint64_t>(kBlobPageSize - 1);
+       page_off < data_end; page_off += kBlobPageSize) {
+    const uint64_t pb = std::max(page_off, blob_offset_);
+    const uint64_t pe = std::min(page_off + kBlobPageSize, blob_end);
+    const uint32_t page_len = static_cast<uint32_t>(pe - pb);
+    const char* page_bytes = bytes + (pb - data_begin);
+    const uint64_t cb = std::max(pb, abs_begin);
+    const uint64_t ce = std::min(pe, abs_end);
+    if (cb < ce) {
+      std::memcpy(out + (cb - abs_begin), page_bytes + (cb - pb), ce - cb);
+    }
+    g_page_misses.fetch_add(1, std::memory_order_relaxed);
+    if (cache != nullptr) {
+      auto page = std::make_unique<BlobPage>();
+      page->data = std::make_unique<char[]>(page_len);
+      page->size = page_len;
+      std::memcpy(page->data.get(), page_bytes, page_len);
+      const CacheKey key = rep->base_cache_key.WithOffset(pb >> 2);
+      BlobPage* raw = page.release();
+      Status is = cache->Insert(key.AsSlice(), raw, BlobPageHelper(),
+                                sizeof(BlobPage) + raw->size,
+                                /*handle=*/nullptr, Cache::Priority::HIGH);
+      if (!is.ok()) delete raw;
+    }
+  }
+  return true;
 }
 
 }  // namespace experiment

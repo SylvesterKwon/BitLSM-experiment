@@ -53,6 +53,9 @@ struct BlobSourceStats {
   uint64_t page_hits = 0;    // page served from the block cache
   uint64_t page_misses = 0;  // page read from the SST file
   uint64_t bytes_read = 0;   // bytes pulled off disk (whole pages)
+  uint64_t span_reads = 0;   // bulk preads issued by the multi-page span path
+                             // (each covers a run of consecutive missing
+                             // pages, all counted in page_misses)
 };
 BlobSourceStats GetBlobSourceStats();
 void ResetBlobSourceStats();
@@ -71,8 +74,9 @@ class BlobSource {
   virtual uint64_t BlobSize() const = 0;
 
   // Set when a read failed; the query path turns this into a hard stop rather
-  // than silently returning fewer rows.
-  bool ok() const { return ok_; }
+  // than silently returning fewer rows. Virtual so a wrapping source
+  // (WindowBlobSource) can fold in the state of the source it delegates to.
+  virtual bool ok() const { return ok_; }
 
   uint16_t U16(uint32_t rel_off) {
     uint16_t v;
@@ -129,6 +133,17 @@ class FileBlobSource : public BlobSource {
   bool ReadFromPage(uint64_t data_begin, uint32_t page_len, uint32_t in_page,
                     uint32_t n, char* dst);
 
+  // Bulk path for reads spanning multiple pages: cached pages are served from
+  // the cache as usual, and each maximal run of consecutive MISSING pages is
+  // fetched with one pread (ReadStretch) instead of one per page.
+  const char* ReadSpan(uint32_t rel_off, uint32_t len, std::string& scratch);
+  // One pread covering [data_begin, data_end) -- a run of missing pages --
+  // copying the requested portion into `out` (which addresses [abs_begin,
+  // abs_end) of the file) and caching each covered page exactly as the
+  // per-page path would have.
+  bool ReadStretch(uint64_t data_begin, uint64_t data_end, uint64_t abs_begin,
+                   uint64_t abs_end, char* out);
+
   const rocksdb::BlockBasedTable* table_;
   uint64_t blob_offset_ = 0;  // file offset of the blob (rep->udi_handle)
   uint64_t blob_size_ = 0;
@@ -153,6 +168,45 @@ class MemBlobSource : public BlobSource {
  private:
   const char* base_;
   uint64_t size_;
+};
+
+// Sanity cap for reader-local extent buffers (whole posting lists, leaf
+// spans, Section C): the extents this workload produces are at most a few
+// hundred KB to a few MB per SST, so the cap should be unreachable; anything
+// over it degrades to per-block reads instead of allocating without bound.
+inline constexpr uint64_t kMaxLocalExtentBytes = 64ull << 20;
+
+// Prefetches one contiguous window of the blob through `under` -- a single
+// bulk span read -- and serves every read inside the window from the local
+// copy, with zero cache round trips. Reads outside the window (and the whole
+// window when the prefetch failed) fall through to `under`. Used by readers
+// that are about to decode a known extent block by block: the underlying
+// span read still populates the per-page cache entries, so cross-query reuse
+// is unchanged; only the per-block lookup+memcpy traffic disappears.
+class WindowBlobSource : public BlobSource {
+ public:
+  WindowBlobSource(BlobSource* under, uint32_t win_off, uint32_t win_len)
+      : under_(under), win_off_(win_off) {
+    under_->Read(win_off, win_len, win_);
+    fetched_ = under_->ok();
+  }
+  const char* Read(uint32_t rel_off, uint32_t len,
+                   std::string& scratch) override {
+    if (fetched_ && rel_off >= win_off_ &&
+        static_cast<uint64_t>(rel_off) + len <= win_off_ + win_.size()) {
+      scratch.assign(win_.data() + (rel_off - win_off_), len);
+      return scratch.data();
+    }
+    return under_->Read(rel_off, len, scratch);
+  }
+  uint64_t BlobSize() const override { return under_->BlobSize(); }
+  bool ok() const override { return ok_ && under_->ok(); }
+
+ private:
+  BlobSource* under_;
+  uint32_t win_off_;
+  std::string win_;
+  bool fetched_ = false;
 };
 
 }  // namespace experiment
