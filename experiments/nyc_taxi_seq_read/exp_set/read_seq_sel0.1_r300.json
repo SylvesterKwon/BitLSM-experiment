@@ -19,9 +19,7 @@
       "name": "bitlsm",
       "params": {
         "rho": [
-          0.03,
-          0.01,
-          0.003
+          0.001
         ]
       }
     },
@@ -52,7 +50,10 @@
     {
       "name": "sai",
       "params": {
-        "intersection_limit": 2
+        "intersection_limit": [
+          0,
+          2
+        ]
       }
     }
   ]
