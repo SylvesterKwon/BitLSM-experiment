@@ -21,6 +21,7 @@ class BitLSMBinding : public Binding {
   ScanResult Scan(BitLSMQuery& query) override;
   void Close() override;
   WriteStats GetWriteStats() override;
+  IndexIoStats GetIndexIoStats() override;
   void WaitForQuiescence() override;
   std::string Name() const override { return "bitlsm"; }
   std::string ParamSuffix() const override;

@@ -26,6 +26,23 @@ struct WriteStats {
   uint64_t compact_bytes = 0;
 };
 
+// Method-comparable index-I/O totals, read per query (honk_player computes
+// the delta across each Scan()). Uniform across bindings: `reads`/`bytes`
+// are device I/O requests/bytes issued to serve index lookups, `cache_hits`/
+// `cache_misses` are index-cache lookups. Method-specific counters (e.g.
+// BitLSM's bitmaps_loaded) stay internal to each binding's own mapping --
+// this struct is the CSV-facing schema only. Hit/miss COUNTS are
+// unit-different across methods (bin vs page/extent granularity), so only
+// rates and bytes are directly comparable across bindings; see the mapping
+// comments in bitlsm_binding.cpp / sai_binding.cpp / embedded_binding.cpp.
+// Absolute, process-wide totals -- not per-query on their own.
+struct IndexIoStats {
+  uint64_t reads = 0;
+  uint64_t bytes = 0;
+  uint64_t cache_hits = 0;
+  uint64_t cache_misses = 0;
+};
+
 class Binding {
  public:
   virtual ~Binding() = default;
@@ -48,6 +65,11 @@ class Binding {
   // return cumulative flush/compaction write bytes from RocksDB statistics.
   // Returns {0,0} when statistics is not enabled.
   virtual WriteStats GetWriteStats() { return {}; }
+
+  // Absolute index-I/O totals since the last reset (each override resets its
+  // underlying counters once at Open()). Default covers bindings with no
+  // separate index I/O machinery (no-index, si-*): always zero.
+  virtual IndexIoStats GetIndexIoStats() { return {}; }
 
   // Flush the memtable and wait until all ingestion-induced background work
   // (compactions, obsolete-file purges) has drained. Unlike GetWriteStats()

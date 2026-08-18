@@ -25,6 +25,7 @@ class EmbeddedBinding : public Binding {
   ScanResult Scan(BitLSMQuery& query) override;
   void Close() override;
   WriteStats GetWriteStats() override;
+  IndexIoStats GetIndexIoStats() override;
   void WaitForQuiescence() override;
   std::string Name() const override { return "embedded"; }
   std::string ParamSuffix() const override {

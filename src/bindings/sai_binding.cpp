@@ -61,6 +61,10 @@ void SAIBinding::Open(int argc, char* argv[], const std::string& db_path,
   scan_opts.ondemand_index = ondemand_index_;
   db_ = std::make_unique<sai::SAIDB>(db_path, scan_opts, rocksdb_options,
                                      table_options, intersection_limit_);
+  // Zero the process-wide blob-source counters so this run's totals (and the
+  // per-query deltas honk_player computes from them) don't carry noise from
+  // whatever touched them before this DB was opened.
+  ResetBlobSourceStats();
 }
 
 void SAIBinding::Put(const std::string& pk, const std::vector<Attr>& attrs,
@@ -112,6 +116,19 @@ void SAIBinding::WaitForQuiescence() {
   db_->GetInternalDB()->WaitForCompact(wfco);
 }
 
+IndexIoStats SAIBinding::GetIndexIoStats() {
+  BlobSourceStats s = GetBlobSourceStats();
+  IndexIoStats out;
+  // Device reads issued: bulk span preads, extent-fetch preads, and
+  // single-page preads (see blob_source.h -- page_misses alone mixes
+  // single-page and bulk-stretch misses and cannot be used here).
+  out.reads = s.span_reads + s.extent_misses + s.single_page_reads;
+  out.bytes = s.bytes_read;
+  out.cache_hits = s.page_hits + s.extent_hits;
+  out.cache_misses = s.page_misses + s.extent_misses;
+  return out;
+}
+
 void SAIBinding::Close() {
   if (ondemand_index_) {
     BlobSourceStats stats = GetBlobSourceStats();
@@ -120,7 +137,8 @@ void SAIBinding::Close() {
               << " bytes_read=" << stats.bytes_read
               << " span_reads=" << stats.span_reads
               << " extent_hits=" << stats.extent_hits
-              << " extent_misses=" << stats.extent_misses << "\n";
+              << " extent_misses=" << stats.extent_misses
+              << " single_page_reads=" << stats.single_page_reads << "\n";
   }
   db_.reset();
 }

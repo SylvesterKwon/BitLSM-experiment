@@ -64,6 +64,12 @@ struct BlobSourceStats {
   uint64_t extent_hits = 0;    // extent served from the block cache
   uint64_t extent_misses = 0;  // extent read from the SST file (one pread
                                // each; bytes counted in bytes_read)
+  // preads issued by the non-bulk single-page path (ReadFromPage's miss
+  // branch) only. page_misses counts PAGES, not preads: a bulk stretch read
+  // (ReadStretch) is one pread but increments page_misses once per page it
+  // covers, so page_misses alone cannot recover "device reads issued" for
+  // the single-page path. This is that missing piece.
+  uint64_t single_page_reads = 0;
 };
 BlobSourceStats GetBlobSourceStats();
 void ResetBlobSourceStats();

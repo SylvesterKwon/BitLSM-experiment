@@ -103,6 +103,31 @@ struct CacheCounters {
   }
 };
 
+// Method-comparable index-I/O counters, read per query via
+// Binding::GetIndexIoStats() (experiment::Binding, binding.h). idx_reads/
+// idx_read_mb are device I/O requests/bytes issued to serve index lookups
+// this query; idx_cache_hits/idx_cache_misses are index-cache lookups.
+// Defined identically for every binding, but each binding maps its own
+// internal counters onto this schema (see bitlsm_binding.cpp,
+// sai_binding.cpp, embedded_binding.cpp) -- hit/miss COUNTS are
+// unit-different across methods (bin vs page/extent granularity), so only
+// rates and bytes are directly comparable across bindings. no-index and
+// si-* have no separate index I/O machinery and report zeros (Binding's
+// default GetIndexIoStats()).
+struct IndexIoCounters {
+  uint64_t reads = 0, bytes = 0, cache_hits = 0, cache_misses = 0;
+
+  static IndexIoCounters Read(experiment::Binding* b) {
+    auto s = b->GetIndexIoStats();
+    return {s.reads, s.bytes, s.cache_hits, s.cache_misses};
+  }
+
+  IndexIoCounters operator-(const IndexIoCounters& p) const {
+    return {reads - p.reads, bytes - p.bytes, cache_hits - p.cache_hits,
+            cache_misses - p.cache_misses};
+  }
+};
+
 int main(int argc, char* argv[]) {
   cxxopts::Options opts("honk-player", "Taxi data workload driver");
   opts.allow_unrecognised_options();
@@ -238,7 +263,8 @@ int main(int argc, char* argv[]) {
                   "records_matched,records_total,selectivity_actual,"
                   "rss_kb,peak_rss_kb,keyidx_hit,keyidx_miss,"
                   "keyidx_bytes_insert,dataudi_hit,dataudi_miss,"
-                  "rchar_mb,disk_read_mb\n";
+                  "rchar_mb,disk_read_mb,"
+                  "idx_reads,idx_read_mb,idx_cache_hits,idx_cache_misses\n";
     }
   };
 
@@ -438,6 +464,7 @@ int main(int argc, char* argv[]) {
           cout << "[interleave] QUERY #" << reads << " at " << writes << " records, " << latency << "us\n";
         } else {
           auto cache_before = CacheCounters::Read();
+          auto idx_before = IndexIoCounters::Read(binding.get());
           const long long rchar_before = ReadIoCounter("rchar");
           const long long disk_before = ReadIoCounter("read_bytes");
           auto scan_result = binding->Scan(query);
@@ -456,6 +483,7 @@ int main(int argc, char* argv[]) {
             // Counters are per query (delta across this scan); the two RSS
             // columns are absolute, VmHWM being the peak since process start.
             auto cache = CacheCounters::Read() - cache_before;
+            auto idx = IndexIoCounters::Read(binding.get()) - idx_before;
             read_csv << reads << "," << k << ",\"" << attr_names << "\","
                      << scan_result.elapsed_ms << "," << scan_result.matched
                      << "," << writes << "," << fixed << setprecision(6)
@@ -466,7 +494,9 @@ int main(int argc, char* argv[]) {
                      << "," << (ReadIoCounter("rchar") - rchar_before) / (1 << 20)
                      << ","
                      << (ReadIoCounter("read_bytes") - disk_before) / (1 << 20)
-                     << "\n";
+                     << "," << idx.reads << "," << fixed << setprecision(6)
+                     << (static_cast<double>(idx.bytes) / (1 << 20)) << ","
+                     << idx.cache_hits << "," << idx.cache_misses << "\n";
             read_csv.flush();
           }
           reads++;

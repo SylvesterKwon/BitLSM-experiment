@@ -13,6 +13,23 @@ This measures how each index (BitLSM SABI, SAI postings, embedded BF+ZM, si-*
 native CFs, no-index) degrades as the total resident memory shrinks. It is a
 READ experiment; the DB must already exist (built by nyc_taxi_seq_write).
 
+Interpretation:
+    Time (time_elapsed_ms in the read CSV) is the headline metric — it is
+    the only column that is directly comparable across every method. SAI's
+    disk_read_mb is inflated relative to its useful payload: on-demand
+    interior-leaf reads are pinned as one coarse span per (attr, SST, query
+    range), and that span interleaves the leaves' values|perm bytes between
+    their postings (records are values|perm|postings back to back), so the
+    coarse read carries dead bytes that were never requested. Byte columns
+    (disk_read_mb, rchar_mb) are therefore not cross-method comparable; only
+    time is. Per-table metadata directories (the small per-table index
+    roots BitLSM/SAI/embedded each keep resident to locate their on-demand
+    extents) live in the process heap outside EXP_BLOCK_CACHE_MB for ALL
+    three UDI methods alike — this is symmetric across bitlsm/sai/embedded,
+    not a handicap specific to one of them. ALWAYS verify build/CMakeCache.txt
+    says CMAKE_BUILD_TYPE=Release before measuring — a Debug build left in
+    place silently inflates every number by roughly 3x with no other symptom.
+
 Usage:
     python3 experiments/nyc_taxi_read_cache_budget/run.py \
         experiments/nyc_taxi_read_cache_budget/exp_set/<params>.json \
