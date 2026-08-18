@@ -1,6 +1,7 @@
 #include "sai_binding.h"
 #include "benchmark_experiment.h"
 #include "sai_iterator.h"
+#include "blob_source.h"
 #include "rocksdb_common_option.h"
 #include <chrono>
 #include <cxxopts.hpp>
@@ -23,11 +24,20 @@ void SAIBinding::Open(int argc, char* argv[], const std::string& db_path,
                    ("scan_prefetch_depth",
                     "Scan data-block reads kept in flight (0 = one at a time)",
                     cxxopts::value<uint32_t>()->default_value("0"))
+                   ("index_mode", "resident (default) or ondemand",
+                    cxxopts::value<std::string>()->default_value("resident"))
                    ("exp_type", "",
                     cxxopts::value<std::string>()->default_value("write_seq"));
   auto result = cxx.parse(argc, argv);
   scan_prefetch_depth_ = result["scan_prefetch_depth"].as<uint32_t>();
   intersection_limit_ = result["intersection_limit"].as<int>();
+  const std::string index_mode = result["index_mode"].as<std::string>();
+  if (index_mode != "resident" && index_mode != "ondemand") {
+    std::cerr << "[SAIBinding] invalid --index_mode '" << index_mode
+              << "' (expected resident or ondemand)\n";
+    exit(1);
+  }
+  ondemand_index_ = (index_mode == "ondemand");
   bool wa_mode = (result["exp_type"].as<std::string>() == "write_seq_wa");
 
   rocksdb::Options rocksdb_options;
@@ -48,6 +58,7 @@ void SAIBinding::Open(int argc, char* argv[], const std::string& db_path,
 
   BitLSMOptions scan_opts = opts;
   scan_opts.scan_prefetch_depth = scan_prefetch_depth_;
+  scan_opts.ondemand_index = ondemand_index_;
   db_ = std::make_unique<sai::SAIDB>(db_path, scan_opts, rocksdb_options,
                                      table_options, intersection_limit_);
 }
@@ -101,6 +112,17 @@ void SAIBinding::WaitForQuiescence() {
   db_->GetInternalDB()->WaitForCompact(wfco);
 }
 
-void SAIBinding::Close() { db_.reset(); }
+void SAIBinding::Close() {
+  if (ondemand_index_) {
+    BlobSourceStats stats = GetBlobSourceStats();
+    std::cerr << "[SAIBinding] ondemand blob-page stats: hits=" << stats.page_hits
+              << " misses=" << stats.page_misses
+              << " bytes_read=" << stats.bytes_read
+              << " span_reads=" << stats.span_reads
+              << " extent_hits=" << stats.extent_hits
+              << " extent_misses=" << stats.extent_misses << "\n";
+  }
+  db_.reset();
+}
 
 }  // namespace experiment

@@ -1,6 +1,7 @@
 #include "binding.h"
 #include "json_record_parser.h"
 #include "resource_monitor.h"
+#include "rocksdb_common_option.h"
 #include "taxi_schema.h"
 #include "tsv_parser.h"
 #include <algorithm>
@@ -25,6 +26,82 @@ struct WriteItem {
 };
 
 using namespace std;
+
+// One field of /proc/self/status in KB ("VmRSS" for current, "VmHWM" for the
+// peak since process start). 0 if the field is absent.
+static long ReadStatusKb(const char* field) {
+  ifstream f("/proc/self/status");
+  string line;
+  const size_t n = strlen(field);
+  while (getline(f, line)) {
+    if (line.compare(0, n, field) == 0 && line.size() > n && line[n] == ':') {
+      long kb = 0;
+      sscanf(line.c_str() + n + 1, "%ld", &kb);
+      return kb;
+    }
+  }
+  return 0;
+}
+
+// One field of /proc/self/io in bytes. `rchar` counts bytes handed to the
+// process by read syscalls, cache hit or not; `read_bytes` counts only what
+// the block layer actually fetched. With direct I/O the two track each other,
+// and a large gap is the signature of the OS page cache serving reads the
+// experiment believes are going to disk.
+static long long ReadIoCounter(const char* field) {
+  ifstream f("/proc/self/io");
+  string line;
+  const size_t n = strlen(field);
+  while (getline(f, line)) {
+    if (line.compare(0, n, field) == 0 && line.size() > n && line[n] == ':') {
+      long long v = 0;
+      sscanf(line.c_str() + n + 1, "%lld", &v);
+      return v;
+    }
+  }
+  return 0;
+}
+
+// Block-cache counters read per query.
+//
+// Ticker attribution is NOT the same split as cache charging. RocksDB charges
+// the UDI blob as CacheEntryRole::kIndexBlock, but its hit/miss tickers switch
+// on BlockType, where kUserDefinedIndex falls through to the default arm
+// (block_based_table_reader.cc UpdateCacheHitMetrics/UpdateCacheMissMetrics).
+// So:
+//   keyidx_* = RocksDB's own key index blocks only (one per SST per scan)
+//   dataudi_* = data blocks AND the UDI blob (bitlsm SABI, sai postings)
+// For si-*, the secondary index lives in a second CF, so its blocks are plain
+// data blocks and also land in dataudi_*.
+//
+// A query that prunes every SST reads no data block, so its dataudi_miss is
+// exactly the number of UDI blobs re-read from disk — the clean probe for
+// index eviction under a budget.
+//
+// All zero unless EXP_CACHE_STATS is set (see SharedCacheStatistics).
+struct CacheCounters {
+  uint64_t keyidx_hit = 0, keyidx_miss = 0, keyidx_bytes_insert = 0;
+  uint64_t dataudi_hit = 0, dataudi_miss = 0;
+
+  static CacheCounters Read() {
+    CacheCounters c;
+    auto stats = experiment::SharedCacheStatistics();
+    if (!stats) return c;
+    c.keyidx_hit = stats->getTickerCount(rocksdb::BLOCK_CACHE_INDEX_HIT);
+    c.keyidx_miss = stats->getTickerCount(rocksdb::BLOCK_CACHE_INDEX_MISS);
+    c.keyidx_bytes_insert =
+        stats->getTickerCount(rocksdb::BLOCK_CACHE_INDEX_BYTES_INSERT);
+    c.dataudi_hit = stats->getTickerCount(rocksdb::BLOCK_CACHE_DATA_HIT);
+    c.dataudi_miss = stats->getTickerCount(rocksdb::BLOCK_CACHE_DATA_MISS);
+    return c;
+  }
+
+  CacheCounters operator-(const CacheCounters& p) const {
+    return {keyidx_hit - p.keyidx_hit, keyidx_miss - p.keyidx_miss,
+            keyidx_bytes_insert - p.keyidx_bytes_insert,
+            dataudi_hit - p.dataudi_hit, dataudi_miss - p.dataudi_miss};
+  }
+};
 
 int main(int argc, char* argv[]) {
   cxxopts::Options opts("honk-player", "Taxi data workload driver");
@@ -158,7 +235,10 @@ int main(int argc, char* argv[]) {
     if (!read_csv.is_open()) {
       read_csv.open(file_prefix + "_read_log.csv");
       read_csv << "query_id,query_attr_num,filter_attrs,time_elapsed_ms,"
-                  "records_matched,records_total,selectivity_actual\n";
+                  "records_matched,records_total,selectivity_actual,"
+                  "rss_kb,peak_rss_kb,keyidx_hit,keyidx_miss,"
+                  "keyidx_bytes_insert,dataudi_hit,dataudi_miss,"
+                  "rchar_mb,disk_read_mb\n";
     }
   };
 
@@ -357,6 +437,9 @@ int main(int argc, char* argv[]) {
           reads++;
           cout << "[interleave] QUERY #" << reads << " at " << writes << " records, " << latency << "us\n";
         } else {
+          auto cache_before = CacheCounters::Read();
+          const long long rchar_before = ReadIoCounter("rchar");
+          const long long disk_before = ReadIoCounter("read_bytes");
           auto scan_result = binding->Scan(query);
           if (!scan_result.ok) {
             // The scan stopped on an error; `matched` is a partial count.
@@ -370,10 +453,20 @@ int main(int argc, char* argv[]) {
                 writes > 0
                     ? static_cast<double>(scan_result.matched) / writes
                     : 0.0;
+            // Counters are per query (delta across this scan); the two RSS
+            // columns are absolute, VmHWM being the peak since process start.
+            auto cache = CacheCounters::Read() - cache_before;
             read_csv << reads << "," << k << ",\"" << attr_names << "\","
                      << scan_result.elapsed_ms << "," << scan_result.matched
                      << "," << writes << "," << fixed << setprecision(6)
-                     << selectivity << "\n";
+                     << selectivity << "," << ReadStatusKb("VmRSS") << ","
+                     << ReadStatusKb("VmHWM") << "," << cache.keyidx_hit << ","
+                     << cache.keyidx_miss << "," << cache.keyidx_bytes_insert
+                     << "," << cache.dataudi_hit << "," << cache.dataudi_miss
+                     << "," << (ReadIoCounter("rchar") - rchar_before) / (1 << 20)
+                     << ","
+                     << (ReadIoCounter("read_bytes") - disk_before) / (1 << 20)
+                     << "\n";
             read_csv.flush();
           }
           reads++;

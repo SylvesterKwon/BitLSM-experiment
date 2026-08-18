@@ -87,7 +87,11 @@ UserDefinedIndexBuilder* SAIIndexFactory::NewBuilder() const {
 }
 std::unique_ptr<UserDefinedIndexReader> SAIIndexFactory::NewReader(
     Slice& index_block) const {
-  return std::make_unique<SAIIndexReader>(index_block, options_);
+  // Mode follows the factory flag so it can never disagree with
+  // ProducesMetadataOnlyReaders(): the open path checks that BEFORE the
+  // reader exists, to decide whether to cache the raw blob.
+  return std::make_unique<SAIIndexReader>(index_block, options_,
+                                          options_.ondemand_index);
 }
 
 }  // namespace experiment::sai

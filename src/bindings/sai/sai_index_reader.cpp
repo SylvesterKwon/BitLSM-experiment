@@ -1,5 +1,7 @@
 #include "sai_index.h"
+#include "blob_source.h"
 #include "sai_coding.h"
+#include "sai_ondemand.h"
 #include <algorithm>
 #include <cassert>
 
@@ -7,11 +9,23 @@ namespace experiment::sai {
 using namespace rocksdb;
 
 SAIIndexReader::SAIIndexReader(Slice& index_block,
-                               const bit_lsm::BitLSMOptions& options)
-    : options_(options) {
-  owned_.assign(index_block.data(), index_block.size());
-  base_ = owned_.data();
-  const char* end = base_ + owned_.size();
+                               const bit_lsm::BitLSMOptions& options,
+                               bool metadata_only)
+    : options_(options), metadata_only_(metadata_only) {
+  // Both modes parse the same directory into owned vectors. Resident mode
+  // additionally copies the whole blob and keeps base_ into that copy;
+  // metadata mode parses straight out of index_block and retains no pointer
+  // into it -- the block is freed after construction (RetainsIndexContents()
+  // == false), so keeping any would be a use-after-free.
+  const char* base;
+  if (metadata_only_) {
+    base = index_block.data();
+  } else {
+    owned_.assign(index_block.data(), index_block.size());
+    base_ = owned_.data();
+    base = base_;
+  }
+  const char* end = base + index_block.size();
   assert(GetU32(end - 4) == 0x53414931 && "bad SAI blob magic");
   entries_total_ = GetU32(end - 8);
   const uint32_t n_attrs = GetU32(end - 12);
@@ -23,7 +37,7 @@ SAIIndexReader::SAIIndexReader(Slice& index_block,
   entry_count_psum.resize(B);
   block_handles.resize(B);
   for (uint32_t i = 0; i < B; ++i) {
-    const char* p = base_ + i * 12;
+    const char* p = base + i * 12;
     entry_count_psum[i] = GetU32(p);
     block_handles[i].offset = GetU32(p + 4);
     block_handles[i].size = GetU32(p + 8);
@@ -31,6 +45,13 @@ SAIIndexReader::SAIIndexReader(Slice& index_block,
 }
 
 uint64_t SAIIndexReader::Estimate(const SAIFact& f) const {
+  if (metadata_only_) {
+    assert(table_ != nullptr);  // SetTable ran before any query (pinned path)
+    FileBlobSource src(table_);
+    const uint64_t est = OnDemandEstimate(src, region_off_, f);
+    FailIfError(src);
+    return est;
+  }
   const char* region = Region(f.attr_idx);
   if (f.is_cat) {
     TrieEntry e;
@@ -41,6 +62,19 @@ uint64_t SAIIndexReader::Estimate(const SAIFact& f) const {
 }
 
 std::unique_ptr<RowCursor> SAIIndexReader::OpenCursor(const SAIFact& f) const {
+  if (metadata_only_) {
+    assert(table_ != nullptr);
+    auto src = std::make_unique<FileBlobSource>(table_);
+    auto inner = OnDemandOpenCursor(src.get(), region_off_, f);
+    // A read failure is fatal (FailIfError); a clean nullptr means the term
+    // is absent or the range overlaps nothing -- same contract as resident.
+    FailIfError(*src);
+    if (!inner) return nullptr;
+    // The categorical cursor keeps reading posting blocks through the source
+    // as it advances, so the source rides along inside the returned cursor.
+    return std::make_unique<OwningCursorOnDemand>(std::move(src),
+                                                  std::move(inner));
+  }
   const char* region = Region(f.attr_idx);
   if (f.is_cat) {
     TrieEntry e;

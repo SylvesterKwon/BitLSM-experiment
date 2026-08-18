@@ -8,11 +8,25 @@
 #include <rocksdb/cache.h>
 #include <rocksdb/filter_policy.h>
 #include <rocksdb/options.h>
+#include <rocksdb/statistics.h>
 #include <rocksdb/table.h>
 
 #include "block_prefetch_queue.h"
 
 namespace experiment {
+
+// Block-cache counters for the memory-budget experiment: off unless
+// EXP_CACHE_STATS is set, so ordinary measurement runs pay no ticker overhead.
+// One process-wide Statistics instance shared by every column family (si-*
+// opens two), so a driver can read one set of counters without reaching into
+// the binding. Index-role tickers cover the UDI blob too: RocksDB classifies
+// it as CacheEntryRole::kIndexBlock.
+inline std::shared_ptr<rocksdb::Statistics> SharedCacheStatistics() {
+  static std::shared_ptr<rocksdb::Statistics> stats =
+      std::getenv("EXP_CACHE_STATS") ? rocksdb::CreateDBStatistics()
+                                     : std::shared_ptr<rocksdb::Statistics>();
+  return stats;
+}
 
 // Direct I/O for user reads and flush/compaction. On unless EXP_DIRECT_IO=0
 // (buffered fallback, not for measurement runs). max_open_files and block_cache
@@ -34,6 +48,9 @@ inline void ApplyRocksdbCommonOptions(rocksdb::Options& opts) {
     direct = false;
   opts.use_direct_reads = direct;
   opts.use_direct_io_for_flush_and_compaction = direct;
+  // Write-amplification runs install their own Statistics before calling this;
+  // never displace it.
+  if (!opts.statistics) opts.statistics = SharedCacheStatistics();
 }
 
 // 4 KB data blocks: the controlled constant shared by every method (also the
@@ -53,8 +70,24 @@ inline void ApplyRocksdbCommonTableOptions(
     rocksdb::BlockBasedTableOptions& topts) {
   topts.block_size = 4 * 1024;
   if (const char* mb = std::getenv("EXP_BLOCK_CACHE_MB")) {
-    static std::shared_ptr<rocksdb::Cache> budget_cache =
-        rocksdb::NewLRUCache(static_cast<size_t>(std::atoll(mb)) << 20);
+    static std::shared_ptr<rocksdb::Cache> budget_cache = [&] {
+      rocksdb::LRUCacheOptions copts;
+      copts.capacity = static_cast<size_t>(std::atoll(mb)) << 20;
+      // Pinned at 16 shards instead of the capacity-derived default (up to 64,
+      // sharded_cache.cc GetDefaultCacheShardBits). A UDI blob is one cache
+      // entry of several MB; at a small budget the default shard capacity
+      // falls below a single blob, which would make the entry unplaceable in
+      // its shard and concentrate eviction pressure there. 16 shards keeps
+      // per-shard capacity well above one blob across this experiment's grid.
+      copts.num_shard_bits = 4;
+      // Half the budget can hold high-priority entries (the LRUCacheOptions
+      // default, restated so the shared config is self-describing). Both
+      // methods' on-demand index entries insert at Priority::HIGH, so under
+      // pressure the index working set survives streaming data blocks the
+      // same way RocksDB's own index/filter blocks do.
+      copts.high_pri_pool_ratio = 0.5;
+      return rocksdb::NewLRUCache(copts);
+    }();
     topts.block_cache = budget_cache;
     topts.cache_index_and_filter_blocks = true;
   }
