@@ -1,0 +1,53 @@
+{
+  "db_path_base": "/scratch/honk",
+  "block_cache_mb": [0, 8192, 4096, 2048, 1024, 512],
+  "workload": [
+    "workloads/read_seq/read_seq_sel0.001_k2_r300.tsv",
+    "workloads/read_seq/read_seq_sel0.001_k3_r300.tsv",
+    "workloads/read_seq/read_seq_sel0.001_k4_r300.tsv"
+  ],
+  "common_params": {
+    "indexed_attrs": "PULocationID,DOLocationID,tpep_pickup_datetime,tpep_dropoff_datetime,fare_amount,passenger_count",
+    "scan_prefetch_depth": 32
+  },
+  "methods": [
+    {
+      "name": "bitlsm",
+      "query_limit": 10,
+      "params": {
+        "rho": [0.01, 0.001],
+        "index_mode": ["ondemand"]
+      }
+    },
+    {
+      "name": "sai",
+      "query_limit": 10,
+      "params": {
+        "intersection_limit": [0, 2],
+        "index_mode": ["ondemand"]
+      }
+    },
+    {
+      "name": "embedded",
+      "query_limit": 10,
+      "params": {
+        "bloom_bits": 10,
+        "index_mode": ["ondemand"]
+      }
+    },
+    {
+      "name": "si-ck",
+      "query_limit": 10,
+      "params": {
+        "read_strategy": ["im", "pf"]
+      }
+    },
+    {
+      "name": "si-lu",
+      "query_limit": 10,
+      "params": {
+        "read_strategy": ["im", "pf"]
+      }
+    }
+  ]
+}
