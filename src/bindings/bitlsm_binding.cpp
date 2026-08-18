@@ -4,6 +4,7 @@
 #include <cxxopts.hpp>
 #include <iostream>
 #include "rocksdb_common_option.h"
+#include "sabi.h"
 #include <rocksdb/filter_policy.h>
 #include <rocksdb/options.h>
 #include <rocksdb/table.h>
@@ -59,6 +60,10 @@ void BitLSMBinding::Open(int argc, char* argv[], const std::string& db_path,
   bitlsm_opts.ondemand_index = ondemand_index_;
   db_ = std::make_unique<bit_lsm::BitLSM>(db_path, bitlsm_opts,
                                             rocksdb_options, table_options);
+  // Zero the process-wide on-demand bin cache counters so this run's totals
+  // (and the per-query deltas honk_player computes from them) don't carry
+  // noise from whatever touched them before this DB was opened.
+  bit_lsm::ResetSABIBinCacheStats();
 }
 
 void BitLSMBinding::Put(const std::string& pk, const std::vector<Attr>& attrs,
@@ -111,7 +116,35 @@ void BitLSMBinding::WaitForQuiescence() {
   db_->GetInternalDB()->WaitForCompact(wfco);
 }
 
-void BitLSMBinding::Close() { db_.reset(); }
+IndexIoStats BitLSMBinding::GetIndexIoStats() {
+  bit_lsm::SABIBinCacheStats s = bit_lsm::GetSABIBinCacheStats();
+  IndexIoStats out;
+  // Device reads issued: synchronous preads (reads) plus async span
+  // submissions that ended up serving the miss (spans_prefetched) -- a
+  // spans_prefetched run adds bytes_read but no `reads`, so it must be added
+  // in separately to count as a device request.
+  out.reads = s.reads + s.spans_prefetched;
+  out.bytes = s.bytes_read;
+  out.cache_hits = s.hits;
+  out.cache_misses = s.misses;
+  return out;
+}
+
+void BitLSMBinding::Close() {
+  if (ondemand_index_) {
+    bit_lsm::SABIBinCacheStats stats = bit_lsm::GetSABIBinCacheStats();
+    std::cerr << "[BitLSMBinding] ondemand SABI bin-cache stats: hits="
+              << stats.hits << " misses=" << stats.misses
+              << " reads=" << stats.reads
+              << " bytes_read=" << stats.bytes_read
+              << " bitmaps_loaded=" << stats.bitmaps_loaded
+              << " inserts_refused=" << stats.inserts_refused
+              << " spans_planned=" << stats.spans_planned
+              << " spans_prefetched=" << stats.spans_prefetched
+              << " spans_dropped=" << stats.spans_dropped << "\n";
+  }
+  db_.reset();
+}
 
 std::string BitLSMBinding::ParamSuffix() const {
   return "_rho" + benchmark::format_double(rho_) +
