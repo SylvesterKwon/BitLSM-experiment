@@ -7,7 +7,8 @@
     "workloads/read_seq/read_seq_sel0.001_k4_r300.tsv"
   ],
   "common_params": {
-    "indexed_attrs": "PULocationID,DOLocationID,tpep_pickup_datetime,tpep_dropoff_datetime,fare_amount,passenger_count"
+    "indexed_attrs": "PULocationID,DOLocationID,tpep_pickup_datetime,tpep_dropoff_datetime,fare_amount,passenger_count",
+    "scan_prefetch_depth": 32
   },
   "methods": [
     {
@@ -19,9 +20,7 @@
       "name": "bitlsm",
       "params": {
         "rho": [
-          0.03,
-          0.01,
-          0.003
+          0.001
         ]
       }
     },
@@ -52,7 +51,10 @@
     {
       "name": "sai",
       "params": {
-        "intersection_limit": 2
+        "intersection_limit": [
+          0,
+          2
+        ]
       }
     }
   ]
