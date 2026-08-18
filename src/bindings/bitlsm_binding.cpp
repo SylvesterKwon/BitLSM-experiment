@@ -15,7 +15,7 @@ void BitLSMBinding::Open(int argc, char* argv[], const std::string& db_path,
   cxxopts::Options cxx("bitlsm", "");
   cxx.allow_unrecognised_options();
   cxx.add_options()("rho", "BitLSM rho threshold",
-                    cxxopts::value<double>()->default_value("0.1"))
+                    cxxopts::value<double>()->default_value("0.001"))
                    ("max_background_jobs", "",
                     cxxopts::value<int>()->default_value("6"))
                    ("scan_prefetch_depth",

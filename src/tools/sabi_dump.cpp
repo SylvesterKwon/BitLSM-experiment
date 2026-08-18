@@ -133,7 +133,7 @@ int main(int argc, char* argv[]) {
 
   bit_lsm::BitLSMOptions bitlsm_opts =
       honk::BuildTaxiBitLSMOptions(indexed);
-  bitlsm_opts.rho = rho > 0 ? rho : 0.1;
+  bitlsm_opts.rho = rho > 0 ? rho : 0.001;
   bit_lsm::BitLSM db(db_path, bitlsm_opts, rocksdb_options, table_options);
 
   auto* db_impl = static_cast<DBImpl*>(db.GetInternalDB());
