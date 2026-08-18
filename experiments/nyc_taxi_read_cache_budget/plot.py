@@ -24,7 +24,7 @@ plt.rcParams.update({"font.size": 7})
 # parens, BitLSM by rho desc). Extends nyc_taxi_seq_read/plot.py with si-eager,
 # sai, and rho0.01.
 #
-# The formal full-baseline sweep (read_cache_budget_sel0.001_full.json) runs
+# The formal full-baseline sweep (read_cache_budget_sel0.0001.json) runs
 # bitlsm/sai/embedded with --index_mode ondemand; honk_player's ParamSuffix()
 # appends "_ondemand" to those CSV names (si-ck/si-lu never carry it — they
 # have no --index_mode flag). The "_ondemand" entries below are additive:
@@ -39,11 +39,13 @@ METHOD_ORDER = [
     "si-ck_strategy_im",
     "embedded_bloom_bits10",
     "embedded_bloom_bits10_ondemand",
+    "sai_il0",
     "sai_il2",
     "sai_il0_ondemand",
     "sai_il2_ondemand",
     "bitlsm_rho0.01",
     "bitlsm_rho0.01_ondemand",
+    "bitlsm_rho0.001",
     "bitlsm_rho0.001_ondemand",
 ]
 METHOD_LABELS = {
@@ -54,11 +56,13 @@ METHOD_LABELS = {
     "si-ck_strategy_im": "Composite (Intersection)",
     "embedded_bloom_bits10": "Bloom + Zone Map",
     "embedded_bloom_bits10_ondemand": "Bloom + Zone Map (OD)",
+    "sai_il0": "SAI (il=0)",
     "sai_il2": "SAI",
     "sai_il0_ondemand": "SAI (il=0, OD)",
     "sai_il2_ondemand": "SAI (il=2, OD)",
     "bitlsm_rho0.01": r"BitLSM ($\rho$=0.01)",
     "bitlsm_rho0.01_ondemand": r"BitLSM ($\rho$=0.01, OD)",
+    "bitlsm_rho0.001": r"BitLSM ($\rho$=0.001)",
     "bitlsm_rho0.001_ondemand": r"BitLSM ($\rho$=0.001, OD)",
 }
 METHOD_COLORS = {
@@ -69,11 +73,13 @@ METHOD_COLORS = {
     "si-lu_strategy_pf": "#4CC850",
     "embedded_bloom_bits10": "#1FA8A0",
     "embedded_bloom_bits10_ondemand": "#1FA8A0",
+    "sai_il0": "#3060C0",
     "sai_il2": "#3060C0",
     "sai_il0_ondemand": "#3060C0",
     "sai_il2_ondemand": "#3060C0",
     "bitlsm_rho0.01": "#9B1B1B",
     "bitlsm_rho0.01_ondemand": "#9B1B1B",
+    "bitlsm_rho0.001": "#D9534F",
     "bitlsm_rho0.001_ondemand": "#D9534F",
 }
 # Intersection strategy dashed to separate from post-filtering of same color.
@@ -83,6 +89,7 @@ METHOD_COLORS = {
 METHOD_LINESTYLE = {
     "si-ck_strategy_im": "--",
     "si-lu_strategy_im": "--",
+    "sai_il2": "--",
     "sai_il2_ondemand": "--",
 }
 
