@@ -118,15 +118,24 @@ def run(config_path: str, dry_run: bool, method_filter: list,
             if not methods:
                 sys.exit(f"No methods matched: {method_filter}")
 
-        method_combos = sum(
-            len(cartesian_combinations(m.get("params", {})))
+        # A method may pin itself to a subset of the budget axis via its own
+        # "block_cache_mb" allowlist (e.g. resident-mode baselines run only at
+        # 0 = unbounded; sweeping a resident index through tight budgets
+        # measures the eviction/re-parse pathology, not a baseline).
+        def method_budgets(m):
+            allow = m.get("block_cache_mb")
+            return [b for b in budgets if allow is None or b in allow]
+
+        total_runs = len(workloads) * sum(
+            len(method_budgets(m)) * len(cartesian_combinations(m.get("params", {})))
             for m in methods
         )
-        total_runs = len(workloads) * len(budgets) * method_combos
         print(f"config   : {config_path}")
         print(f"label    : {exp_label}")
+        combo_total = sum(
+            len(cartesian_combinations(m.get("params", {}))) for m in methods)
         print(f"axes     : {len(workloads)} workload(s) x {len(budgets)} budget(s) "
-              f"x {method_combos} method-combo(s)")
+              f"x {combo_total} method-combo(s), per-method budget allowlists applied")
         for w in workloads:
             print(f"           - {workload_stem(w)}")
         print(f"budgets  : {', '.join(str(b) + 'MB' if b else 'default' for b in budgets)}")
@@ -159,6 +168,8 @@ def run(config_path: str, dry_run: bool, method_filter: list,
                     run_env = dict(os.environ, EXP_BLOCK_CACHE_MB=str(budget))
 
                 for method in methods:
+                    if budget not in method_budgets(method):
+                        continue
                     name          = method["name"]
                     method_params = method.get("params", {})
                     query_limit   = method.get("query_limit", 0)
