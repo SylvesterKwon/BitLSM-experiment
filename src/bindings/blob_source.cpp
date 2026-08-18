@@ -22,6 +22,7 @@ std::atomic<uint64_t> g_bytes_read{0};
 std::atomic<uint64_t> g_span_reads{0};
 std::atomic<uint64_t> g_extent_hits{0};
 std::atomic<uint64_t> g_extent_misses{0};
+std::atomic<uint64_t> g_single_page_reads{0};
 
 // A read touching at least this many pages takes the bulk span path. Two is
 // strictly better than the per-page loop already: the cache lookups are the
@@ -86,7 +87,8 @@ BlobSourceStats GetBlobSourceStats() {
           g_bytes_read.load(std::memory_order_relaxed),
           g_span_reads.load(std::memory_order_relaxed),
           g_extent_hits.load(std::memory_order_relaxed),
-          g_extent_misses.load(std::memory_order_relaxed)};
+          g_extent_misses.load(std::memory_order_relaxed),
+          g_single_page_reads.load(std::memory_order_relaxed)};
 }
 
 void ResetBlobSourceStats() {
@@ -96,6 +98,7 @@ void ResetBlobSourceStats() {
   g_span_reads.store(0, std::memory_order_relaxed);
   g_extent_hits.store(0, std::memory_order_relaxed);
   g_extent_misses.store(0, std::memory_order_relaxed);
+  g_single_page_reads.store(0, std::memory_order_relaxed);
 }
 
 PinnedExtent BlobSource::FetchExtent(uint32_t rel_off, uint32_t len) {
@@ -167,6 +170,11 @@ bool FileBlobSource::ReadFromPage(uint64_t data_begin, uint32_t page_len,
 
   g_page_misses.fetch_add(1, std::memory_order_relaxed);
   g_bytes_read.fetch_add(page_len, std::memory_order_relaxed);
+  // ReadFromPage is only ever reached from the per-page loop in Read(), which
+  // only runs for single-page requests (multi-page requests take ReadSpan
+  // instead) -- so every miss here is one device pread issued by the
+  // non-bulk path.
+  g_single_page_reads.fetch_add(1, std::memory_order_relaxed);
 
   if (cache != nullptr) {
     // Insert without taking a handle: the bytes are already copied out, and a
