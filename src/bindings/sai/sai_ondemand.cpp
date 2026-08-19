@@ -94,6 +94,18 @@ PostingsCursorOnDemand::PostingsCursorOnDemand(BlobSource* src,
   if (!src_->ok()) return;
   const uint64_t extent =
       static_cast<uint64_t>(last_rel) + kMaxPostingBlockBytes;
+  if (AsyncPageBatch()) {
+    // Page-granular mode drains this list one block at a time, so every page
+    // of [header | skip table | blocks] is read before the cursor is done and
+    // the whole thing can be submitted now. `extent` is tight -- it ends at
+    // the LAST block's offset (out of the skip table just read) plus one
+    // worst-case block -- so this batches exactly the pages the per-block
+    // reads would have faulted in one at a time, no dead bytes beyond the
+    // same bounded tail over-read those reads already take.
+    const BlobRange r{list_off_,
+                      src_->Clamp(list_off_, static_cast<uint32_t>(extent))};
+    src_->PrefetchRanges(&r, 1);
+  }
   local_ = src_->FetchExtent(
       list_off_, src_->Clamp(list_off_, static_cast<uint32_t>(extent)));
   if (!src_->ok()) return;
@@ -203,6 +215,16 @@ ContReaderOnDemand::ContReaderOnDemand(BlobSource* src, uint32_t region_off)
     summaries_ =
         src_->FetchExtent(summaries_off_, static_cast<uint32_t>(want));
     summaries_ok_ = summaries_.data() != nullptr;
+    if (!summaries_ok_ && AsyncPageBatch()) {
+      // Cap 0: no summary extent, so Overlap() and the per-leaf walk probe
+      // the array 8 bytes at a time through the source. Overlap scans from
+      // block 0 forward and from block n-1 backward and OpenCursor then
+      // walks everything between, so the WHOLE array is read either way --
+      // one batched submission instead of one pread per 4 KB page, over
+      // byte-identical bytes.
+      const BlobRange r{summaries_off_, static_cast<uint32_t>(want)};
+      src_->PrefetchRanges(&r, 1);
+    }
   }
 }
 
@@ -402,6 +424,61 @@ std::unique_ptr<RowCursor> ContReaderOnDemand::OpenCursor(double lo, bool lo_inc
     const bool hi_ok = hi_inc ? (mx <= hi) : (mx < hi);
     return lo_ok && hi_ok;
   };
+  // The postings byte-ranges of a whole numeric range are known here, before
+  // a single one of them is read: the leaf set is [first_block, last_block]
+  // and each leaf's postings run from its own postings offset to the next
+  // leaf's values offset (records are values|perm|postings back to back), all
+  // out of the summary array alone. In page-granular mode those become one to
+  // three scattered 4 KB preads PER LEAF, issued one at a time as each leaf
+  // cursor opens -- the request count the coarse per-range extent buys its
+  // dead bytes to avoid. Handing the whole set to the source lets it submit
+  // them together (FileBlobSource::PrefetchRanges -> MultiRead -> io_uring),
+  // which is what BitLSM's cold bin runs already do
+  // (BitLSM src/include/block_prefetch_queue.h). The batch fetches the pages
+  // the per-leaf reads would have faulted in, minus the ones the cache
+  // already holds -- read granularity, page keys and cross-query reuse are
+  // untouched, only the submission changes.
+  //
+  // An INTERIOR leaf is asked for its postings only. A BOUNDARY leaf (at most
+  // the range's two ends) also binary-searches its values array and reads a
+  // permutation slice, so it is asked for its whole values|perm|postings
+  // record. Both ends carry the same kMaxPostingBlockBytes tail slack the
+  // per-block reads take. The only pages this can add over the serial path
+  // are the ones inside a boundary leaf's values|perm that its binary search
+  // happens to skip -- at most two leaves per range.
+  if (AsyncPageBatch()) {
+    std::vector<BlobRange> want;
+    want.reserve(br.last_block - br.first_block + 1);
+    for (uint32_t b = br.first_block; b <= br.last_block; ++b) {
+      const char* srec = SummaryRec(b, sbuf);
+      if (!src_->ok()) return nullptr;
+      const uint32_t begin_rel =
+          leaf_interior(srec) ? GetU32(srec + 28) : GetU32(srec + 20);
+      uint64_t end_rel;
+      if (b + 1 < n_blocks_) {
+        end_rel = static_cast<uint64_t>(ValuesOff(b + 1)) +
+                  kMaxPostingBlockBytes;
+        if (!src_->ok()) return nullptr;
+      } else {
+        // Region's last leaf: no next record to end on, so bound its postings
+        // the same way the boundary windows do -- header, skip table and a
+        // worst-case block each.
+        const uint32_t cnt = GetU32(srec + 16);
+        const uint32_t nbk =
+            (cnt + kPostingsBlockSize - 1) / kPostingsBlockSize;
+        end_rel = static_cast<uint64_t>(GetU32(srec + 28)) + 8 +
+                  static_cast<uint64_t>(nbk) * (8 + kMaxPostingBlockBytes);
+      }
+      if (end_rel <= begin_rel ||
+          end_rel - begin_rel > std::numeric_limits<uint32_t>::max()) {
+        continue;  // corrupt/absurd directory: skip the hint, read as usual
+      }
+      const uint32_t off = region_off_ + begin_rel;
+      want.push_back(
+          {off, src_->Clamp(off, static_cast<uint32_t>(end_rel - begin_rel))});
+    }
+    if (!want.empty()) src_->PrefetchRanges(want.data(), want.size());
+  }
   // The interior leaves therefore form one contiguous run [fi, li_end):
   // trimming a boundary end off each side of [first_block, last_block]
   // leaves exactly the interior set. Their postings are fetched as ONE

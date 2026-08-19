@@ -1,10 +1,14 @@
 #include "blob_source.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cassert>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <utility>
+#include <vector>
 
 #include "cache/cache_key.h"
 #include "file/random_access_file_reader.h"
@@ -23,6 +27,17 @@ std::atomic<uint64_t> g_span_reads{0};
 std::atomic<uint64_t> g_extent_hits{0};
 std::atomic<uint64_t> g_extent_misses{0};
 std::atomic<uint64_t> g_single_page_reads{0};
+std::atomic<uint64_t> g_batch_calls{0};
+std::atomic<uint64_t> g_batch_reads{0};
+
+// Read requests carried by one MultiRead. Every request in a batch is
+// submitted before any of them is waited on, so the batch IS the queue depth;
+// the cap only bounds the transient scratch/aligned buffer RocksDB allocates
+// for a call (RandomAccessFileReader::MultiRead allocates one buffer of the
+// batch's total length under direct I/O). 128 x a few pages is a few hundred
+// KB, and deeper than the 32-64 slots the data-block prefetch queue and
+// SABI's span prefetch run at.
+constexpr size_t kMaxBatchRequests = 128;
 
 // A read touching at least this many pages takes the bulk span path. Two is
 // strictly better than the per-page loop already: the cache lookups are the
@@ -72,7 +87,36 @@ std::atomic<uint64_t>& LocalExtentCapVar() {
   return cap;
 }
 
+// EXP_SAI_ASYNC_INDEX, else off. Function-local static so the env var is read
+// once, before any cursor consults it.
+std::atomic<bool>& AsyncIndexReadsVar() {
+  static std::atomic<bool> on{[] {
+    const char* e = std::getenv("EXP_SAI_ASYNC_INDEX");
+    return e != nullptr && e[0] != '0';
+  }()};
+  return on;
+}
+
+// EXP_SAI_ASYNC_VERIFY: after every batch, re-read each request the ordinary
+// synchronous way and compare. Proves the batched bytes are the pread bytes
+// on real SST files, where the unit tests (which run over a MemBlobSource and
+// never reach MultiRead) cannot. Off by default -- it doubles index I/O.
+bool AsyncVerify() {
+  static const bool on = [] {
+    const char* e = std::getenv("EXP_SAI_ASYNC_VERIFY");
+    return e != nullptr && e[0] != '0';
+  }();
+  return on;
+}
+
 }  // namespace
+
+bool AsyncIndexReads() {
+  return AsyncIndexReadsVar().load(std::memory_order_relaxed);
+}
+void SetAsyncIndexReadsForTest(bool on) {
+  AsyncIndexReadsVar().store(on, std::memory_order_relaxed);
+}
 
 uint64_t LocalExtentCap() {
   return LocalExtentCapVar().load(std::memory_order_relaxed);
@@ -88,7 +132,9 @@ BlobSourceStats GetBlobSourceStats() {
           g_span_reads.load(std::memory_order_relaxed),
           g_extent_hits.load(std::memory_order_relaxed),
           g_extent_misses.load(std::memory_order_relaxed),
-          g_single_page_reads.load(std::memory_order_relaxed)};
+          g_single_page_reads.load(std::memory_order_relaxed),
+          g_batch_calls.load(std::memory_order_relaxed),
+          g_batch_reads.load(std::memory_order_relaxed)};
 }
 
 void ResetBlobSourceStats() {
@@ -99,6 +145,8 @@ void ResetBlobSourceStats() {
   g_extent_hits.store(0, std::memory_order_relaxed);
   g_extent_misses.store(0, std::memory_order_relaxed);
   g_single_page_reads.store(0, std::memory_order_relaxed);
+  g_batch_calls.store(0, std::memory_order_relaxed);
+  g_batch_reads.store(0, std::memory_order_relaxed);
 }
 
 PinnedExtent BlobSource::FetchExtent(uint32_t rel_off, uint32_t len) {
@@ -348,6 +396,163 @@ bool FileBlobSource::ReadStretch(uint64_t data_begin, uint64_t data_end,
     }
   }
   return true;
+}
+
+void FileBlobSource::PrefetchRanges(const BlobRange* ranges, size_t n) {
+  if (ranges == nullptr || n == 0 || !AsyncIndexReads()) return;
+  const auto* rep = table_->get_rep();
+  Cache* cache = rep->table_options.block_cache.get();
+  const uint64_t blob_end = blob_offset_ + blob_size_;
+
+  // 1. The caller's ranges, expanded onto the SAME file-anchored 4 KB grid
+  // Read()/ReadFromPage() use, then sorted and deduplicated: overlapping
+  // ranges (two leaves sharing a page, a leaf's tail slack reaching into the
+  // next leaf) must not become two requests for the same bytes.
+  std::vector<uint64_t> pages;
+  for (size_t i = 0; i < n; ++i) {
+    const uint32_t rel = ranges[i].rel_off, len = ranges[i].len;
+    if (len == 0 || static_cast<uint64_t>(rel) + len > blob_size_) continue;
+    const uint64_t abs_begin = blob_offset_ + rel;
+    const uint64_t abs_end = abs_begin + len;
+    for (uint64_t p = abs_begin & ~static_cast<uint64_t>(kBlobPageSize - 1);
+         p < abs_end; p += kBlobPageSize) {
+      pages.push_back(p);
+    }
+  }
+  if (pages.empty()) return;
+  std::sort(pages.begin(), pages.end());
+  pages.erase(std::unique(pages.begin(), pages.end()), pages.end());
+
+  // 2. Drop the pages the cache already holds -- the point of batching is the
+  // MISSING ones, and re-reading a resident page would inflate both the byte
+  // count and the budget's eviction pressure. The lookup is deliberately not
+  // counted as a hit: the read that follows this prefetch counts it, exactly
+  // as it would have without the prefetch.
+  std::vector<PageRun> runs;
+  PageRun cur{0, 0};
+  bool in_run = false;
+  for (uint64_t page_off : pages) {
+    // data_begin/data_end are the page's identity in the cache, clamped to
+    // the blob the same way every other path clamps them: bytes outside
+    // [blob_offset_, blob_end) belong to other blocks.
+    const uint64_t data_begin = std::max(page_off, blob_offset_);
+    const uint64_t data_end = std::min(page_off + kBlobPageSize, blob_end);
+    bool cached = false;
+    if (cache != nullptr) {
+      const CacheKey key = rep->base_cache_key.WithOffset(data_begin >> 2);
+      if (Cache::Handle* h =
+              cache->BasicLookup(key.AsSlice(), /*stats=*/nullptr)) {
+        cache->Release(h);
+        cached = true;
+      }
+    }
+    if (cached) {
+      in_run = false;
+      continue;
+    }
+    // Consecutive missing pages become ONE request, the same coalescing
+    // ReadSpan applies within a single read; a cached page in the middle
+    // breaks the run rather than being re-read.
+    if (in_run && cur.second == data_begin) {
+      cur.second = data_end;
+    } else {
+      if (in_run) runs.push_back(cur);
+      cur = {data_begin, data_end};
+      in_run = true;
+    }
+    if (runs.size() >= kMaxBatchRequests) SubmitBatch(runs);
+  }
+  if (in_run) runs.push_back(cur);
+  SubmitBatch(runs);
+}
+
+void FileBlobSource::SubmitBatch(std::vector<PageRun>& runs) {
+  if (runs.empty()) return;
+  const auto* rep = table_->get_rep();
+  size_t total = 0;
+  for (const PageRun& r : runs) {
+    total += static_cast<size_t>(r.second - r.first);
+  }
+  // One scratch block for the whole batch. Under direct I/O
+  // RandomAccessFileReader::MultiRead ignores it and aligns/merges the
+  // requests into an internally allocated aligned buffer instead (results
+  // point there); under buffered reads this is where the data lands.
+  std::unique_ptr<char[]> scratch(new char[total]);
+  std::vector<FSReadRequest> reqs(runs.size());
+  size_t at = 0;
+  for (size_t i = 0; i < runs.size(); ++i) {
+    reqs[i].offset = runs[i].first;
+    reqs[i].len = static_cast<size_t>(runs[i].second - runs[i].first);
+    reqs[i].scratch = scratch.get() + at;
+    at += reqs[i].len;
+  }
+  // MultiRead requires increasing, non-overlapping offsets: guaranteed, the
+  // runs came out of a sorted deduplicated page list.
+  AlignedBuf aligned;
+  IOStatus s = rep->file->MultiRead(IOOptions(), reqs.data(), reqs.size(),
+                                    &aligned);
+  g_batch_calls.fetch_add(1, std::memory_order_relaxed);
+  g_batch_reads.fetch_add(reqs.size(), std::memory_order_relaxed);
+  if (s.ok()) {
+    for (size_t i = 0; i < reqs.size(); ++i) {
+      // A short or failed sub-request just goes uncached; the serial read
+      // that wanted those bytes will issue its own pread and surface the
+      // error there. ok_ is deliberately NOT set here -- a prefetch is a
+      // hint, and failing one must not turn a healthy query into an abort.
+      if (!reqs[i].status.ok() || reqs[i].result.size() < reqs[i].len) continue;
+      g_bytes_read.fetch_add(reqs[i].len, std::memory_order_relaxed);
+      if (AsyncVerify()) VerifyRequest(reqs[i]);
+      CacheRunPages(reqs[i].offset, reqs[i].offset + reqs[i].len,
+                    reqs[i].result.data());
+    }
+  }
+  runs.clear();
+}
+
+void FileBlobSource::VerifyRequest(const rocksdb::FSReadRequest& req) {
+  const auto* rep = table_->get_rep();
+  std::unique_ptr<char[]> buf(new char[req.len]);
+  Slice got;
+  IOStatus s = rep->file->Read(IOOptions(), req.offset, req.len, &got,
+                               buf.get(), /*aligned_buf=*/nullptr);
+  if (!s.ok() || got.size() != req.len ||
+      std::memcmp(got.data(), req.result.data(), req.len) != 0) {
+    std::fprintf(stderr,
+                 "[blob_source] BATCH MISMATCH at offset %llu len %zu\n",
+                 static_cast<unsigned long long>(req.offset), req.len);
+    std::abort();
+  }
+}
+
+void FileBlobSource::CacheRunPages(uint64_t run_begin, uint64_t run_end,
+                                   const char* bytes) {
+  const auto* rep = table_->get_rep();
+  Cache* cache = rep->table_options.block_cache.get();
+  const uint64_t blob_end = blob_offset_ + blob_size_;
+  // Identical chunking, keys, charge and priority to ReadStretch's: a page
+  // this batch cached is indistinguishable from one a pread cached, which is
+  // what keeps the budget accounting and the cross-query reuse granularity
+  // the same in both modes.
+  for (uint64_t page_off =
+           run_begin & ~static_cast<uint64_t>(kBlobPageSize - 1);
+       page_off < run_end; page_off += kBlobPageSize) {
+    const uint64_t pb = std::max(page_off, blob_offset_);
+    const uint64_t pe = std::min(page_off + kBlobPageSize, blob_end);
+    if (pb >= pe) continue;
+    const uint32_t page_len = static_cast<uint32_t>(pe - pb);
+    g_page_misses.fetch_add(1, std::memory_order_relaxed);
+    if (cache == nullptr) continue;
+    auto page = std::make_unique<BlobPage>();
+    page->data = std::make_unique<char[]>(page_len);
+    page->size = page_len;
+    std::memcpy(page->data.get(), bytes + (pb - run_begin), page_len);
+    const CacheKey key = rep->base_cache_key.WithOffset(pb >> 2);
+    BlobPage* raw = page.release();
+    Status is = cache->Insert(key.AsSlice(), raw, BlobPageHelper(),
+                              sizeof(BlobPage) + raw->size,
+                              /*handle=*/nullptr, Cache::Priority::HIGH);
+    if (!is.ok()) delete raw;
+  }
 }
 
 PinnedExtent FileBlobSource::FetchExtent(uint32_t rel_off, uint32_t len) {
