@@ -107,12 +107,27 @@ def mean_latency_s(path):
     return float(np.mean(times)) if times else None
 
 
+def peak_rss_gb(path):
+    """Highest peak RSS the run reached, in GB.
+
+    The budget caps the block cache, not the process, so this is what shows
+    whether a nominal budget actually bounds resident memory.
+    """
+    peaks = []
+    with open(path, newline="") as f:
+        for row in csv.DictReader(f):
+            if row.get("peak_rss_kb"):
+                peaks.append(float(row["peak_rss_kb"]) / 1048576.0)
+    return max(peaks) if peaks else None
+
+
 def load_result_dir(result_dir):
-    """Return {k: {method: {budget_mb: mean_latency_s}}}.
+    """Return ({k: {method: {budget_mb: mean_latency_s}}}, same shape for RSS).
 
     budget_mb is an int; the 'default' subdir maps to 0.
     """
     data = {}
+    rss = {}
     for entry in os.listdir(result_dir):
         sub = os.path.join(result_dir, entry)
         if not os.path.isdir(sub):
@@ -130,11 +145,15 @@ def load_result_dir(result_dir):
                 continue
             k = int(fm.group(2))
             method = fm.group(4)
-            mean = mean_latency_s(os.path.join(sub, fname))
+            path = os.path.join(sub, fname)
+            mean = mean_latency_s(path)
             if mean is None:
                 continue
             data.setdefault(k, {}).setdefault(method, {})[budget] = mean
-    return data
+            peak = peak_rss_gb(path)
+            if peak is not None:
+                rss.setdefault(k, {}).setdefault(method, {})[budget] = peak
+    return data, rss
 
 
 def plot_budget(data, output_dir):
@@ -188,6 +207,63 @@ def plot_budget(data, output_dir):
     plt.close(fig)
 
 
+def plot_rss(rss, output_dir):
+    """Peak RSS vs budget: does the budget actually bound resident memory?
+
+    The budget caps one LRU cache, so a method whose readers live outside it
+    would track the y = x line poorly (or not at all). The diagonal is drawn
+    for reference; points below it sit within their nominal budget.
+    """
+    all_ks = sorted(rss)
+    if not all_ks:
+        return
+
+    ncols = len(all_ks)
+    fig, axes = plt.subplots(1, ncols, figsize=(3.2 * ncols, 3.0),
+                             squeeze=False)
+
+    present = []
+    for k in all_ks:
+        for method in rss[k]:
+            if method not in present:
+                present.append(method)
+    ordered = [m for m in METHOD_ORDER if m in present]
+    ordered += [m for m in present if m not in METHOD_ORDER]
+
+    for ci, k in enumerate(all_ks):
+        ax = axes[0][ci]
+        for method in ordered:
+            series = rss[k].get(method)
+            if not series:
+                continue
+            budgets = sorted(b for b in series if b > 0)
+            if not budgets:
+                continue
+            ax.plot(budgets, [series[b] for b in budgets],
+                    marker="o", markersize=3, linewidth=1.0,
+                    color=METHOD_COLORS.get(method, "#333333"),
+                    linestyle=METHOD_LINESTYLE.get(method, "-"),
+                    label=METHOD_LABELS.get(method, method))
+            ax.plot(budgets, [b / 1024.0 for b in budgets],
+                    color="#999999", linewidth=0.6, linestyle=":")
+        ax.set_xscale("log", base=2)
+        ax.set_xlabel("block_cache budget (MB)")
+        if ci == 0:
+            ax.set_ylabel("Peak RSS (GB)")
+        ax.set_title(f"c = {k}")
+        ax.grid(True, which="both", linewidth=0.3, alpha=0.4)
+
+    handles, labels = axes[0][0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="upper center",
+               ncol=min(len(labels), 5), frameon=False, fontsize=6)
+    fig.tight_layout(rect=[0, 0, 1, 0.88])
+
+    out_path = os.path.join(output_dir, "read_cache_budget_rss.pdf")
+    fig.savefig(out_path, dpi=150)
+    print(f"Saved: {out_path}")
+    plt.close(fig)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Plot latency vs block-cache budget"
@@ -200,8 +276,9 @@ def main():
     output_dir = args.output_dir or args.result_dir
     os.makedirs(output_dir, exist_ok=True)
 
-    data = load_result_dir(args.result_dir)
+    data, rss = load_result_dir(args.result_dir)
     plot_budget(data, output_dir)
+    plot_rss(rss, output_dir)
 
 
 if __name__ == "__main__":
