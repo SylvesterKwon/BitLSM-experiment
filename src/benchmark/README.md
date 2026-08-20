@@ -34,8 +34,8 @@ Record format is defined by **schema JSON files** (`schema/` directory):
 }
 ```
 
-- `categorical`: values `"0"` to `"(cardinality-1)"`. Default cardinality: 100
-- `continuous`: uniform double in `[min, max)`. Default: `[0.0, 100.0)`
+- `categorical`: values `"0"` to `"(cardinality-1)"`. Default cardinality: 1000
+- `continuous`: uniform double in `[min, max)`. Default: `[0.0, 1000.0)`
 - `payload_bytes`: payload size per record. Default: 32
 
 ## Experiment Types

@@ -48,7 +48,7 @@ _SCHEMA_RE = re.compile(r"_a(\d+)_")
 
 
 def schema_axis_key(schema_field: str):
-    """Extract 'aN' (e.g. 'a8') from a schema string like 'default_a8_c100'."""
+    """Extract 'aN' (e.g. 'a8') from a schema string like 'default_a8_c1000'."""
     if not schema_field:
         return None
     m = _SCHEMA_RE.search(schema_field)
