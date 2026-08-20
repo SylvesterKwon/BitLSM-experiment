@@ -33,14 +33,14 @@ inline Schema load_schema(const std::string& path) {
     std::string type = attr.at("type").get<std::string>();
     if (type == "categorical") {
       schema.options.attr_specs.push_back(bit_lsm::AttrSpec(bit_lsm::AttrRole::UNORDERED));
-      schema.cardinalities.push_back(attr.value("cardinality", 100));
+      schema.cardinalities.push_back(attr.value("cardinality", 1000));
       schema.range_min.push_back(0.0);
       schema.range_max.push_back(0.0);
     } else if (type == "continuous") {
       schema.options.attr_specs.push_back(bit_lsm::AttrSpec(bit_lsm::AttrRole::ORDERED));
       schema.cardinalities.push_back(0);
       schema.range_min.push_back(attr.value("min", 0.0));
-      schema.range_max.push_back(attr.value("max", 100.0));
+      schema.range_max.push_back(attr.value("max", 1000.0));
     } else {
       throw std::runtime_error("Unknown attr type: " + type);
     }

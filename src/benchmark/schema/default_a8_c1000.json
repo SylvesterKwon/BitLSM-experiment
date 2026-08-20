@@ -5,28 +5,36 @@
       "cardinality": 1000
     },
     {
-      "type": "continuous"
+      "type": "continuous",
+      "min": 0.0,
+      "max": 1000.0
     },
     {
       "type": "categorical",
       "cardinality": 1000
     },
     {
-      "type": "continuous"
+      "type": "continuous",
+      "min": 0.0,
+      "max": 1000.0
     },
     {
       "type": "categorical",
       "cardinality": 1000
     },
     {
-      "type": "continuous"
+      "type": "continuous",
+      "min": 0.0,
+      "max": 1000.0
     },
     {
       "type": "categorical",
       "cardinality": 1000
     },
     {
-      "type": "continuous"
+      "type": "continuous",
+      "min": 0.0,
+      "max": 1000.0
     }
   ]
 }

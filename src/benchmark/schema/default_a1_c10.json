@@ -1,8 +1,0 @@
-{
-  "attrs": [
-    {
-      "type": "categorical",
-      "cardinality": 10
-    }
-  ]
-}
