@@ -119,10 +119,14 @@ void EmbeddedBinding::WaitForQuiescence() {
 IndexIoStats EmbeddedBinding::GetIndexIoStats() {
   BlobSourceStats s = GetBlobSourceStats();
   IndexIoStats out;
-  // Device reads issued: bulk span preads, extent-fetch preads, and
-  // single-page preads (see blob_source.h -- page_misses alone mixes
-  // single-page and bulk-stretch misses and cannot be used here).
-  out.reads = s.span_reads + s.extent_misses + s.single_page_reads;
+  // Device reads issued: bulk span preads, extent-fetch preads, single-page
+  // preads, and the requests carried by batched MultiRead submissions (see
+  // blob_source.h -- page_misses alone mixes single-page and bulk-stretch
+  // misses and cannot be used here). A batch of N ranges counts as N reads,
+  // the same N preads the serial path would have issued for those pages, so
+  // the column keeps meaning "device read requests issued".
+  out.reads = s.span_reads + s.extent_misses + s.single_page_reads +
+              s.batch_reads;
   out.bytes = s.bytes_read;
   out.cache_hits = s.page_hits + s.extent_hits;
   out.cache_misses = s.page_misses + s.extent_misses;
@@ -138,7 +142,9 @@ void EmbeddedBinding::Close() {
               << " span_reads=" << stats.span_reads
               << " extent_hits=" << stats.extent_hits
               << " extent_misses=" << stats.extent_misses
-              << " single_page_reads=" << stats.single_page_reads << "\n";
+              << " single_page_reads=" << stats.single_page_reads
+              << " batch_calls=" << stats.batch_calls
+              << " batch_reads=" << stats.batch_reads << "\n";
   }
   db_.reset();
 }

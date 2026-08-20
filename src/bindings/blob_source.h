@@ -28,6 +28,8 @@
 #include <cstring>
 #include <memory>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "rocksdb/advanced_cache.h"  // rocksdb::Cache / Cache::Handle, held
                                      // by PinnedExtent (nested Handle cannot
@@ -35,6 +37,7 @@
 
 namespace rocksdb {
 class BlockBasedTable;
+struct FSReadRequest;
 }
 
 namespace experiment {
@@ -70,6 +73,11 @@ struct BlobSourceStats {
   // covers, so page_misses alone cannot recover "device reads issued" for
   // the single-page path. This is that missing piece.
   uint64_t single_page_reads = 0;
+  uint64_t batch_calls = 0;  // MultiRead calls issued by PrefetchRanges
+  uint64_t batch_reads = 0;  // read requests carried by those calls -- the
+                             // device reads the batch path issued (one per
+                             // run of consecutive missing pages; bytes in
+                             // bytes_read, pages in page_misses)
 };
 BlobSourceStats GetBlobSourceStats();
 void ResetBlobSourceStats();
@@ -138,6 +146,13 @@ class PinnedExtent {
   size_t len_ = 0;
 };
 
+// One contiguous blob range a reader already knows it is about to decode.
+// Blob-relative, like every other offset on this interface.
+struct BlobRange {
+  uint32_t rel_off;
+  uint32_t len;
+};
+
 class BlobSource {
  public:
   virtual ~BlobSource() = default;
@@ -163,6 +178,15 @@ class BlobSource {
   // disabled, callers fall back to their per-block reads -- or when the read
   // failed (ok() goes false, same channel as Read).
   virtual PinnedExtent FetchExtent(uint32_t rel_off, uint32_t len);
+
+  // Announces every byte range this reader is about to touch, before it asks
+  // for the first of them. A source that can submit reads in parallel fetches
+  // the whole set in one batch here; the default does nothing. This is a
+  // HINT ONLY -- bytes are still obtained through Read()/FetchExtent(), and a
+  // reader must return the identical rows whether or not the source acts on
+  // it, so a failed or skipped prefetch is never an error. Ranges need not be
+  // sorted or disjoint.
+  virtual void PrefetchRanges(const BlobRange* /*ranges*/, size_t /*n*/) {}
 
   // Set when a read failed; the query path turns this into a hard stop rather
   // than silently returning fewer rows. Virtual so a wrapping source
@@ -225,7 +249,34 @@ class FileBlobSource : public BlobSource {
   // degrade to a pin-owned buffer, null cache to an uncached read.
   PinnedExtent FetchExtent(uint32_t rel_off, uint32_t len) override;
 
+  // Batched submission of everything a query is about to read. The pages
+  // covering `ranges` that are NOT already cached are grouped into runs of
+  // consecutive pages and handed to RandomAccessFileReader::MultiRead as one
+  // scatter list, which the Posix implementation services over io_uring when
+  // the process enabled it (env/io_posix.cc PosixRandomAccessFile::MultiRead;
+  // the harness opts in via ApplyRocksdbCommonOptions). The bytes land in the
+  // SAME data_begin-keyed page entries the serial path would have created, so
+  // the reads that follow are ordinary cache hits: cache accounting, page
+  // granularity and cross-query reuse are untouched, and only the SUBMISSION
+  // changes from one-pread-at-a-time to one batch.
+  //
+  // Purely an optimisation: a failed batch leaves the pages uncached and the
+  // serial path reads them (and reports the error) exactly as before. Doing
+  // nothing here is always correct.
+  void PrefetchRanges(const BlobRange* ranges, size_t n) override;
+
  private:
+  // [file_begin, file_end) runs of consecutive missing pages, submitted
+  // together and then chunked back into page cache entries.
+  using PageRun = std::pair<uint64_t, uint64_t>;
+  void SubmitBatch(std::vector<PageRun>& runs);
+  // EXP_SAI_ASYNC_VERIFY: re-reads one completed request synchronously and
+  // aborts on any difference. Off by default.
+  void VerifyRequest(const rocksdb::FSReadRequest& req);
+  // Chunks one completed run into the identical data_begin-keyed page entries
+  // ReadFromPage/ReadStretch mint, counting each as a page miss.
+  void CacheRunPages(uint64_t run_begin, uint64_t run_end, const char* bytes);
+
   // Copies [in_page, in_page + n) of the page's cached bytes into `dst`.
   // `data_begin` is the page's key identity (clamped inside the blob extent,
   // per the comment in the .cpp) and `page_len` its intersection with the
@@ -287,6 +338,24 @@ inline constexpr uint64_t kMaxLocalExtentBytes = 64ull << 20;
 // sai_test_ondemand can pin the fallback paths against the same oracle.
 uint64_t LocalExtentCap();
 void SetLocalExtentCapForTest(uint64_t cap);
+
+// Asynchronous/batched submission of the on-demand index reads, off unless
+// EXP_SAI_ASYNC_INDEX is set to something other than 0 (read once at first
+// use, same shape as LocalExtentCap()). With it off, not one byte of the
+// read path changes: PrefetchRanges returns immediately and every read is
+// the same pread it was. The setter exists for the unit tests.
+bool AsyncIndexReads();
+void SetAsyncIndexReadsForTest(bool on);
+
+// True when the readers should announce their ranges up front. Only the
+// PAGE-granular path has anything to batch: with extent fetching on, a
+// cursor's whole extent is already one read and page entries are never
+// populated for those bytes, so prefetching pages under it would read the
+// same bytes a second time. Extent cap 0 is therefore part of the condition,
+// not an independent knob.
+inline bool AsyncPageBatch() {
+  return AsyncIndexReads() && LocalExtentCap() == 0;
+}
 
 // Pins one contiguous window of the blob through `under`'s FetchExtent and
 // serves every read inside the window from the pinned bytes, with zero cache

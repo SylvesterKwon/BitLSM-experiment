@@ -110,7 +110,25 @@ int main() {
   // On-demand decode over the live blob, driven through the same fact-level
   // entry points the metadata reader routes to (with a memory source standing
   // in for the SST file).
-  experiment::MemBlobSource src(blob.data(), blob.size());
+  // Wraps the memory source so the async pass can check what the readers
+  // ANNOUNCE through BlobSource::PrefetchRanges. A hint must never name bytes
+  // outside the blob (FileBlobSource would turn such a range into a read past
+  // the UDI extent, into another block's bytes), and the pass is only
+  // meaningful if the readers actually emit hints -- both are asserted.
+  class CheckedMemBlobSource : public experiment::MemBlobSource {
+   public:
+    using experiment::MemBlobSource::MemBlobSource;
+    void PrefetchRanges(const experiment::BlobRange* r, size_t n) override {
+      assert(r != nullptr && n > 0);
+      for (size_t i = 0; i < n; ++i) {
+        assert(r[i].len > 0);
+        assert(static_cast<uint64_t>(r[i].rel_off) + r[i].len <= BlobSize());
+      }
+      announced += n;
+    }
+    uint64_t announced = 0;
+  };
+  CheckedMemBlobSource src(blob.data(), blob.size());
   const std::vector<uint32_t>& region_off = resident.RegionOffsets();
   auto od_estimate = [&](const SAIFact& f) {
     return OnDemandEstimate(src, region_off, f);
@@ -203,6 +221,16 @@ int main() {
   run_suite();  // cursor-local buffers (default cap)
   experiment::SetLocalExtentCapForTest(0);
   run_suite();  // per-block fallback everywhere
+  // Cap 0 + batched submission (EXP_SAI_ASYNC_INDEX): the readers announce
+  // their ranges up front, then read exactly as the pass above did. Announcing
+  // is a hint, so the rows must not move by one -- that is what this pass
+  // pins. The batching itself lives in FileBlobSource and needs a real SST;
+  // it is cross-checked on the workload with EXP_SAI_ASYNC_VERIFY=1.
+  experiment::SetAsyncIndexReadsForTest(true);
+  const uint64_t announced_before = src.announced;
+  run_suite();
+  assert(src.announced > announced_before);  // the new path really ran
+  experiment::SetAsyncIndexReadsForTest(false);
   experiment::SetLocalExtentCapForTest(experiment::kMaxLocalExtentBytes);
 
   std::printf("sai_test_ondemand OK\n");
