@@ -31,8 +31,8 @@ Interpretation:
     place silently inflates every number by roughly 3x with no other symptom.
 
 Usage:
-    python3 experiments/nyc_taxi_read_cache_budget/run.py \
-        experiments/nyc_taxi_read_cache_budget/exp_set/<params>.json \
+    python3 experiments/memory_pressure/run.py \
+        experiments/memory_pressure/exp_set/<params>.json \
         --pk_mode uuid [options]
 """
 
