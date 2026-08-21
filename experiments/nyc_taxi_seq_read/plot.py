@@ -27,10 +27,12 @@ METHOD_ORDER = [
     "si-ck_strategy_pf",
     "si-ck_strategy_im",
     "embedded_bloom_bits10",
+    "sai_il0",
     "sai_il2",
     "bitlsm_rho0.03",
     "bitlsm_rho0.01",
     "bitlsm_rho0.003",
+    "bitlsm_rho0.001",
 ]
 METHOD_LABELS = {
     "no-index": "No Index",
@@ -39,10 +41,12 @@ METHOD_LABELS = {
     "si-ck_strategy_pf": "Composite (Post Filtering)",
     "si-ck_strategy_im": "Composite (Intersection)",
     "embedded_bloom_bits10": "Bloom + Zone Map",
+    "sai_il0": "SAI (unlimited)",
     "sai_il2": "SAI (limit=2)",
     "bitlsm_rho0.03": r"BitLSM ($\rho$=0.03)",
     "bitlsm_rho0.01": r"BitLSM ($\rho$=0.01)",
     "bitlsm_rho0.003": r"BitLSM ($\rho$=0.003)",
+    "bitlsm_rho0.001": r"BitLSM ($\rho$=0.001)",
 }
 METHOD_COLORS = {
     "no-index": "#808080",
@@ -51,14 +55,19 @@ METHOD_COLORS = {
     "si-lu_strategy_im": "#4CC850",
     "si-lu_strategy_pf": "#4CC850",
     "embedded_bloom_bits10": "#1FA8A0",
+    "sai_il0": "#2F6FD0",
     "sai_il2": "#2F6FD0",
     "bitlsm_rho0.03": "#F08C7C",
     "bitlsm_rho0.01": "#E04040",
     "bitlsm_rho0.003": "#9B1B1B",
+    "bitlsm_rho0.001": "#9B1B1B",
 }
 METHOD_HATCHES = {
     "si-ck_strategy_im": "xxxxxx",
     "si-lu_strategy_im": "xxxxxx",
+    # sai_il0 and sai_il2 share the blue hue; hatch the capped arm so the
+    # unlimited-intersection comparison stays distinguishable.
+    "sai_il2": "xxxxxx",
 }
 
 # Pattern: read_seq_sel{sel}_k{k}_r{r}_{method}_read_log.csv
@@ -170,6 +179,10 @@ def plot_grid(data, output_dir):
             ax.set_xticks([])
             ax.tick_params(axis="x", length=0)
             ax.tick_params(axis="y", length=2, width=0.3, direction="in")
+            # tick_params defaults to which="major"; on the log axis the decade
+            # subdivisions are minor ticks and would otherwise point outward.
+            ax.tick_params(axis="y", which="minor", length=1, width=0.3,
+                           direction="in")
             ax.grid(False)
 
             if ri == 0:
