@@ -170,8 +170,88 @@ python3 experiments/<name>/run.py experiments/<name>/exp_set/<params>.json [opti
 | `nyc_taxi_seq_write` | NYC taxi sequential write | `honk_player` |
 | `nyc_taxi_seq_read` | NYC taxi sequential read (DB must exist) | `honk_player` |
 | `nyc_taxi_interleave` | NYC taxi read-under-ingestion | `honk_player` |
+| `memory_pressure` | NYC taxi read under a block-cache budget (DB must exist) | `honk_player` |
 
 ## Plotting
 
 - Plotting scripts live under each experiment directory (e.g. `experiments/<name>/plot.py`).
 - Generated plots (PNG, PDF, etc.) are saved into the same `result/` subdirectory that contains the source CSV files, keeping data and visualizations co-located.
+
+### Figure style
+
+Figures are sized and styled for a two-column paper, not for a screen. Match
+these across experiments:
+
+- `plt.rcParams.update({"font.size": 6})`.
+- Width 7 in for a figure spanning both columns, 3.333 in for a single-column
+  one.
+- One panel's plot box is 0.702 as tall as it is wide -- measured from
+  `nyc_taxi_seq_read`'s 4x4 grid, whose panels come out 1.294 x 0.909 in --
+  so figures share a shape across the paper. A grid reaches it on its own
+  (`figsize=(7, 7 * 3/4)`); a single row of panels does not, because the
+  legend and axis labels take a far larger share of a short figure, so set
+  `ax.set_box_aspect(0.702)` there. Do not eyeball the number: build the
+  reference figure and read `ax.get_position()`. With the aspect pinned the
+  box size no longer follows figsize -- extra height becomes margin -- so
+  choose the height that leaves the legend clear of the panel titles.
+- Axis values are written out (128, 256, ... 4096), not as `2^n`, and in one
+  unit throughout: MB stays MB, never switching to GB partway along the axis.
+  Where the panel is too narrow for every value, draw all the ticks but label
+  every other one -- the measurement points stay visible and the labels stop
+  colliding.
+- A row of panels carries one shared `fig.supxlabel`, not the same label four
+  times.
+- Panels in one figure share a y axis (`sharey=True`) so values can be
+  compared across panels, and inner panels drop their duplicate tick labels.
+- Every y axis in a budget figure is log, matching `nyc_taxi_seq_read`, and
+  mixing scales across figures of one experiment is worse than any per-figure
+  gain. A shared linear axis flattens the small-c panels into the bottom
+  quarter -- a 2.4x gap there reads as no gap -- while on a log axis the
+  vertical distance between two lines is their ratio, which is what these
+  figures are about. With the budget axis already log, a log y also
+  straightens the `y = budget` reference line in the RSS figure.
+- No gridlines: `ax.grid(False)`.
+- Ticks point inward, short and hairline-thin: `direction="in"`, major size 2,
+  width 0.3, minor size 1. Set it once through `rcParams` when a script draws
+  several figures, or per-axis as in `seq_write_wa/plot.py`.
+- Legends carry `frameon=False`; save with `dpi=150`.
+- Latency is the MEDIAN of the per-query rows, matching the boxplot centre
+  lines in `nyc_taxi_seq_read`, so a configuration measured in both sections
+  reads the same in both. Byte volumes are averages (see below): they are a
+  different kind of quantity, so the mix is deliberate -- label each axis with
+  its statistic, and have any summary CSV carry both.
+- Figures meant to be stacked in the paper draw each piece of shared furniture
+  once: column titles and the legend on the top row, the x label on the bottom.
+  Pin the panel geometry with `subplots_adjust` rather than `tight_layout` --
+  y labels differ in length, so a per-figure layout would misalign the columns.
+  Size each row to its box plus only the furniture it carries: an axes area
+  taller than the box just pads around it (the gap that shows under a stacked
+  row), and one shorter shrinks the box, which narrows it too and breaks the
+  alignment. A rotated y label is longer than the box, so leave it room.
+- Axis labels name their statistic -- `Median query latency (s)`,
+  `Avg. index read per query (MB)` -- so a reader never has to guess which
+  one a figure used.
+- Byte volumes are reported PER QUERY (run total / query count), not as run
+  totals and not as medians. They are a cost that accumulates, so the middle
+  query does not represent them, and the per-query volume falls across a run
+  as the cache warms. Per-query also keeps the axis in MB, where "this query
+  touched 380 MB of index" reads as a property of the workload; a 120 GB run
+  total reads as a mistake. The two statistics differ on purpose: latency is
+  what one query costs the user, bytes are what the workload costs the
+  device.
+- Legend entries name the method, not the run configuration, and never carry
+  a flag name the reader would have to look up. Drop a mode suffix when every
+  series shares that mode. Label BitLSM as `BitLSM` without its rho -- rho
+  belongs in the legend only where it is the swept variable
+  (`plot_rho_sensitivity.py`).
+- When a baseline appears in two configurations, label both symmetrically by
+  what differs, so the reader sees the single axis of variation at a glance:
+  `SAI (intersect top-2)` and `SAI (intersect all)`, never `il=0` / `il=2`.
+  Keep the verb -- bare `SAI (2 predicates)` reads as a query shape next to
+  panels titled `c = 2`. The shipped default (Cassandra intersects its two
+  most selective predicates) is solid and listed first; the variant we added
+  to be generous to the baseline is dashed.
+- Do not hedge a re-implemented baseline in the legend (`SAI-like`). The text
+  says once that it is a best-effort implementation; repeating it per figure
+  invites the "how unlike?" question that the paper deliberately does not
+  spend space answering.
