@@ -10,6 +10,7 @@
 #include <cxxopts.hpp>
 #include <filesystem>
 #include <fstream>
+#include <sys/resource.h>
 #include <iomanip>
 #include <iostream>
 #include <mutex>
@@ -42,6 +43,26 @@ static long ReadStatusKb(const char* field) {
   }
   return 0;
 }
+
+// Process CPU time in microseconds, user and system separately. Subtracted
+// across a scan it splits that scan's wall clock: the CPU halves are the work
+// the query did, and what remains is time spent waiting on the device. io_uring
+// completions do not burn CPU while outstanding, so the split is meaningful
+// here rather than an artefact of a polling loop.
+struct CpuTime {
+  long long user_us = 0, sys_us = 0;
+
+  static CpuTime Read() {
+    struct rusage ru;
+    if (getrusage(RUSAGE_SELF, &ru) != 0) return {};
+    return {ru.ru_utime.tv_sec * 1000000LL + ru.ru_utime.tv_usec,
+            ru.ru_stime.tv_sec * 1000000LL + ru.ru_stime.tv_usec};
+  }
+
+  CpuTime operator-(const CpuTime& p) const {
+    return {user_us - p.user_us, sys_us - p.sys_us};
+  }
+};
 
 // One field of /proc/self/io in bytes. `rchar` counts bytes handed to the
 // process by read syscalls, cache hit or not; `read_bytes` counts only what
@@ -263,7 +284,8 @@ int main(int argc, char* argv[]) {
                   "records_matched,records_total,selectivity_actual,"
                   "rss_kb,peak_rss_kb,keyidx_hit,keyidx_miss,"
                   "keyidx_bytes_insert,dataudi_hit,dataudi_miss,"
-                  "rchar_mb,disk_read_mb,"
+                  "rchar_mb,disk_read_mb,syscr,"
+                  "cpu_user_ms,cpu_sys_ms,"
                   "idx_reads,idx_read_mb,idx_cache_hits,idx_cache_misses\n";
     }
   };
@@ -467,6 +489,8 @@ int main(int argc, char* argv[]) {
           auto idx_before = IndexIoCounters::Read(binding.get());
           const long long rchar_before = ReadIoCounter("rchar");
           const long long disk_before = ReadIoCounter("read_bytes");
+          const long long syscr_before = ReadIoCounter("syscr");
+          const CpuTime cpu_before = CpuTime::Read();
           auto scan_result = binding->Scan(query);
           if (!scan_result.ok) {
             // The scan stopped on an error; `matched` is a partial count.
@@ -483,6 +507,7 @@ int main(int argc, char* argv[]) {
             // Counters are per query (delta across this scan); the two RSS
             // columns are absolute, VmHWM being the peak since process start.
             auto cache = CacheCounters::Read() - cache_before;
+            const CpuTime cpu = CpuTime::Read() - cpu_before;
             auto idx = IndexIoCounters::Read(binding.get()) - idx_before;
             read_csv << reads << "," << k << ",\"" << attr_names << "\","
                      << scan_result.elapsed_ms << "," << scan_result.matched
@@ -494,6 +519,9 @@ int main(int argc, char* argv[]) {
                      << "," << (ReadIoCounter("rchar") - rchar_before) / (1 << 20)
                      << ","
                      << (ReadIoCounter("read_bytes") - disk_before) / (1 << 20)
+                     << "," << (ReadIoCounter("syscr") - syscr_before) << ","
+                     << (cpu.user_us / 1000.0) << ","
+                     << (cpu.sys_us / 1000.0)
                      << "," << idx.reads << "," << fixed << setprecision(6)
                      << (static_cast<double>(idx.bytes) / (1 << 20)) << ","
                      << idx.cache_hits << "," << idx.cache_misses << "\n";

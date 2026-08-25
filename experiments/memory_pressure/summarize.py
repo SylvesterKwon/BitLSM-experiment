@@ -36,17 +36,44 @@ def summarize_run(path):
     idx = [float(r["idx_read_mb"]) for r in rows]
     data = [max(0.0, float(r["disk_read_mb"]) - float(r["idx_read_mb"]))
             for r in rows]
+    # Present only in runs made with the CPU instrumentation; older result
+    # directories are summarised without these columns rather than with zeros,
+    # which would read as "no CPU time" instead of "not measured".
+    has_cpu = "cpu_user_ms" in rows[0]
+    if has_cpu:
+        cpu = [(float(r["cpu_user_ms"]) + float(r["cpu_sys_ms"])) / 1000.0
+               for r in rows]
+        # Wall clock a query did not spend on a CPU. io_uring completions do
+        # not burn CPU while outstanding, so on an otherwise idle machine this
+        # is device wait.
+        io_wait = [max(0.0, w - c) for w, c in zip(lat, cpu)]
+    has_blocks = "dataudi_miss" in rows[0]
     return {
         "queries": len(rows),
-        "avg_latency_s": round(float(np.mean(lat)), 4),
+        "mean_latency_s": round(float(np.mean(lat)), 4),
         "median_latency_s": round(float(np.median(lat)), 4),
         "total_latency_s": round(sum(lat), 2),
-        "avg_index_read_mb_per_query": round(sum(idx) / len(rows), 3),
-        "avg_data_read_mb_per_query": round(sum(data) / len(rows), 3),
+        "mean_index_read_mb_per_query": round(sum(idx) / len(rows), 3),
+        "mean_data_read_mb_per_query": round(sum(data) / len(rows), 3),
         "total_index_read_gb": round(sum(idx) / 1024.0, 3),
         "total_data_read_gb": round(sum(data) / 1024.0, 3),
-        "avg_index_reads_per_query": round(
+        "mean_index_reads_per_query": round(
             sum(int(r["idx_reads"]) for r in rows) / len(rows), 1),
+        **({"mean_cpu_s_per_query": round(sum(cpu) / len(rows), 4),
+            "mean_cpu_user_s_per_query": round(
+                sum(float(r["cpu_user_ms"]) for r in rows) / len(rows) / 1000.0,
+                4),
+            "mean_cpu_sys_s_per_query": round(
+                sum(float(r["cpu_sys_ms"]) for r in rows) / len(rows) / 1000.0,
+                4),
+            "mean_io_wait_s_per_query": round(sum(io_wait) / len(rows), 4),
+            "cpu_fraction": round(sum(cpu) / sum(lat), 3) if sum(lat) else 0.0}
+           if has_cpu else {}),
+        **({"mean_data_blocks_per_query": round(
+                sum(int(r["dataudi_miss"]) for r in rows) / len(rows), 1),
+            "mean_rocksdb_index_miss_per_query": round(
+                sum(int(r["keyidx_miss"]) for r in rows) / len(rows), 1)}
+           if has_blocks else {}),
         "peak_rss_gb": round(
             max(float(r["peak_rss_kb"]) for r in rows) / 1048576.0, 3),
         "records_matched": sum(int(r["records_matched"]) for r in rows),
