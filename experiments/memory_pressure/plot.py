@@ -171,6 +171,24 @@ def data_read_mb_per_query(path):
     return sum(vals) / len(vals) if vals else None
 
 
+def cpu_s_per_query(path):
+    """Process CPU time per query, user plus system.
+
+    Read beside the latency panel: what the two do not share is time spent
+    waiting on the device, so where the curves track each other the difference
+    between methods is computation, not I/O. Absent from runs made before the
+    instrumentation existed, in which case the panel is simply not drawn.
+    """
+    vals = []
+    with open(path, newline="") as f:
+        for row in csv.DictReader(f):
+            if row.get("cpu_user_ms") is None:
+                return None
+            vals.append((float(row["cpu_user_ms"]) + float(row["cpu_sys_ms"]))
+                        / 1000.0)
+    return sum(vals) / len(vals) if vals else None
+
+
 def peak_rss_gb(path):
     """Highest peak RSS the run reached, in GB.
 
@@ -193,6 +211,7 @@ def load_result_dir(result_dir):
     data = {}
     rss = {}
     dat = {}
+    cpu = {}
     idx = {}
     for entry in os.listdir(result_dir):
         sub = os.path.join(result_dir, entry)
@@ -221,7 +240,10 @@ def load_result_dir(result_dir):
                 rss.setdefault(k, {}).setdefault(method, {})[budget] = peak
             idx.setdefault(k, {}).setdefault(method, {})[budget] = index_read_mb_per_query(path)
             dat.setdefault(k, {}).setdefault(method, {})[budget] = data_read_mb_per_query(path)
-    return data, rss, idx, dat
+            c = cpu_s_per_query(path)
+            if c is not None:
+                cpu.setdefault(k, {}).setdefault(method, {})[budget] = c
+    return data, rss, idx, dat, cpu
 
 
 # The three figures stack as (a) latency, (b) index reads, (c) data reads, so
@@ -365,13 +387,18 @@ def main():
     output_dir = args.output_dir or args.result_dir
     os.makedirs(output_dir, exist_ok=True)
 
-    data, rss, idx, dat = load_result_dir(args.result_dir)
+    data, rss, idx, dat, cpu = load_result_dir(args.result_dir)
     draw_panels(data, "Median query latency (s)",
                 "memory_pressure.pdf", output_dir, role="top")
-    draw_panels(idx, "Avg. index read (MB/query)",
-                "memory_pressure_index_reads.pdf", output_dir, role="middle")
-    draw_panels(dat, "Avg. data read (MB/query)",
-                "memory_pressure_data_reads.pdf", output_dir, role="bottom")
+    # The paper stacks two rows: the result, then the one quantity a budget
+    # actually changes. Everything else is generated standalone -- kept for the
+    # artifact and for reviewer questions, not for the section.
+    draw_panels(idx, "Mean index read (MB/query)",
+                "memory_pressure_index_reads.pdf", output_dir, role="bottom")
+    draw_panels(cpu, "Mean CPU time (s/query)",
+                "memory_pressure_cpu.pdf", output_dir, role="solo")
+    draw_panels(dat, "Mean data read (MB/query)",
+                "memory_pressure_data_reads.pdf", output_dir, role="solo")
     draw_panels(rss, "Peak RSS (GB)",
                 "memory_pressure_rss.pdf", output_dir, role="solo",
                 reference_line=True)

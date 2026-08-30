@@ -228,8 +228,10 @@ these across experiments:
   taller than the box just pads around it (the gap that shows under a stacked
   row), and one shorter shrinks the box, which narrows it too and breaks the
   alignment. A rotated y label is longer than the box, so leave it room.
+- One word per statistic across a project: this one says "mean", never "avg"
+  or "average", in axis labels, CSV column names and prose alike.
 - Axis labels name their statistic -- `Median query latency (s)`,
-  `Avg. index read per query (MB)` -- so a reader never has to guess which
+  `Mean index read (MB/query)` -- so a reader never has to guess which
   one a figure used.
 - Byte volumes are reported PER QUERY (run total / query count), not as run
   totals and not as medians. They are a cost that accumulates, so the middle
