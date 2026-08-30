@@ -117,8 +117,11 @@ def budget_tick_labels(budgets):
 
     All six ticks stay drawn, so the reader still sees where the measurements
     are, but four-digit MB values every 1.4 in of panel crowd into each other.
+    Counted from the largest budget, which the reversed axis puts on the left,
+    so the axis starts on a labelled tick.
     """
-    return [str(b) if i % 2 == 0 else "" for i, b in enumerate(budgets)]
+    last = len(budgets) - 1
+    return [str(b) if (last - i) % 2 == 0 else "" for i, b in enumerate(budgets)]
 
 
 def median_latency_s(path):
@@ -351,6 +354,10 @@ def draw_panels(series_by_k, ylabel, out_name, output_dir, role="solo",
         ax.set_xticks(budgets)
         ax.set_xticklabels(budget_tick_labels(budgets))
         ax.tick_params(axis="x", which="minor", length=0)
+        # Largest budget on the left: the section reads left to right as memory
+        # being squeezed, so cost rising to the right is the story, not an
+        # inverted convention for its own sake.
+        ax.invert_xaxis()
         if ci == 0:
             ax.set_ylabel(ylabel)
         ax.set_box_aspect(PANEL_BOX_ASPECT)

@@ -278,8 +278,9 @@ def plot_latency(cells, matched, out_dir, stat, yscale="log"):
         ax.set_ylim(bottom=0)
 
     sigma = measured_sigma(matched)
-    if sigma:
-        draw_optimum_refs(ax, sigma, rhos, {c for c, _ in cells})
+    # 임시 비활성처리.
+    # if sigma:
+    #     draw_optimum_refs(ax, sigma, rhos, {c for c, _ in cells})
     ax.legend(loc="lower left", bbox_to_anchor=(0, 1.02, 1, 0.2),
               ncol=len({c for c, _ in cells}), mode="expand", frameon=False,
               handlelength=1.6)
