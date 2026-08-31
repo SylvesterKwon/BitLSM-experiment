@@ -96,7 +96,7 @@ class GroundTruth:
         return self.cache[qid], self.cache[qid] == engine_count
 
 
-def run(config_path, dry_run, start_from):
+def run(config_path, dry_run, start_from, load_only=False):
     with open(config_path) as f:
         config = json.load(f)
 
@@ -125,6 +125,16 @@ def run(config_path, dry_run, start_from):
                 state = "cached" if is_loaded(identity) else "NEEDS LOAD"
                 print(f"  [{c['engine']}/{c['index_layout']}] {state} "
                       f"plans={c['plans']}")
+            return
+
+        if load_only:
+            # Build every datadir the exp_set needs and stop. Cells that share
+            # an identity (same engine/layout/params, different session_vars)
+            # collapse — ensure_loaded is idempotent.
+            for c in cells:
+                ensure_loaded(workload, c["engine"], c["index_layout"],
+                              build_kind, c.get("engine_params"))
+            print(f"load-only: {len(cells)} cells resolved, datadirs ready")
             return
 
         os.makedirs(out_dir, exist_ok=True)
@@ -259,10 +269,13 @@ def main():
     parser = argparse.ArgumentParser(
         description="MyRocks integration test sweep")
     add_common_args(parser)
+    parser.add_argument("--load-only", action="store_true",
+                        help="Load every datadir the exp_set needs, then stop "
+                             "(no sweep, no measurement)")
     args = parser.parse_args()
     maybe_run_as_daemon(args)
     sys.exit(run(args.config, dry_run=args.dry_run,
-                 start_from=args.start_from))
+                 start_from=args.start_from, load_only=args.load_only))
 
 
 if __name__ == "__main__":

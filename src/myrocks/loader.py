@@ -45,6 +45,57 @@ def server_for(workload, engine: str, index_layout: str,
                         extra_args=SERVER_ARGS[engine])
 
 
+# ROCKSDB_CFSTATS counters that are non-zero while the LSM still has
+# outstanding background work. Counters and flags only -- the pending-byte
+# estimate is a size, not a count, so it is reported but never summed in.
+SETTLE_COUNTERS = ("COMPACTION_PENDING", "NUM_RUNNING_COMPACTIONS",
+                   "MEM_TABLE_FLUSH_PENDING", "NUM_RUNNING_FLUSHES")
+SETTLE_BYTES = "ESTIMATE_PENDING_COMPACTION_BYTES"
+SETTLE_POLL_S = 2.0
+# One zero reading can be the gap between two scheduled jobs, so require the
+# backlog to stay empty for a while before calling the tree settled.
+SETTLE_QUIET_S = 30.0
+SETTLE_TIMEOUT_S = 3600.0
+
+
+def _cfstats_sum(cur, stat_types) -> int:
+    ph = ", ".join(["%s"] * len(stat_types))
+    cur.execute(
+        "SELECT COALESCE(SUM(VALUE), 0) FROM information_schema.ROCKSDB_CFSTATS"
+        f" WHERE STAT_TYPE IN ({ph})", tuple(stat_types))
+    row = cur.fetchone()
+    return int(row[0]) if row and row[0] is not None else 0
+
+
+def _wait_until_settled(cur, log, tag: str) -> str:
+    """Wait for leveled compaction to reach its own fixed point.
+
+    Issues no manual compaction: it only blocks until RocksDB reports no
+    pending or running compactions/flushes across every column family, which
+    is what DB::WaitForCompact() does natively. Returns the lsm_state marker.
+    """
+    t0 = time.time()
+    quiet_since = None
+    while True:
+        backlog = _cfstats_sum(cur, SETTLE_COUNTERS)
+        now = time.time()
+        if backlog:
+            quiet_since = None
+        else:
+            if quiet_since is None:
+                quiet_since = now
+            elif now - quiet_since >= SETTLE_QUIET_S:
+                pending = _cfstats_sum(cur, (SETTLE_BYTES,))
+                log(f"[load:{tag}] lsm settled in {now - t0:.1f}s "
+                    f"(pending compaction bytes: {pending})")
+                return "settled"
+        if now - t0 > SETTLE_TIMEOUT_S:
+            log(f"[load:{tag}] lsm still busy after {now - t0:.0f}s "
+                f"(backlog={backlog}) — recording settled-timeout")
+            return "settled-timeout"
+        time.sleep(SETTLE_POLL_S)
+
+
 def ensure_loaded(workload, engine: str, index_layout: str,
                   build_kind: str = "debug", engine_params: dict = None,
                   log=print) -> str:
@@ -109,20 +160,23 @@ def ensure_loaded(workload, engine: str, index_layout: str,
                 f"total rows {sum(counts.values())} != canonical "
                 f"{want_total} — aborting")
 
-        # Deterministic LSM state for read-only measurement (D2:
-        # lsm_state=compacted). natural-state runs are a separate H5 axis.
-        # Every CF the table uses, not just 'default': SK layouts put their
-        # entries in sk_cf, and leaving it at L0 makes reads open overlapping
-        # files that a compacted CF would not have -- 49 block reads against
-        # bi_v1's 30 for an identical plan, which read as a BitLSM regression.
+        # LSM state for read-only measurement (D2: lsm_state=settled).
+        #
+        # This used to issue rocksdb_compact_cf per CF: a full-range manual
+        # compaction with bottommost rewriting, which leaves the tree in the
+        # best read shape it can ever have -- one no running system is in.
+        # Measuring reads there flatters every LSM cell, so instead we flush
+        # and let leveled compaction reach its own fixed point: the shape the
+        # policy settles into once the level size targets are satisfied.
+        #
+        # Same choice the C++ bindings already make in WaitForQuiescence()
+        # ("flush + WaitForCompact, no manual compaction", 338cb97). MyRocks
+        # exposes no sysvar for DB::WaitForCompact(), so we poll the per-CF
+        # properties it does publish through ROCKSDB_CFSTATS.
         lsm_state = "n/a"
         if rocks:
             cur.execute("SET GLOBAL rocksdb_force_flush_memtable_now = 1")
-            cur.execute("SELECT DISTINCT CF FROM information_schema.ROCKSDB_DDL"
-                        " WHERE TABLE_SCHEMA = %s", (workload.name,))
-            for (cf_name,) in cur.fetchall():
-                cur.execute("SET GLOBAL rocksdb_compact_cf = %s", (cf_name,))
-            lsm_state = "compacted"
+            lsm_state = _wait_until_settled(cur, log, identity)
 
         for table in workload.tables():
             cur.execute(f"ANALYZE TABLE {table}")
