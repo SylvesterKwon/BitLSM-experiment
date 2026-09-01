@@ -9,8 +9,7 @@
       "index_layout": "bi_v1",
       "plans": [
         "auto",
-        "force_bi",
-        "fullscan"
+        "force_bi"
       ]
     },
     {
@@ -27,7 +26,6 @@
       "index_layout": "sk_v1",
       "plans": [
         "auto",
-        "fullscan",
         "index_merge"
       ]
     },
@@ -38,8 +36,7 @@
         "hist": "v1"
       },
       "plans": [
-        "force_composite",
-        "fullscan"
+        "force_composite"
       ]
     },
     {
@@ -50,7 +47,6 @@
       },
       "plans": [
         "auto",
-        "fullscan",
         "index_merge"
       ]
     },
@@ -74,8 +70,7 @@
         "hist": "v1"
       },
       "plans": [
-        "force_composite",
-        "fullscan"
+        "force_composite"
       ]
     }
   ]

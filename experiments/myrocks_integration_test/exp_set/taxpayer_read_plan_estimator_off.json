@@ -9,8 +9,7 @@
       "index_layout": "bi_v1",
       "plans": [
         "auto",
-        "force_bi",
-        "fullscan"
+        "force_bi"
       ]
     },
     {
