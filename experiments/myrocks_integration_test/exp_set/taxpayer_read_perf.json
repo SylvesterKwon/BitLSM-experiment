@@ -22,8 +22,7 @@
       "index_layout": "sk_bi_v1",
       "plans": [
         "auto",
-        "force_bi",
-        "ignore_bi"
+        "force_bi"
       ]
     },
     {
@@ -53,19 +52,6 @@
       "plans": [
         "auto",
         "index_merge"
-      ]
-    },
-    {
-      "engine": "innodb",
-      "index_layout": "sk_v1",
-      "engine_params": {
-        "hist": "v1"
-      },
-      "session_vars": {
-        "optimizer_switch": "'index_merge_intersection=off'"
-      },
-      "plans": [
-        "auto"
       ]
     },
     {
