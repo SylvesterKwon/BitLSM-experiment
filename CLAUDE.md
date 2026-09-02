@@ -151,6 +151,7 @@ Each experiment lives in its own directory under `experiments/`. Every experimen
 
 - `exp_set/` — param set JSON files (one per sweep configuration)
 - `run.py` — self-contained runner with its own logic. Imports `src/run_common.py` for shared utilities (logging, daemon, hw-reset, etc.) but owns the experiment flow.
+- `summarize.py` — optional; reduces one result directory to a single tidy CSV (`seq_write`, `nyc_taxi_seq_read`)
 - `result/` — auto-created output directory for CSVs and plots
 
 Each experiment runner defines its own logic rather than branching on `exp_type`. Param set JSONs only carry data (methods, parameters, paths), not behavior.
