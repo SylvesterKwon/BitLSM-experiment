@@ -14,15 +14,35 @@ from .server import DB_BASE, MysqldServer
 
 # One args set per engine, used for BOTH load and measurement runs so the
 # datadir identity stays tied to a single server configuration.
+#
+# Symmetric by the same rule the measurement profile follows: the same cache
+# budget, the same commit-flush relaxation, and neither engine throttled below
+# what the device can sustain. This used to give InnoDB a 2 GiB buffer pool and
+# a relaxed commit flush while leaving the LSM engines on their defaults -- a
+# 512 MiB block cache and an fsync on every commit, which is the exact
+# one-sided flush setting server_profile.py's docstring warns turns the LSM
+# engines fsync-bound. Load time is not a reported metric, but a fixture should
+# not be built under a configuration the measurement would reject.
+LOAD_CACHE_BYTES = 2 << 30      # 2 GiB, both engines
+LOAD_IO_CAPACITY = 1000         # see server_profile.DEFAULTS for the rationale
+LOAD_IO_CAPACITY_MAX = 2500
+LOAD_LSM_BACKGROUND_JOBS = 6    # see server_profile.DEFAULTS for the rationale
+
+_COMMON = ["--skip-log-bin",
+           "--character-set-server=latin1",
+           "--collation-server=latin1_swedish_ci"]
 SERVER_ARGS = {
-    "innodb": ["--skip-log-bin",
-               "--character-set-server=latin1",
-               "--collation-server=latin1_swedish_ci",
-               "--innodb-buffer-pool-size=2G",
-               "--innodb-flush-log-at-trx-commit=0"],
-    "myrocks": ["--skip-log-bin",
-                "--character-set-server=latin1",
-                "--collation-server=latin1_swedish_ci"],
+    "innodb": _COMMON + [
+        f"--innodb-buffer-pool-size={LOAD_CACHE_BYTES}",
+        "--innodb-flush-log-at-trx-commit=0",
+        f"--innodb-io-capacity={LOAD_IO_CAPACITY}",
+        f"--innodb-io-capacity-max={LOAD_IO_CAPACITY_MAX}"],
+    # rocksdb_rate_limiter_bytes_per_sec already defaults to 0 (unlimited),
+    # so the LSM engines need no counterpart to io-capacity here.
+    "myrocks": _COMMON + [
+        f"--rocksdb-block-cache-size={LOAD_CACHE_BYTES}",
+        "--rocksdb-flush-log-at-trx-commit=0",
+        f"--rocksdb-max-background-jobs={LOAD_LSM_BACKGROUND_JOBS}"],
 }
 SERVER_ARGS["bitlsm"] = SERVER_ARGS["myrocks"]
 
