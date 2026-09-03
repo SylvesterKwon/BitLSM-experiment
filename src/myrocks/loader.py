@@ -17,12 +17,12 @@ from .server import DB_BASE, MysqldServer
 #
 # Symmetric by the same rule the measurement profile follows: the same cache
 # budget, the same commit-flush relaxation, and neither engine throttled below
-# what the device can sustain. This used to give InnoDB a 2 GiB buffer pool and
-# a relaxed commit flush while leaving the LSM engines on their defaults -- a
-# 512 MiB block cache and an fsync on every commit, which is the exact
-# one-sided flush setting server_profile.py's docstring warns turns the LSM
-# engines fsync-bound. Load time is not a reported metric, but a fixture should
-# not be built under a configuration the measurement would reject.
+# what the device can sustain. Every value here is set explicitly for both
+# sides -- relying on a compiled default on either engine is what produces a
+# one-sided setting, and a one-sided commit flush in particular turns the LSM
+# engines fsync-bound (see server_profile.py's docstring). Load time is not a
+# reported metric, but a fixture should not be built under a configuration the
+# measurement would reject.
 LOAD_CACHE_BYTES = 2 << 30      # 2 GiB, both engines
 LOAD_IO_CAPACITY = 1000         # see server_profile.DEFAULTS for the rationale
 LOAD_IO_CAPACITY_MAX = 2500
@@ -182,12 +182,12 @@ def ensure_loaded(workload, engine: str, index_layout: str,
 
         # LSM state for read-only measurement (D2: lsm_state=settled).
         #
-        # This used to issue rocksdb_compact_cf per CF: a full-range manual
-        # compaction with bottommost rewriting, which leaves the tree in the
-        # best read shape it can ever have -- one no running system is in.
-        # Measuring reads there flatters every LSM cell, so instead we flush
-        # and let leveled compaction reach its own fixed point: the shape the
-        # policy settles into once the level size targets are satisfied.
+        # Flush, then let leveled compaction reach its own fixed point: the
+        # shape the policy settles into once the level size targets are
+        # satisfied. Deliberately not a manual full-range compaction with
+        # bottommost rewriting -- that leaves the tree in the best read shape
+        # it can ever have, one no running system is in, and measuring reads
+        # there flatters every LSM cell.
         #
         # Same choice the C++ bindings already make in WaitForQuiescence()
         # ("flush + WaitForCompact, no manual compaction", 338cb97). MyRocks

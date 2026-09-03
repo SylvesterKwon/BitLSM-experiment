@@ -129,15 +129,27 @@ leaves a median q-error of 10.2 on SSB and 4.6 on taxpayer.
 | cell | what it represents |
 |---|---|
 | `bitlsm/bi_v1` | bitmap index alone |
-| `bitlsm/sk_bi_v1` | bitmap index added on top of conventional SKs (deployment-realistic); `plan=ignore_bi` is the paired "as if bi did not exist" run |
+| `bitlsm/sk_bi_v1` | bitmap index added on top of conventional SKs (deployment-realistic); measured under `plan=auto`, so the optimizer picks between bi and the SKs on its own |
 | `myrocks/sk_v1` | one SK per filter column, same LSM engine |
 | `myrocks/composite_v1` | per-template optimal composites — the specialist upper bound, requires knowing the workload |
 | `innodb/sk_v1` | one SK per filter column on the B-tree engine |
-| `innodb/sk_v1` + `index_merge_intersection=off` | same datadir, ROR-intersect disabled: the control that separates InnoDB's engine speed from its cost-model misselection |
 | `innodb/composite_v1` | specialist upper bound on the B-tree engine |
 
 Histograms are built for every InnoDB/MyRocks cell at load time, so the SQL
 engines always run with their full statistics toolbox.
+
+Plans: every cell is measured under `auto` -- no hint at all, the optimizer
+choosing unaided, which is what a deployment actually gets. The two composite
+cells are the exception, pinned with `force_composite`. That layout represents
+the per-template upper bound, and an upper bound only reached when the
+statistics happen to cooperate is not one: unpinned, 6 of 21 taxpayer queries
+run on the wrong composite, 2.6x slower than the layout can do. Pinning makes
+the *baseline* faster, not BitLSM -- it is what puts the bound out of BitLSM's
+reach.
+
+A hinted plan therefore needs to earn its place: it must answer a question no
+`auto` cell answers, and it must not simply override a choice the optimizer
+should be making. `force_composite` is the only one that does.
 
 ## Correctness gates (any mismatch fails the sweep)
 
