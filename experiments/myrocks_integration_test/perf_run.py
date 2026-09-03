@@ -36,7 +36,9 @@ from run_common import (  # noqa: E402
     setup_logging, teardown_logging, warn_if_cpu_unpinned,
 )
 from myrocks import metrics, server_profile  # noqa: E402
-from myrocks.loader import datadir_for, ensure_loaded  # noqa: E402
+from myrocks.loader import (  # noqa: E402
+    datadir_for, ensure_loaded, is_loaded,
+)
 from myrocks.server import MysqldServer  # noqa: E402
 from myrocks.workloads.registry import make_workload  # noqa: E402
 
@@ -134,9 +136,20 @@ def run(config_path, dry_run, start_from):
         warn_if_cpu_unpinned()
         if dry_run:
             for c in cells:
-                print(f"  [{c['engine']}/{c['index_layout']}] "
-                      f"plans={c['plans']} args="
+                identity = workload.identity(
+                    c["engine"], c["index_layout"], c.get("engine_params"))
+                state = "cached" if is_loaded(identity) else "NEEDS LOAD"
+                print(f"  [{state:>10}] {c['engine']}/{c['index_layout']} "
+                      f"plans={c['plans']}")
+                print(f"               {datadir_for(identity)}")
+                print(f"               args="
                       f"{server_profile.build_args(c['engine'], profile)}")
+            missing = sum(1 for c in cells if not is_loaded(
+                workload.identity(c["engine"], c["index_layout"],
+                                  c.get("engine_params"))))
+            if missing:
+                print(f"{missing} cell(s) need a datadir built first — "
+                      f"load_run.py builds them")
             return 0
 
         os.makedirs(out_dir, exist_ok=True)

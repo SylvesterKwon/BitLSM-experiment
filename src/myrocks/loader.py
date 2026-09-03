@@ -10,7 +10,8 @@ import os
 import shutil
 import time
 
-from .server import DB_BASE, MysqldServer
+from . import server as _server
+from .server import MysqldServer
 
 # One args set per engine, used for BOTH load and measurement runs so the
 # datadir identity stays tied to a single server configuration.
@@ -50,7 +51,11 @@ MARKER = "LOADED.json"
 
 
 def datadir_for(identity: str) -> str:
-    return os.path.join(DB_BASE, identity)
+    # Read through the module rather than a name bound at import time, so
+    # server.DB_BASE is the single source of the fixture root. A copy taken
+    # here would keep pointing at the default after a caller relocated it,
+    # and the load would land somewhere other than where it is read from.
+    return os.path.join(_server.DB_BASE, identity)
 
 
 def is_loaded(identity: str) -> bool:

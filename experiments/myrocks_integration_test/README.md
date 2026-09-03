@@ -93,6 +93,23 @@ A dataset is just a variable: every set exists for both (`taxpayer_*` and
 `ssb_flat_*`) and the read sets carry an identical cell axis, so the two
 tables can be read side by side.
 
+Fixtures come first. `load_run.py <exp_set>` builds the datadirs an exp_set's
+cells need and stops; the read runners then measure against them without
+loading anything. They still call `ensure_loaded`, so a forgotten fixture is
+built rather than missed -- but at SF10 the InnoDB composite datadir alone
+takes over a day, and a sweep should not be able to turn into that silently.
+`--dry-run` on any read runner reports each cell as `cached` or `NEEDS LOAD`.
+
+read_plan and read_perf carry the same cell axis and therefore the same
+fixtures: build once, read with both.
+
+    python3 experiments/myrocks_integration_test/load_run.py exp_set/<ds>_read_perf.json
+    python3 experiments/myrocks_integration_test/perf_run.py exp_set/<ds>_read_perf.json
+    python3 experiments/myrocks_integration_test/run.py      exp_set/<ds>_read_plan.json
+
+`ingest_run.py` needs none of this -- it builds and deletes its own throwaway
+datadir per run, and never touches a read fixture.
+
 **`<ds>_read_plan`** (`run.py`) — what the optimizer *decides*. Per cell and
 per plan it records the chosen access path, the estimated row count, the
 q-error against a cached ground truth, and the optimizer trace. Nothing is
