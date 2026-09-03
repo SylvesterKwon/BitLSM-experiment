@@ -1,6 +1,6 @@
 {
   "workload": "ssbflat",
-  "sf": 2,
+  "sf": 10,
   "build_kind": "release",
   "queries": "all",
   "cells": [
