@@ -44,11 +44,52 @@ CSV_FIELDS = [
     "ts", "workload", "engine", "index_layout", "engine_params",
     "session_vars", "query_id", "plan",
     "chosen_access", "chosen_key",
-    "cold_ms", "warm_ms_median", "warm_ms_min", "warm_ms_max", "warm_reps",
+    "cold_ms", "cold_ms_min", "cold_ms_max", "cold_reps",
+    "warm_ms_median", "warm_ms_min", "warm_ms_max", "warm_reps",
     "rows_returned", "result_fingerprint", "fp_match",
 ] + metrics.KEY_COUNTERS + [
     "lsm_state", "server_args_hash", "mysql_commit", "bitlsm_commit",
 ]
+
+
+def _measure_cold_once(datadir, profile, engine, workload, qid, sql, plan,
+                       sec_idx, session_vars, warm_reps, sidecar_path,
+                       force_index):
+    """One boot, one cold execution (plus the warm reps that follow it).
+
+    A fresh server is the entire cold mechanism under direct I/O, so one call
+    here is one cold sample: repeating the measurement means repeating this.
+    Returns (row, build_info, args_hash)."""
+    srv = MysqldServer(datadir, "release",
+                       extra_args=server_profile.build_args(engine, profile))
+    with srv:
+        # Warm-up before the timed cold run, all engines symmetric: open each
+        # table so cold_ms measures query I/O, not dictionary / table-open
+        # overhead. For bitlsm additionally force the estimator stats current
+        # (synchronous rebuild, ~1.3s/boot measured): InnoDB/MyRocks ANALYZE
+        # stats persist and are warm at boot, while the bitlsm estimator
+        # builds async ~3-5s after first open — without this every auto plan
+        # is chosen against the sysvar fallback (and can differ from the
+        # EXPLAIN recorded after the runs). Touches one row + SABI metadata
+        # only — the data cache stays cold for the timed run.
+        wconn = srv.connect(database=workload.name)
+        wcur = wconn.cursor()
+        # LOCK TABLES READ instantiates every handler (triggering lazy
+        # estimator attach) while reading zero rows by construction -- the
+        # cold run's data blocks stay untouched.
+        wcur.execute("LOCK TABLES " + ", ".join(
+            f"{t} READ" for t in workload.tables()))
+        wcur.execute("UNLOCK TABLES")
+        if engine == "bitlsm":
+            wcur.execute("SET GLOBAL rocksdb_bitlsm_estimator_refresh = 1")
+        wcur.close()
+        wconn.close()
+        row = metrics.run_perf_cell(
+            srv, workload.name, qid, sql, plan,
+            secondary_indexes=sec_idx, session_vars=session_vars,
+            warm_reps=warm_reps, sidecar_path=sidecar_path,
+            force_index=force_index)
+        return row, srv.build_info(), srv.args_hash()
 
 
 def run(config_path, dry_run, start_from):
@@ -69,6 +110,13 @@ def run(config_path, dry_run, start_from):
         # survives every cell and no run after the first is cold.
         raise SystemExit("perf-mode requires direct_io (D7) — got false")
     warm_reps = config.get("warm_reps", 5)
+    # The cold protocol is a fresh server and nothing else, so one cold sample
+    # costs one boot and repeating the measurement means repeating the boot.
+    # cold_ms is the median of cold_reps samples; min/max carry the spread.
+    # Median, not mean: interference (background work, OS noise) only ever
+    # makes a run slower, so the distribution is one-sided and a single slow
+    # sample would drag a mean.
+    cold_reps = config.get("cold_reps", 1)
     queries = workload.queries()
     if config.get("queries", "all") != "all":
         queries = {q: queries[q] for q in config["queries"]}
@@ -80,7 +128,7 @@ def run(config_path, dry_run, start_from):
     try:
         print(f"config : {config_path}")
         print(f"label  : {exp_label}")
-        print(f"cells  : {total} (warm_reps={warm_reps})")
+        print(f"cells  : {total} (cold_reps={cold_reps}, warm_reps={warm_reps})")
         print(f"server : {profile}")
         print(f"output : {out_dir}")
         warn_if_cpu_unpinned()
@@ -122,49 +170,31 @@ def run(config_path, dry_run, start_from):
                             print(f"[{idx}/{total}] SKIP {engine}/{layout} "
                                   f"{qid} {plan}: no designed composite")
                             continue
-                        srv = MysqldServer(datadir_for(identity), "release",
-                                           extra_args=server_profile.build_args(
-                                               engine, profile))
-                        with srv:
-                            # Warm-up before the timed cold run, all engines
-                            # symmetric: open each table (one-row SELECT) so
-                            # cold_ms measures query I/O, not dictionary /
-                            # table-open overhead. For bitlsm additionally
-                            # force the estimator stats current (synchronous
-                            # rebuild, ~1.3s/boot measured): InnoDB/MyRocks
-                            # ANALYZE stats persist and are warm at boot,
-                            # while the bitlsm estimator builds async ~3-5s
-                            # after first open — without this every auto plan
-                            # is chosen against the sysvar fallback (and can
-                            # differ from the EXPLAIN recorded after the
-                            # runs). Touches one row + SABI metadata only —
-                            # the data cache stays cold for the timed run.
-                            wconn = srv.connect(database=workload.name)
-                            wcur = wconn.cursor()
-                            # LOCK TABLES READ instantiates every handler
-                            # (triggering lazy estimator attach) while reading
-                            # zero rows by construction -- the cold run's data
-                            # blocks stay untouched.
-                            wcur.execute("LOCK TABLES " + ", ".join(
-                                f"{t} READ" for t in workload.tables()))
-                            wcur.execute("UNLOCK TABLES")
-                            if engine == "bitlsm":
-                                wcur.execute("SET GLOBAL "
-                                             "rocksdb_bitlsm_estimator_refresh"
-                                             " = 1")
-                            wcur.close()
-                            wconn.close()
-                            row = metrics.run_perf_cell(
-                                srv, workload.name, qid, sql, plan,
-                                secondary_indexes=sec_idx,
-                                session_vars=cell.get("session_vars"),
-                                warm_reps=warm_reps,
-                                sidecar_path=os.path.join(
-                                    out_dir, "counters",
-                                    f"{engine}-{layout}-{qid}-{plan}.json"),
-                                force_index=force_index)
-                            binfo = srv.build_info()
-                            args_hash = srv.args_hash()
+                        sidecar = os.path.join(
+                            out_dir, "counters",
+                            f"{engine}-{layout}-{qid}-{plan}")
+                        reps = []
+                        for rep in range(cold_reps):
+                            reps.append(_measure_cold_once(
+                                datadir_for(identity), profile, engine,
+                                workload, qid, sql, plan, sec_idx,
+                                cell.get("session_vars"), warm_reps,
+                                f"{sidecar}-rep{rep}.json" if cold_reps > 1
+                                else f"{sidecar}.json",
+                                force_index))
+                        # Median cold sample carries the row, so the reported
+                        # counters and plan belong to the reported cold_ms.
+                        reps.sort(key=lambda t: t[0]["cold_ms"])
+                        row, binfo, args_hash = reps[len(reps) // 2]
+                        colds = [t[0]["cold_ms"] for t in reps]
+                        row["cold_ms_min"] = min(colds)
+                        row["cold_ms_max"] = max(colds)
+                        row["cold_reps"] = len(colds)
+                        keys = {(t[0]["chosen_access"], t[0]["chosen_key"])
+                                for t in reps}
+                        if len(keys) > 1:
+                            print(f"  PLAN UNSTABLE {engine}/{layout} {qid} "
+                                  f"{plan}: {sorted(keys)}")
                         fp = row["result_fingerprint"]
                         if qid not in fp_seen:
                             fp_seen[qid] = fp
@@ -195,8 +225,11 @@ def run(config_path, dry_run, start_from):
                         })
                         writer.writerow(row)
                         cf.flush()
+                        spread = (f" [{row['cold_ms_min']}-"
+                                  f"{row['cold_ms_max']}]"
+                                  if cold_reps > 1 else "")
                         print(f"[{idx}/{total}] {engine}/{layout} {qid} "
-                              f"{plan}: cold={row['cold_ms']}ms "
+                              f"{plan}: cold={row['cold_ms']}ms{spread} "
                               f"warm={row['warm_ms_median']}ms "
                               f"access={row['chosen_access']} "
                               f"key={row['chosen_key']}")

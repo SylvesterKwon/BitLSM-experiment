@@ -2,6 +2,7 @@
   "workload": "ssbflat",
   "sf": 2,
   "build_kind": "release",
+  "cold_reps": 5,
   "queries": "all",
   "warm_reps": 5,
   "server_common": {
