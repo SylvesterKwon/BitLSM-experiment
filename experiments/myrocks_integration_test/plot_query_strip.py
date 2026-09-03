@@ -10,8 +10,9 @@ same query appears in every row.
 
 Every query is a dot. At 13-22 queries that costs nothing and settles the
 question an aggregate always raises -- whether one query is carrying the mean.
-The geometric mean is a diamond, deliberately a different mark from the data
-it summarises, the way a forest plot separates its summary from the studies.
+The geometric mean is a rule rather than a marker, deliberately a different
+mark from the data it summarises, the way a forest plot separates its summary
+from the studies.
 
 Latency is on the horizontal axis and configurations are rows: this is the
 orientation the form is normally drawn in (Cleveland dot plot, forest plot),
@@ -84,8 +85,11 @@ def panel(ax, cells, queries):
         ax.scatter(vals, [y + rng.uniform(-JITTER, JITTER) for _ in vals],
                    s=9, c=colour, alpha=0.55, edgecolors="none", zorder=3)
         gm = st.geometric_mean(vals)
-        ax.scatter([gm], [y], s=80, c=colour, marker="D",
-                   edgecolors="white", linewidths=0.7, zorder=5)
+        # A short heavy rule, not a marker: it pins the summary to one x
+        # without covering the dots it summarises, and cannot be mistaken for
+        # another query.
+        ax.plot([gm, gm], [y - 0.17, y + 0.17], color=colour, lw=2.8,
+                solid_capstyle="butt", zorder=5)
         ax.annotate(fmt(gm), (gm, y), textcoords="offset points",
                     xytext=(0, 8), ha="center", fontsize=5.5,
                     color=colour, zorder=6)
