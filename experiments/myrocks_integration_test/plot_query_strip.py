@@ -17,7 +17,8 @@ from the studies.
 Latency is on the horizontal axis and configurations are rows: this is the
 orientation the form is normally drawn in (Cleveland dot plot, forest plot),
 and a range of four orders of magnitude needs the figure's wide dimension.
-Per-query detail in the conventional grouped-bar form is plot_query_speedup.py.
+Per-query numbers, for the cases where a reader wants one, are in
+query_perf_summary_by_query.csv beside the sweep.
 
 Usage:
     python3 experiments/myrocks_integration_test/plot_query_strip.py <result_dir> [<result_dir> ...]
@@ -35,22 +36,34 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt                                  # noqa: E402
 
-plt.rcParams.update({"font.size": 7})
+plt.rcParams.update({"font.size": 6})
 
-# Ordered by index family so the three tiers read top to bottom. The row label
-# names engine and layout outright -- with configurations on an axis of their
-# own there is room for it, and it saves the reader a legend.
+# Grouped by storage engine, B-tree before LSM, and inside an engine the
+# per-template composite (the upper bound) before the conventional per-column
+# secondary indexes (the baseline). BitLSM is not a third engine -- it is
+# MyRocks carrying a bitmap index -- so it sits inside the LSM block.
+#
+# The last row is the claim: sk_bi_v1 is the two rows above it combined, a
+# bitmap added on top of the same conventional SKs, so the composition reads
+# straight down the figure and the configuration being argued for ends it.
 ROWS = [
-    (("innodb", "composite_v1", "force_composite"), "InnoDB  comp", "#6A5A8A"),
-    (("myrocks", "composite_v1", "force_composite"), "MyRocks comp", "#2E8B57"),
-    (("bitlsm", "sk_bi_v1", "auto"), "BitLSM  SK+bi", "#9B1B1B"),
-    (("bitlsm", "bi_v1", "auto"), "BitLSM  bi", "#E04040"),
-    (("innodb", "sk_v1", "auto"), "InnoDB  SK", "#9888B8"),
-    (("myrocks", "sk_v1", "auto"), "MyRocks SK", "#4CC850"),
+    (("innodb", "composite_v1", "force_composite"),
+     "InnoDB", "composite", "#6A5A8A"),
+    (("innodb", "sk_v1", "auto"), "InnoDB", "secondary", "#9888B8"),
+    (("myrocks", "composite_v1", "force_composite"),
+     "MyRocks", "composite", "#2E8B57"),
+    (("myrocks", "sk_v1", "auto"), "MyRocks", "secondary", "#4CC850"),
+    # The second BitLSM row is the same bitmap index with conventional SKs
+    # alongside it -- the configuration this section argues for.
+    (("bitlsm", "bi_v1", "auto"), "BitLSM", "", "#E04040"),
+    (("bitlsm", "sk_bi_v1", "auto"), "BitLSM", "+secondary", "#9B1B1B"),
 ]
 
-JITTER = 0.15
+JITTER = 0.10
 JITTER_SEED = 1234      # fixed so a re-run redraws the same figure
+
+FIG_W = 7.0             # two-column figure width in inches
+FIG_H = FIG_W * 0.618 * 0.66 * 0.7
 
 
 def load(result_dir):
@@ -72,18 +85,32 @@ def load(result_dir):
     return cells, workload, reps
 
 
+def dataset_name(workload):
+    """Display name for a panel title: the internal identity carries a source
+    prefix and a scale factor the reader does not need spelled that way."""
+    if workload.startswith("pbi_"):
+        return "Taxpayer"
+    if workload.startswith("ssbflat_sf"):
+        return f"SSB-flat SF{workload.rsplit('sf', 1)[1]}"
+    return workload
+
+
 def fmt(v):
     return f"{v:.1f}" if v < 10 else f"{v:,.0f}"
 
 
 def panel(ax, cells, queries):
-    present = [(k, lab, col) for k, lab, col in ROWS if k in cells]
-    for i, (key, label, colour) in enumerate(present):
+    present = [(k, eng, sch, col) for k, eng, sch, col in ROWS if k in cells]
+    for i, (key, engine, scheme, colour) in enumerate(present):
         y = len(present) - 1 - i
         vals = [cells[key][q] for q in queries]
+        # A rule along the row, in the row's own colour: it ties a row's dots
+        # together at this height and keeps the eye on one configuration
+        # across the panel. Not a grid -- there is nothing to read off it.
+        ax.axhline(y, color=colour, lw=0.5, alpha=0.22, zorder=1)
         rng = random.Random(JITTER_SEED)
         ax.scatter(vals, [y + rng.uniform(-JITTER, JITTER) for _ in vals],
-                   s=9, c=colour, alpha=0.55, edgecolors="none", zorder=3)
+                   s=4.5, c=colour, alpha=0.55, edgecolors="none", zorder=3)
         gm = st.geometric_mean(vals)
         # A short heavy rule, not a marker: it pins the summary to one x
         # without covering the dots it summarises, and cannot be mistaken for
@@ -91,13 +118,15 @@ def panel(ax, cells, queries):
         ax.plot([gm, gm], [y - 0.17, y + 0.17], color=colour, lw=2.8,
                 solid_capstyle="butt", zorder=5)
         ax.annotate(fmt(gm), (gm, y), textcoords="offset points",
-                    xytext=(0, 8), ha="center", fontsize=5.5,
+                    xytext=(0, 5), ha="center", fontsize=5,
                     color=colour, zorder=6)
     ax.set_xscale("log")
     ax.set_ylim(-0.6, len(present) - 0.25)
-    ax.grid(axis="x", lw=0.3, alpha=0.35)
-    ax.set_axisbelow(True)
-    ax.tick_params(length=2, width=0.4)
+    ax.grid(False)
+    # The log x axis carries minor ticks too; they default to pointing
+    # out, which leaves them sticking through the frame.
+    ax.tick_params(which="major", length=2, width=0.3, direction="in")
+    ax.tick_params(which="minor", length=1.2, width=0.3, direction="in")
     for sp in ax.spines.values():
         sp.set_linewidth(0.5)
     return present
@@ -105,32 +134,44 @@ def panel(ax, cells, queries):
 
 def plot(result_dirs, out_dir, fmts, title):
     fig, axes = plt.subplots(1, len(result_dirs),
-                             figsize=(3.6 * len(result_dirs), 3.0),
+                             figsize=(FIG_W, FIG_H),
                              sharey=True, squeeze=False)
     present = []
     for ax, d in zip(axes[0], result_dirs):
         cells, workload, reps = load(d)
-        missing = [k for k, _, _ in ROWS if k not in cells]
+        missing = [k for k, _, _, _ in ROWS if k not in cells]
         queries = sorted(set.intersection(*[set(v) for v in cells.values()]))
         present = panel(ax, cells, queries)
-        tag = f"({chr(97 + list(axes[0]).index(ax))}) {workload}  n={len(queries)}"
+        ax.set_title(dataset_name(workload), fontsize=6.5)
+        # The panel carries the dataset name only; the rest of the subcaption
+        # is set in LaTeX, and is printed here so it cannot drift from the
+        # data it describes.
+        tag = f"({chr(97 + list(axes[0]).index(ax))}) {workload}, n={len(queries)}"
         if reps > 1:
-            tag += f", median of {reps}"
-        ax.set_title(tag, fontsize=7)
+            tag += f", median of {reps} cold runs"
+        print(f"caption: {tag}")
         ax.set_xlabel("Cold latency per query (ms, log)")
         if missing:
             print(f"note: {d} has no "
                   f"{', '.join('/'.join(m) for m in missing)} cell")
     axes[0][0].set_yticks(range(len(present)))
-    axes[0][0].set_yticklabels([l for _, l, _ in present][::-1], fontsize=7)
+    # BitLSM is the bitmap index; naming the scheme again on its own row
+    # would only repeat the engine name.
+    axes[0][0].set_yticklabels(
+        [f"{eng} ({sch})" if sch else eng
+         for _, eng, sch, _ in present][::-1], fontsize=6)
     if title:
-        fig.suptitle(title, fontsize=8)
+        fig.suptitle(title, fontsize=7)
 
+    fig.subplots_adjust(left=0.155, right=0.995, bottom=0.22, top=0.88,
+                        wspace=0.10)
     os.makedirs(out_dir, exist_ok=True)
     stem = os.path.join(out_dir, "query_strip")
     for f in fmts:
         path = f"{stem}.{f}"
-        fig.savefig(path, bbox_inches="tight", dpi=200)
+        # The engine column sits outside the axes, so tight bbox needs a
+        # little padding or it trims the labels.
+        fig.savefig(path, dpi=150)
         print(f"Saved: {path}")
     plt.close(fig)
 
