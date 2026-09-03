@@ -81,7 +81,9 @@ def load(result_dir):
             workload = r["workload"]
             reps = max(reps, int(r.get("cold_reps") or 1))
             key = (r["engine"], r["index_layout"], r["plan"])
-            cells.setdefault(key, {})[r["query_id"]] = float(r["cold_ms"])
+            # Seconds: the axis spans five orders of magnitude either way,
+            # and seconds is the unit the numbers get quoted in.
+            cells.setdefault(key, {})[r["query_id"]] = float(r["cold_ms"]) / 1000
     return cells, workload, reps
 
 
@@ -96,7 +98,9 @@ def dataset_name(workload):
 
 
 def fmt(v):
-    return f"{v:.1f}" if v < 10 else f"{v:,.0f}"
+    if v < 0.01:
+        return f"{v:.4f}"
+    return f"{v:.3f}" if v < 10 else f"{v:.2f}"
 
 
 def panel(ax, cells, queries):
@@ -150,7 +154,6 @@ def plot(result_dirs, out_dir, fmts, title):
         if reps > 1:
             tag += f", median of {reps} cold runs"
         print(f"caption: {tag}")
-        ax.set_xlabel("Cold latency per query (ms, log)")
         if missing:
             print(f"note: {d} has no "
                   f"{', '.join('/'.join(m) for m in missing)} cell")
@@ -163,7 +166,9 @@ def plot(result_dirs, out_dir, fmts, title):
     if title:
         fig.suptitle(title, fontsize=7)
 
-    fig.subplots_adjust(left=0.155, right=0.995, bottom=0.22, top=0.88,
+    # One axis label for both panels: they share the quantity and the scale.
+    fig.supxlabel("Query Latency (s)", fontsize=6, y=0.045)
+    fig.subplots_adjust(left=0.155, right=0.995, bottom=0.175, top=0.88,
                         wspace=0.10)
     os.makedirs(out_dir, exist_ok=True)
     stem = os.path.join(out_dir, "query_strip")
