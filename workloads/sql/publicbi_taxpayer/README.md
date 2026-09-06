@@ -13,8 +13,8 @@ see the instance substitution note below.
 
 - 10 instances `Taxpayer_1..10`, byte-identical 28-column schema,
   9,153,273 rows / ~1.83 GB uncompressed each (instances 1 and 2 verified).
-- Original host (`event.cwi.nl`) is dead. Mirror: **Zenodo, Public BI
-  part 2, DOI 10.5281/zenodo.6344717** — holds instances 1..9 only.
+- Mirror: **Zenodo, Public BI part 2, DOI 10.5281/zenodo.6344717** —
+  holds instances 1..9 only.
 - Acquisition: `scripts/prepare_taxpayer.py` downloads (md5-verified
   against the Zenodo record), prepares, and pins `MANIFEST.json`
   (sha256 of source .gz + prepared file). The harness' `verify_data()`

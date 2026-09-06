@@ -63,7 +63,7 @@ MANIFEST_PATH = os.path.join(WORKLOAD_DIR, "MANIFEST.json")
 
 PREP_VERSION = 1
 NULL_TOKEN = b"null"
-ZENODO_RECORD = "6344717"  # Public BI part 2 (event.cwi.nl is dead)
+ZENODO_RECORD = "6344717"  # Public BI part 2
 
 # (column, mysql_type, not_null) — order == CSV field order == Vertica DDL
 # order (benchmark/Taxpayer/tables/*.table.sql; all 10 instances identical).
