@@ -1,17 +1,21 @@
 #!/usr/bin/env python3
 """Build the datadirs an exp_set's cells need, and stop.
 
-Loading is not part of any one measurement. read_plan and read_perf carry the
-same cell axis and therefore the same fixtures, and a fixture outlives the
-sweeps that read it: at SF10 the InnoDB composite datadir alone takes over a
-day to build and is then read by every subsequent run. Folding that into a
-measurement runner means a sweep can silently turn into a two-day job, and
-means asking one runner to do the other's preparation.
+Nothing here is a measurement. A fixture is an input to the read sweeps, and
+this runner's only job is to produce it as cheaply as it can -- loader.py
+therefore takes whatever shortcut each engine offers, such as building
+InnoDB's secondary indexes by sort after the load rather than by insertion
+during it. Wall-clock times printed below are progress reporting, not results,
+and must not be quoted as write performance: the write axis is measured by
+ingest_run.py, which loads row by row through the client and is deliberately
+left alone.
 
-So it gets its own runner. The measurement runners still call ensure_loaded
-and still build what is missing -- this does not become a step you can forget
--- but with the fixtures already in place that call returns immediately and
-they do nothing but measure.
+It gets its own runner because a fixture is shared and long-lived. read_plan
+and read_perf carry the same cell axis and therefore the same fixtures, and a
+fixture outlives the sweeps that read it. The measurement runners still call
+ensure_loaded and still build what is missing -- this does not become a step
+you can forget -- but with the fixtures already in place that call returns
+immediately and they do nothing but measure.
 
 Identity, not path: a datadir's name is derived from (workload, layout,
 engine, engine_params), so a cell cannot be pointed at the wrong fixture and

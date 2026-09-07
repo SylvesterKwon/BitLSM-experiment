@@ -7,6 +7,7 @@ Subsequent runs just boot the cached datadir (seconds).
 
 import json
 import os
+import re
 import shutil
 import time
 
@@ -121,6 +122,51 @@ def _wait_until_settled(cur, log, tag: str) -> str:
         time.sleep(SETTLE_POLL_S)
 
 
+
+# Building a B-tree's secondary indexes by inserting into them during the load
+# is what makes an InnoDB fixture take days: every row descends every index at
+# a random position, and once the change buffer fills at its 25%-of-pool cap
+# the absorbing stops. Creating the table with its primary key only, loading,
+# and adding the secondary indexes afterwards lets InnoDB build them by sorting
+# instead -- no random descent, and the pages come out full.
+#
+# This is not an advantage handed to one engine. The LSM fixtures already end
+# up sorted and densely packed, because compaction rewrites them that way
+# before lsm_state=settled is recorded; sorting InnoDB's indexes is how a
+# B-tree reaches the same kind of state. Leaving them insert-built is the
+# asymmetry, not removing it.
+#
+# Load time is not a reported metric (the write axis is measured by
+# ingest_run.py, which is untouched), so what matters here is the datadir this
+# produces, and it is the same table with the same indexes.
+_KEY_RE = re.compile(r"^\s*(?:UNIQUE\s+)?KEY\s+`?(\w+)`?\s*\(([^)]*)\)\s*,?\s*$",
+                     re.IGNORECASE)
+
+
+def _split_secondary_indexes(ddl: str):
+    """(CREATE TABLE without its KEY clauses, [ADD INDEX fragments]).
+
+    Returns the ddl unchanged and an empty list when there is nothing to
+    split, so a caller can always use the result.
+    """
+    kept, adds = [], []
+    for line in ddl.splitlines():
+        m = _KEY_RE.match(line)
+        if m:
+            adds.append(f"ADD INDEX {m.group(1)} ({m.group(2).strip()})")
+        else:
+            kept.append(line)
+    if not adds:
+        return ddl, []
+    # The line before the closing paren now ends in a stray comma.
+    for i in range(len(kept) - 1, -1, -1):
+        t = kept[i].rstrip()
+        if t.endswith(","):
+            kept[i] = t[:-1]
+            break
+    return "\n".join(kept), adds
+
+
 def ensure_loaded(workload, engine: str, index_layout: str,
                   build_kind: str = "debug", engine_params: dict = None,
                   log=print) -> str:
@@ -145,10 +191,19 @@ def ensure_loaded(workload, engine: str, index_layout: str,
         cur.execute(f"CREATE DATABASE {workload.name}")
         cur.execute(f"USE {workload.name}")
 
-        for table in workload.tables():
-            cur.execute(workload.create_table_sql(table, engine, index_layout))
-
         rocks = engine in ("myrocks", "bitlsm")
+        # Deferred only for the B-tree: the LSM engines reach a sorted, densely
+        # packed state through compaction, and BitLSM's bitmap has to be
+        # present during the load to be built at all.
+        deferred = {}
+        for table in workload.tables():
+            ddl = workload.create_table_sql(table, engine, index_layout)
+            if not rocks:
+                ddl, adds = _split_secondary_indexes(ddl)
+                if adds:
+                    deferred[table] = adds
+            cur.execute(ddl)
+
         for table in workload.tables():
             csv_path = workload.data_file(table)
             # bulk load writes SSTs directly and would bypass the memtable
@@ -178,6 +233,13 @@ def ensure_loaded(workload, engine: str, index_layout: str,
                 raise RuntimeError(
                     f"{table}: loaded {counts[table]} rows, expected {want} "
                     f"(canonical count for the frozen snapshot) — aborting")
+
+        for table, adds in deferred.items():
+            t1 = time.time()
+            log(f"[load:{identity}] {table}: building {len(adds)} indexes ...")
+            cur.execute(f"ALTER TABLE {table} " + ", ".join(adds))
+            log(f"[load:{identity}] {table}: indexes built "
+                f"({time.time() - t1:.1f}s)")
 
         want_total = getattr(workload, "EXPECTED_TOTAL_ROWS", None)
         if want_total is not None and sum(counts.values()) != want_total:
