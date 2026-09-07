@@ -46,17 +46,27 @@ plt.rcParams.update({"font.size": 6})
 # The last row is the claim: sk_bi_v1 is the two rows above it combined, a
 # bitmap added on top of the same conventional SKs, so the composition reads
 # straight down the figure and the configuration being argued for ends it.
+# (cell key, engine qualifier, index scheme, colour). The qualifier is empty
+# for the LSM rows -- they are the comparison the section is about, so they
+# read as plain index schemes; InnoDB is annotated rather than assumed.
+#
+# Paired by index scheme, B-tree first within a pair. That buys both
+# adjacencies at once: the engine comparison is rows 1-2 and 3-4, and putting
+# InnoDB first in each pair leaves "single" directly above "single + BitLSM",
+# which is the pair the section argues. Ordering the pairs the other way would
+# push InnoDB between them and break that.
+#
+# Read without the InnoDB rows, the sequence is the ingestion table's:
+# composite, single, the bitmap on top of single, the bitmap alone.
 ROWS = [
     (("innodb", "composite_v1", "force_composite"),
      "InnoDB", "composite", "#6A5A8A"),
-    (("innodb", "sk_v1", "auto"), "InnoDB", "secondary", "#9888B8"),
     (("myrocks", "composite_v1", "force_composite"),
-     "MyRocks", "composite", "#2E8B57"),
-    (("myrocks", "sk_v1", "auto"), "MyRocks", "secondary", "#4CC850"),
-    # The second BitLSM row is the same bitmap index with conventional SKs
-    # alongside it -- the configuration this section argues for.
-    (("bitlsm", "bi_v1", "auto"), "BitLSM", "", "#E04040"),
-    (("bitlsm", "sk_bi_v1", "auto"), "BitLSM", "+secondary", "#9B1B1B"),
+     "", "composite", "#2E8B57"),
+    (("innodb", "sk_v1", "auto"), "InnoDB", "single", "#9888B8"),
+    (("myrocks", "sk_v1", "auto"), "", "single", "#4CC850"),
+    (("bitlsm", "sk_bi_v1", "auto"), "", "single + BitLSM", "#9B1B1B"),
+    (("bitlsm", "bi_v1", "auto"), "", "BitLSM", "#E04040"),
 ]
 
 JITTER = 0.10
@@ -164,14 +174,14 @@ def plot(result_dirs, out_dir, fmts, title):
     # BitLSM is the bitmap index; naming the scheme again on its own row
     # would only repeat the engine name.
     axes[0][0].set_yticklabels(
-        [f"{eng} ({sch})" if sch else eng
+        [f"{sch} ({eng})" if eng else sch
          for _, eng, sch, _ in present][::-1], fontsize=6)
     if title:
         fig.suptitle(title, fontsize=7)
 
     # One axis label for both panels: they share the quantity and the scale.
     fig.supxlabel("Query Latency (s)", fontsize=6, y=0.045)
-    fig.subplots_adjust(left=0.155, right=0.995, bottom=0.175, top=0.88,
+    fig.subplots_adjust(left=0.135, right=0.995, bottom=0.175, top=0.88,
                         wspace=0.10)
     os.makedirs(out_dir, exist_ok=True)
     stem = os.path.join(out_dir, "query_strip")
