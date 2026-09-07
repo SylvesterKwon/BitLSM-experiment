@@ -88,12 +88,14 @@ def load(result_dir):
 
 
 def dataset_name(workload):
-    """Display name for a panel title: the internal identity carries a source
-    prefix and a scale factor the reader does not need spelled that way."""
+    """Display name for a panel title. The internal identity carries a source
+    prefix and a scale factor; neither belongs on the panel, where the name of
+    the workload is the whole point. Scale is a property of the setup and is
+    stated once in the text, not repeated on every figure."""
     if workload.startswith("pbi_"):
         return "Taxpayer"
-    if workload.startswith("ssbflat_sf"):
-        return f"SSB-flat SF{workload.rsplit('sf', 1)[1]}"
+    if workload.startswith("ssbflat"):
+        return "SSB-flat"
     return workload
 
 
@@ -150,7 +152,8 @@ def plot(result_dirs, out_dir, fmts, title):
         # The panel carries the dataset name only; the rest of the subcaption
         # is set in LaTeX, and is printed here so it cannot drift from the
         # data it describes.
-        tag = f"({chr(97 + list(axes[0]).index(ax))}) {workload}, n={len(queries)}"
+        tag = (f"({chr(97 + list(axes[0]).index(ax))}) "
+               f"{dataset_name(workload)}, n={len(queries)}")
         if reps > 1:
             tag += f", median of {reps} cold runs"
         print(f"caption: {tag}")
