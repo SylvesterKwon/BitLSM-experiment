@@ -119,6 +119,27 @@ def per_cell(qrows):
     return out
 
 
+def check_coverage(qrows):
+    """Every cell must cover the same queries, or the geometric means are not
+    comparable: a cell missing one query is averaged over a different set,
+    and dividing two such means excuses the shorter cell from whatever it
+    could not run. Loud rather than silent -- this went unnoticed once,
+    when the composite cells skipped the one query no composite serves."""
+    cells = {}
+    for r in qrows:
+        key = tuple(r[k] for k in CELL_KEY)
+        cells.setdefault(key, set()).add(r["query_id"])
+    everything = set().union(*cells.values())
+    short = {k: sorted(everything - q) for k, q in cells.items()
+             if q != everything}
+    if short:
+        print(f"WARNING: cells do not cover the same {len(everything)} "
+              f"queries — the geometric means below are not comparable")
+        for k, missing in short.items():
+            print(f"  {'/'.join(k)}: missing {', '.join(missing)}")
+    return not short
+
+
 def add_ratios(cells):
     """Every cell against the fastest cell of its workload, so a reader can
     see the ordering without dividing anything by hand."""
@@ -151,6 +172,7 @@ def main():
     if not qrows:
         print("No measured cells found.")
         return
+    check_coverage(qrows)
     cells = add_ratios(per_cell(qrows))
 
     out_path = args.output or os.path.join(

@@ -29,7 +29,7 @@ using std::to_string;
 using std::uniform_int_distribution;
 using std::uniform_real_distribution;
 using std::vector;
-using bit_lsm::AttrRole;
+using bit_lsm::IndexType;
 using bit_lsm::BitLSMQuery;
 using bit_lsm::CompareOp;
 
@@ -74,7 +74,7 @@ inline BitLSMQuery build_read_query(const Schema& schema,
   mt19937 gen(42);
   BitLSMQuery query;
   for (uint32_t idx : query_indices) {
-    if (schema.options.attr_specs[idx].role == AttrRole::ORDERED) {
+    if (schema.options.attr_specs[idx].index_type == IndexType::kRange) {
       double range = schema.range_max[idx] - schema.range_min[idx];
       double width = selectivity * range;
       uniform_real_distribution<double> dist(schema.range_min[idx],
@@ -214,7 +214,7 @@ class BenchmarkExperiment {
     uint64_t header = sizeof(uint32_t) * (attr_cnt + 2);
     uint64_t data = 0;
     for (uint32_t i = 0; i < attr_cnt; ++i) {
-      if (opts.attr_specs[i].role == AttrRole::ORDERED)
+      if (opts.attr_specs[i].index_type == IndexType::kRange)
         data += sizeof(double);
       else
         data += std::get<std::string>(attrs[i]).size();
@@ -232,11 +232,11 @@ class BenchmarkExperiment {
     vector<uniform_int_distribution<int>> cat_dists;
     vector<uniform_real_distribution<double>> cont_dists;
     for (uint32_t j = 0; j < schema.options.attr_num; ++j) {
-      if (schema.options.attr_specs[j].role == AttrRole::UNORDERED)
+      if (schema.options.attr_specs[j].index_type == IndexType::kEquality)
         cat_dists.emplace_back(0, schema.cardinalities[j] - 1);
       else
         cat_dists.emplace_back(0, 0);
-      if (schema.options.attr_specs[j].role == AttrRole::ORDERED)
+      if (schema.options.attr_specs[j].index_type == IndexType::kRange)
         cont_dists.emplace_back(schema.range_min[j], schema.range_max[j]);
       else
         cont_dists.emplace_back(0.0, 0.0);
@@ -251,7 +251,7 @@ class BenchmarkExperiment {
 
     for (uint64_t i = 0; i < n; ++i) {
       for (uint32_t j = 0; j < schema.options.attr_num; ++j) {
-        if (schema.options.attr_specs[j].role == AttrRole::UNORDERED)
+        if (schema.options.attr_specs[j].index_type == IndexType::kEquality)
           attrs[j] = to_string(cat_dists[j](gen));
         else
           attrs[j] = cont_dists[j](gen);

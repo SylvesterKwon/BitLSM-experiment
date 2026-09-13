@@ -36,15 +36,17 @@ CELL_ORDER = [
 ]
 # Engine is carried by colour + legend, so the tick labels name only the
 # index layout -- spelling out the engine here overruns the tick spacing.
+# The layout names are the paper's, capitalised: they are proper nouns for the
+# configurations under comparison, and the read figure spells them the same way.
 CELL_LABELS = {
     ("myrocks", "std"): "PK only",
-    ("myrocks", "sk_v1"): "+ SK",
-    ("myrocks", "composite_v1"): "+ comp",
-    ("bitlsm", "bi_v1"): "bi",
-    ("bitlsm", "sk_bi_v1"): "SK + bi",
+    ("myrocks", "sk_v1"): "Single",
+    ("myrocks", "composite_v1"): "Composite",
+    ("bitlsm", "bi_v1"): "BitLSM",
+    ("bitlsm", "sk_bi_v1"): "Single\n+ BitLSM",
     ("innodb", "std"): "PK only",
-    ("innodb", "sk_v1"): "+ SK",
-    ("innodb", "composite_v1"): "+ comp",
+    ("innodb", "sk_v1"): "Single",
+    ("innodb", "composite_v1"): "Composite",
 }
 CELL_COLORS = {
     ("myrocks", "std"): "#A8D8A0",
@@ -148,7 +150,7 @@ def draw_panel(ax, cells, values, ylabel, fmt, log=False, cap=None):
 
     ax.set_ylabel(ylabel)
     ax.set_xticks(x)
-    ax.set_xticklabels([label_for(c) for c in cells])
+    ax.set_xticklabels([label_for(c) for c in cells], fontsize=5.5)
     ax.tick_params(axis="x", length=0)
     ax.tick_params(axis="y", length=2, width=0.3, direction="in")
     ax.grid(False)

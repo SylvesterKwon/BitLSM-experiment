@@ -24,7 +24,8 @@ import json
 import os
 import subprocess
 
-from .base import ENGINE_CLAUSE, SK_CF_COMMENT, Workload
+from .base import (ENGINE_CLAUSE, SK_CF_COMMENT, Workload,
+                   check_range_columns)
 
 REPO_ROOT = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", ".."))
@@ -81,6 +82,23 @@ FLAT_COLUMNS = [
 ]
 
 # Union of predicate columns across the 13 flat queries (D6 sk/bi target).
+# Filter columns whose key part is declared ORDERED in the BITLSM_INDEX.
+#
+# Declared, then checked against the queries (check_range_columns, called where
+# the index is built). The rule is not a judgment: a binary column needs ORDERED
+# exactly when some query compares it with a non-equality operator. Declaring it
+# anyway keeps the set reviewable and catches a regex that misses a query shape
+# -- a derived-only set would drop the hint silently in that case.
+#
+# A BITLSM key part is kEquality by default on a binary column: bins cut by a
+# frequency-balanced value dictionary, which serves `=` and cannot express a
+# range. Only P_BRAND is queried with one (Q2.2, `P_BRAND BETWEEN ... AND ...`);
+# every other filter column takes equality, and the numeric ones (D_YEAR,
+# LO_DISCOUNT, LO_QUANTITY, D_YEARMONTHNUM, D_WEEKNUMINYEAR) are kRange by
+# default already. Declaring only what needs it keeps every other column's bins
+# exactly as they were, so the rest of the sweep stays comparable.
+BITLSM_RANGE_COLUMNS = {"P_BRAND"}
+
 FILTER_COLUMNS = [
     "D_YEAR", "D_YEARMONTHNUM", "D_WEEKNUMINYEAR",
     "LO_DISCOUNT", "LO_QUANTITY",
@@ -254,8 +272,14 @@ class SsbFlatWorkload(Workload):
                 cols.append(f"    KEY {name} ({', '.join(icols)}){sk_cf}")
         if index_layout in ("bi_v1", "sk_bi_v1"):
             assert engine == "bitlsm", "bi layouts are bitlsm-engine only"
+            check_range_columns(
+                BITLSM_RANGE_COLUMNS, self.queries(), FILTER_COLUMNS,
+                {c for c, t, _ in FLAT_COLUMNS if "BINARY" in t.upper()},
+                "ssb_flat")
+            bi_parts = [f"{c} ORDERED" if c in BITLSM_RANGE_COLUMNS else c
+                        for c in FILTER_COLUMNS]
             cols.append(
-                f"    INDEX bi ({', '.join(FILTER_COLUMNS)}) BITLSM_INDEX")
+                f"    INDEX bi ({', '.join(bi_parts)}) BITLSM_INDEX")
         if index_layout not in ("std", "sk_v1", "bi_v1", "sk_bi_v1",
                                 "composite_v1"):
             raise ValueError(f"unknown index_layout: {index_layout}")

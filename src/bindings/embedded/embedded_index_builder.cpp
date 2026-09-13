@@ -18,7 +18,7 @@ EmbeddedIndexBuilder::EmbeddedIndexBuilder(const bit_lsm::BitLSMOptions& options
   cont_zone_.resize(options_.attr_num, ZoneMap{0, 0});
   cont_seen_.assign(options_.attr_num, false);
   for (uint32_t i = 0; i < options_.attr_num; ++i)
-    if (options_.attr_specs[i].role == bit_lsm::AttrRole::ORDERED) {
+    if (options_.attr_specs[i].index_type == bit_lsm::IndexType::kRange) {
       file_zone_.push_back(ZoneMap{0, 0});
       file_seen_.push_back(false);
     }
@@ -35,7 +35,7 @@ void EmbeddedIndexBuilder::OnKeyAdded(const Slice& /*key*/, ValueType type,
   uint32_t cont_ord = 0;
   for (uint32_t i = 0; i < options_.attr_num; ++i) {
     auto a = EmbeddedCodec::DecodeAttr(options_, v, i);
-    if (options_.attr_specs[i].role == bit_lsm::AttrRole::UNORDERED) {
+    if (options_.attr_specs[i].index_type == bit_lsm::IndexType::kEquality) {
       cat_bloom_[i].Add(std::get<std::string_view>(a));
     } else {
       double d = std::get<double>(a);
@@ -63,7 +63,7 @@ void EmbeddedIndexBuilder::FlushCurrentBlock(const BlockHandle& bh) {
   blocks_.push_back({entries_total_, bh.offset, bh.size});
   std::string payload;
   for (uint32_t i = 0; i < options_.attr_num; ++i) {
-    if (options_.attr_specs[i].role == bit_lsm::AttrRole::UNORDERED) {
+    if (options_.attr_specs[i].index_type == bit_lsm::IndexType::kEquality) {
       std::string bits = cat_bloom_[i].Finish(bloom_bits_);
       PutFixed32(&payload, static_cast<uint32_t>(bits.size()) * 8);  // nbits
       payload.append(bits);

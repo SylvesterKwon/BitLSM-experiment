@@ -174,7 +174,7 @@ int main(int argc, char* argv[]) {
       }
       auto* reader = static_cast<bit_lsm::SABIReader*>(udi.GetValue()->reader());
       const auto& bi = reader->bitmap_index;
-      const auto& roles = reader->schema().roles;
+      const auto& roles = reader->schema().index_types;
       ++files_seen;
 
       uint32_t offset = 0;
@@ -199,15 +199,20 @@ int main(int argc, char* argv[]) {
         Summarize(counts, &st);
         offset += bins;
 
-        // --bins_for: the per-bin view the CSV cannot carry. Thresholds are
-        // okeys, so decode them back, and show which bin a probe value lands
-        // in -- that is what decides whether a range predicate can skip a bin
-        // or has to read it.
+        // --bins_for: the per-bin view the CSV cannot carry. A kRange policy
+        // is now a BytesList in SABI's memcmp domain, and a numeric attr's
+        // boundary is its okey in 8-byte big-endian form -- decode it back to
+        // show the bin edges, and show which bin a probe value lands in, which
+        // is what decides whether a range predicate can skip a bin.
         if (!bins_for.empty() && a < attr_names.size() &&
             attr_names[a] == bins_for &&
-            roles[a] == bit_lsm::AttrRole::ORDERED) {
-          const auto& thresholds =
-              std::get<std::vector<uint64_t>>(bi.binning_policy[a]);
+            roles[a] == bit_lsm::IndexType::kRange) {
+          const auto& bounds =
+              std::get<bit_lsm::BytesList>(bi.binning_policy[a]);
+          std::vector<uint64_t> thresholds;
+          thresholds.reserve(bounds.size());
+          for (size_t i = 0; i < bounds.size(); ++i)
+            thresholds.push_back(bit_lsm::OkeyFromBytes(bounds[i]));
           std::cout << std::setprecision(17) << "file " << f->fd.GetNumber()
                     << " level " << level << " attr " << attr_names[a] << ": "
                     << bins << " bins, " << st.empty_bins << " empty, distinct="
@@ -230,7 +235,7 @@ int main(int argc, char* argv[]) {
         }
 
         const char* role =
-            roles[a] == bit_lsm::AttrRole::ORDERED ? "ORDERED" : "UNORDERED";
+            roles[a] == bit_lsm::IndexType::kRange ? "ORDERED" : "UNORDERED";
         const std::string name =
             a < attr_names.size() ? attr_names[a] : ("attr" + std::to_string(a));
         const uint64_t distinct =

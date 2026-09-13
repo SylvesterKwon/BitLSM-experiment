@@ -28,6 +28,51 @@ SK_CF = "sk_cf"
 SK_CF_COMMENT = f" COMMENT 'cfname={SK_CF}'"
 
 
+def derive_range_columns(queries: dict, filter_columns) -> set:
+    """Filter columns some query compares with a non-equality operator.
+
+    A BITLSM key part is kEquality by default on a binary column, which serves
+    `=` and cannot express a range: the predicate is dropped and that column
+    stops pruning. Declaring the key part ORDERED fixes it, but only the
+    workload's own queries say which columns need it -- so the declaration is
+    checked against them rather than trusted. A hand-kept list that drifts
+    would not fail; it would quietly measure a worse BitLSM.
+
+    Numeric columns are kRange already, so a range on one needs no declaration;
+    the caller filters by type.
+    """
+    import re
+    found = set()
+    for sql in queries.values():
+        m = re.search(r"\bWHERE\b(.*?)(\bGROUP BY\b|\bORDER BY\b|;|$)",
+                      " ".join(sql.split()), re.I | re.S)
+        if not m:
+            continue
+        where = m.group(1)
+        for c in filter_columns:
+            if re.search(rf"\b{c}\s+BETWEEN\b", where, re.I) or \
+               re.search(rf"\b{c}\s*(<=|>=|<|>)(?!=)", where, re.I):
+                found.add(c)
+    return found
+
+
+def check_range_columns(declared: set, queries: dict, filter_columns,
+                        binary_columns, where: str) -> None:
+    """Fail loudly when the declared ORDERED set and the queries disagree.
+
+    Both directions matter. A binary column that takes a range but is not
+    declared silently loses its pruning; a column declared without needing it
+    silently changes that column's bin layout for nothing, which moves numbers
+    with no reason a reader could find."""
+    needed = {c for c in derive_range_columns(queries, filter_columns)
+              if c in binary_columns}
+    if declared != needed:
+        raise ValueError(
+            f"{where}: BITLSM ORDERED declaration is out of date with the "
+            f"queries. declared={sorted(declared)} implied={sorted(needed)}. "
+            f"Add or remove the column, or change the query that moved.")
+
+
 class Workload:
     name = None  # e.g. "job"
 

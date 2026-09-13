@@ -112,7 +112,7 @@ void EmbeddedTableIterator::SelectCandidateBlocks() {
   auto cont_ordinal_of = [&](uint32_t attr_idx) -> uint32_t {
     uint32_t ord = 0;
     for (uint32_t i = 0; i < attr_idx; ++i)
-      if (options_.attr_specs[i].role == bit_lsm::AttrRole::ORDERED) ++ord;
+      if (options_.attr_specs[i].index_type == bit_lsm::IndexType::kRange) ++ord;
     return ord;
   };
 
@@ -120,7 +120,7 @@ void EmbeddedTableIterator::SelectCandidateBlocks() {
     if (clause.size() != 1) continue;  // OR / non-single shapes do not prune.
     const bit_lsm::QueryCondition& c = clause[0];
     if (c.attr_idx >= options_.attr_specs.size()) continue;
-    if (options_.attr_specs[c.attr_idx].role == bit_lsm::AttrRole::UNORDERED) {
+    if (options_.attr_specs[c.attr_idx].index_type == bit_lsm::IndexType::kEquality) {
       // Single categorical EQUAL condition only.
       if (c.op != bit_lsm::CompareOp::EQUAL) continue;
       cat_facts.push_back({c.attr_idx, std::get<std::string>(c.value)});
@@ -230,7 +230,7 @@ void EmbeddedTableIterator::SelectCandidateBlocks() {
     // Walk attrs in index order, advancing the read cursor regardless of
     // whether this attr has a query fact, so offsets stay aligned.
     for (uint32_t ai = 0; ai < options_.attr_specs.size() && block_ok; ++ai) {
-      if (options_.attr_specs[ai].role == bit_lsm::AttrRole::UNORDERED) {
+      if (options_.attr_specs[ai].index_type == bit_lsm::IndexType::kEquality) {
         // [u32 nbits][ceil(nbits/8) bytes]
         uint32_t nbits = DecodeFixed32(p);
         p += sizeof(uint32_t);

@@ -20,7 +20,7 @@ void SAIIndexBuilder::OnKeyAdded(const Slice& /*key*/, ValueType type,
   std::string_view v(value.data(), value.size());
   for (uint32_t i = 0; i < options_.attr_num; ++i) {
     auto a = SAICodec::DecodeAttr(options_, v, i);
-    if (options_.attr_specs[i].role == bit_lsm::AttrRole::UNORDERED) {
+    if (options_.attr_specs[i].index_type == bit_lsm::IndexType::kEquality) {
       // Map insert allocates only on first sight of a term (dictionary build is
       // inherently allocating, same as Cassandra's SegmentTrieBuffer); the
       // per-row append is a vector push_back.
@@ -56,7 +56,7 @@ Status SAIIndexBuilder::Finish(Slice* index_contents) {
   for (uint32_t i = 0; i < options_.attr_num; ++i) {
     const size_t region_base = blob_.size();
     region_off[i] = static_cast<uint32_t>(region_base);
-    if (options_.attr_specs[i].role == bit_lsm::AttrRole::UNORDERED) {
+    if (options_.attr_specs[i].index_type == bit_lsm::IndexType::kEquality) {
       // [u32 trie_off][postings area][trie area]
       PutU32(blob_, 0);  // trie_off placeholder
       TrieWriter tw;

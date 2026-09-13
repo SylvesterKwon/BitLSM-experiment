@@ -36,7 +36,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 from run_common import (  # noqa: E402
     add_common_args, maybe_run_as_daemon, setup_logging, teardown_logging,
 )
-from myrocks.loader import datadir_for, ensure_loaded, is_loaded  # noqa: E402
+from myrocks.loader import (  # noqa: E402
+    check_fixture_build, datadir_for, ensure_loaded, is_loaded,
+)
 from myrocks.workloads.registry import make_workload  # noqa: E402
 
 
@@ -83,6 +85,7 @@ def run(config_path, dry_run, start_from):
             state = "cached" if is_loaded(identity) else "NEEDS LOAD"
             print(f"  [{state:>10}] {identity}")
             print(f"               {datadir_for(identity)}")
+            check_fixture_build(identity, build_kind)
         if dry_run:
             print(f"dry-run: {len(pending)} of {len(wanted)} need building")
             return 0

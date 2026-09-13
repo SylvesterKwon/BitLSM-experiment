@@ -8,33 +8,43 @@ namespace honk {
 
 using namespace bit_lsm;
 
+// The core split AttrSpec into (IndexType x PhysicalType). Every taxi column
+// keeps the physical shape the pre-split one-arg AttrSpec gave it: a kRange
+// attr was a double in a fixed 8-byte slot, a kEquality attr was opaque
+// variable-width bytes.
+inline AttrSpec TaxiAttrSpec(IndexType t) {
+  return t == IndexType::kRange
+             ? AttrSpec(IndexType::kRange, PhysicalType::kFloat, 8)
+             : AttrSpec(IndexType::kEquality, PhysicalType::kVarBinary, 0);
+}
+
 struct TaxiColumn {
   std::string name;
-  AttrRole type;
+  IndexType type;
 };
 
 inline std::vector<TaxiColumn> GetTaxiColumns() {
   return {
-      /* 0  */ {"VendorID", AttrRole::UNORDERED},
-      /* 1  */ {"tpep_pickup_datetime", AttrRole::ORDERED},
-      /* 2  */ {"tpep_dropoff_datetime", AttrRole::ORDERED},
-      /* 3  */ {"passenger_count", AttrRole::ORDERED},
-      /* 4  */ {"trip_distance", AttrRole::ORDERED},
-      /* 5  */ {"RatecodeID", AttrRole::UNORDERED},
-      /* 6  */ {"store_and_fwd_flag", AttrRole::UNORDERED},
-      /* 7  */ {"PULocationID", AttrRole::UNORDERED},
-      /* 8  */ {"DOLocationID", AttrRole::UNORDERED},
-      /* 9  */ {"payment_type", AttrRole::UNORDERED},
-      /* 10 */ {"fare_amount", AttrRole::ORDERED},
-      /* 11 */ {"extra", AttrRole::ORDERED},
-      /* 12 */ {"mta_tax", AttrRole::ORDERED},
-      /* 13 */ {"tip_amount", AttrRole::ORDERED},
-      /* 14 */ {"tolls_amount", AttrRole::ORDERED},
-      /* 15 */ {"improvement_surcharge", AttrRole::ORDERED},
-      /* 16 */ {"total_amount", AttrRole::ORDERED},
-      /* 17 */ {"congestion_surcharge", AttrRole::ORDERED},
-      /* 18 */ {"Airport_fee", AttrRole::ORDERED},
-      /* 19 */ {"cbd_congestion_fee", AttrRole::ORDERED},
+      /* 0  */ {"VendorID", IndexType::kEquality},
+      /* 1  */ {"tpep_pickup_datetime", IndexType::kRange},
+      /* 2  */ {"tpep_dropoff_datetime", IndexType::kRange},
+      /* 3  */ {"passenger_count", IndexType::kRange},
+      /* 4  */ {"trip_distance", IndexType::kRange},
+      /* 5  */ {"RatecodeID", IndexType::kEquality},
+      /* 6  */ {"store_and_fwd_flag", IndexType::kEquality},
+      /* 7  */ {"PULocationID", IndexType::kEquality},
+      /* 8  */ {"DOLocationID", IndexType::kEquality},
+      /* 9  */ {"payment_type", IndexType::kEquality},
+      /* 10 */ {"fare_amount", IndexType::kRange},
+      /* 11 */ {"extra", IndexType::kRange},
+      /* 12 */ {"mta_tax", IndexType::kRange},
+      /* 13 */ {"tip_amount", IndexType::kRange},
+      /* 14 */ {"tolls_amount", IndexType::kRange},
+      /* 15 */ {"improvement_surcharge", IndexType::kRange},
+      /* 16 */ {"total_amount", IndexType::kRange},
+      /* 17 */ {"congestion_surcharge", IndexType::kRange},
+      /* 18 */ {"Airport_fee", IndexType::kRange},
+      /* 19 */ {"cbd_congestion_fee", IndexType::kRange},
   };
 }
 
@@ -55,11 +65,11 @@ BuildTaxiBitLSMOptions(const std::vector<uint32_t>& indexed_indices = {}) {
   if (indexed_indices.empty()) {
     opts.attr_num = cols.size();
     for (auto& c : cols)
-      opts.attr_specs.push_back(AttrSpec(c.type));
+      opts.attr_specs.push_back(TaxiAttrSpec(c.type));
   } else {
     opts.attr_num = indexed_indices.size();
     for (auto idx : indexed_indices)
-      opts.attr_specs.push_back(AttrSpec(cols[idx].type));
+      opts.attr_specs.push_back(TaxiAttrSpec(cols[idx].type));
   }
   return opts;
 }

@@ -32,12 +32,12 @@ inline Schema load_schema(const std::string& path) {
   for (auto& attr : attrs) {
     std::string type = attr.at("type").get<std::string>();
     if (type == "categorical") {
-      schema.options.attr_specs.push_back(bit_lsm::AttrSpec(bit_lsm::AttrRole::UNORDERED));
+      schema.options.attr_specs.push_back(bit_lsm::AttrSpec(bit_lsm::IndexType::kEquality, bit_lsm::PhysicalType::kVarBinary, 0));
       schema.cardinalities.push_back(attr.value("cardinality", 1000));
       schema.range_min.push_back(0.0);
       schema.range_max.push_back(0.0);
     } else if (type == "continuous") {
-      schema.options.attr_specs.push_back(bit_lsm::AttrSpec(bit_lsm::AttrRole::ORDERED));
+      schema.options.attr_specs.push_back(bit_lsm::AttrSpec(bit_lsm::IndexType::kRange, bit_lsm::PhysicalType::kFloat, 8));
       schema.cardinalities.push_back(0);
       schema.range_min.push_back(attr.value("min", 0.0));
       schema.range_max.push_back(attr.value("max", 1000.0));

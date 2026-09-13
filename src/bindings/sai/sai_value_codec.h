@@ -7,7 +7,7 @@
 #include <variant>
 #include <vector>
 
-#include "bit_lsm_option.h"  // bit_lsm::BitLSMOptions, AttrRole  (harness API)
+#include "bit_lsm_option.h"  // bit_lsm::BitLSMOptions, IndexType  (harness API)
 #include "bit_lsm_query.h"   // bit_lsm::BitLSMQuery, QueryCondition, CompareOp
 
 // Matches the harness Attr (bit_lsm_utils.h) without depending on it: only the
@@ -31,7 +31,7 @@ class SAICodec {
     uint32_t header = sizeof(uint32_t) * (1 + n + 1);
     uint32_t data = 0;
     for (uint32_t i = 0; i < n; ++i) {
-      if (opts.attr_specs[i].role == bit_lsm::AttrRole::ORDERED)
+      if (opts.attr_specs[i].index_type == bit_lsm::IndexType::kRange)
         data += sizeof(double);
       else
         data += static_cast<uint32_t>(std::get<std::string>(attrs[i]).size());
@@ -45,7 +45,7 @@ class SAICodec {
       uint32_t cur = static_cast<uint32_t>(dp - base);
       std::memcpy(base + off_pos, &cur, sizeof(uint32_t));
       off_pos += sizeof(uint32_t);
-      if (opts.attr_specs[i].role == bit_lsm::AttrRole::ORDERED) {
+      if (opts.attr_specs[i].index_type == bit_lsm::IndexType::kRange) {
         double v = std::get<double>(attrs[i]);
         std::memcpy(dp, &v, sizeof(double));
         dp += sizeof(double);
@@ -66,7 +66,7 @@ class SAICodec {
     const char* base = value.data();
     uint32_t off;
     std::memcpy(&off, base + sizeof(uint32_t) * (1 + attr_idx), sizeof(uint32_t));
-    if (opts.attr_specs[attr_idx].role == bit_lsm::AttrRole::ORDERED) {
+    if (opts.attr_specs[attr_idx].index_type == bit_lsm::IndexType::kRange) {
       double v;
       std::memcpy(&v, base + off, sizeof(double));
       return v;
@@ -93,7 +93,7 @@ class SAICodec {
   static bool EvalOne(const bit_lsm::QueryCondition& c, std::string_view value,
                       const bit_lsm::BitLSMOptions& opts) {
     auto a = DecodeAttr(opts, value, c.attr_idx);
-    if (opts.attr_specs[c.attr_idx].role == bit_lsm::AttrRole::UNORDERED) {
+    if (opts.attr_specs[c.attr_idx].index_type == bit_lsm::IndexType::kEquality) {
       return c.op == bit_lsm::CompareOp::EQUAL &&
              std::get<std::string_view>(a) == std::get<std::string>(c.value);
     }

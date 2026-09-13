@@ -63,6 +63,47 @@ def is_loaded(identity: str) -> bool:
     return os.path.exists(os.path.join(datadir_for(identity), MARKER))
 
 
+def fixture_build(identity: str) -> dict:
+    """The build recorded in a fixture's marker, or {} when unloaded."""
+    path = os.path.join(datadir_for(identity), MARKER)
+    if not os.path.exists(path):
+        return {}
+    with open(path) as f:
+        return json.load(f).get("build_info", {})
+
+
+def check_fixture_build(identity: str, build_kind: str = "release") -> None:
+    """Refuse a fixture written by a different engine than the one running.
+
+    A datadir's name encodes (workload, layout, engine, engine_params) and
+    nothing about the engine that wrote it, so a core change that alters the
+    on-disk SABI format leaves every fixture looking loaded and silently
+    reusable. Reading v7 SSTs with a v8 engine is not a version we support --
+    it is a broken measurement -- so this raises instead of warning, and the
+    remedy is to delete the datadir and let the runner rebuild it.
+
+    Strict on purpose: it compares the recorded build, not a format number the
+    harness cannot see from outside an SST. A core or adapter commit that could
+    not have changed the bytes still trips it, which costs a reload; a commit
+    that did change them and slipped through would cost a wrong result."""
+    was = fixture_build(identity)
+    if not was:
+        return
+    try:
+        now = MysqldServer(datadir_for(identity), build_kind).build_info()
+    except OSError:
+        return
+    drift = [(k, was.get(k), now.get(k))
+             for k in ("bitlsm_commit", "mysql_commit")
+             if was.get(k) and now.get(k) and was[k] != now[k]]
+    if not drift:
+        return
+    parts = ", ".join(f"{k} {a[:12]} -> {b[:12]}" for k, a, b in drift)
+    raise RuntimeError(
+        f"{identity}: fixture was built by a different engine ({parts}). "
+        f"Delete {datadir_for(identity)} and let the runner rebuild it.")
+
+
 def server_for(workload, engine: str, index_layout: str,
                build_kind: str = "debug", engine_params: dict = None
                ) -> MysqldServer:

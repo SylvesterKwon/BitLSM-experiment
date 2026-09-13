@@ -4,7 +4,7 @@
   "build_kind": "release",
   "cold_reps": 5,
   "queries": "all",
-  "warm_reps": 5,
+  "warm_reps": 0,
   "server_common": {
     "cache_bytes": 1073741824,
     "direct_io": true,

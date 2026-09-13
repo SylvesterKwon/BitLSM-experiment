@@ -33,7 +33,7 @@ enum class SILookupType { kPointLookup, kRangeScan };
 struct SILookup {
   uint32_t attr_idx;
   SILookupType type;
-  bit_lsm::AttrRole attr_type;
+  bit_lsm::IndexType attr_type;
 
   // For kPointLookup (UNORDERED + EQUAL):
   // Multiple values represent OR within a clause (e.g., attr=1 OR attr=3).
@@ -69,7 +69,7 @@ inline SIQueryPlan MapQueryToSILookups(const bit_lsm::BitLSMQuery& query,
     for (const auto& cond : clause) {
       if (cond.attr_idx != cat_attr ||
           cond.op != bit_lsm::CompareOp::EQUAL ||
-          options.attr_specs[cond.attr_idx].role != bit_lsm::AttrRole::UNORDERED) {
+          options.attr_specs[cond.attr_idx].index_type != bit_lsm::IndexType::kEquality) {
         pure_cat_or = false;
         break;
       }
@@ -80,14 +80,14 @@ inline SIQueryPlan MapQueryToSILookups(const bit_lsm::BitLSMQuery& query,
       SILookup lk;
       lk.attr_idx = cat_attr;
       lk.type = SILookupType::kPointLookup;
-      lk.attr_type = bit_lsm::AttrRole::UNORDERED;
+      lk.attr_type = bit_lsm::IndexType::kEquality;
       for (const auto& cond : clause)
         lk.sk_values.push_back(std::get<std::string>(cond.value));
       plan.si_lookups.push_back(std::move(lk));
     } else if (clause.size() == 1) {
       // Single-condition clause (common case: AND-only queries)
       const auto& cond = clause[0];
-      if (options.attr_specs[cond.attr_idx].role == bit_lsm::AttrRole::ORDERED) {
+      if (options.attr_specs[cond.attr_idx].index_type == bit_lsm::IndexType::kRange) {
         // Reserve a slot on first encounter to preserve clause ordering
         auto [it, inserted] = range_slot.emplace(cond.attr_idx,
                                                   plan.si_lookups.size());
@@ -95,7 +95,7 @@ inline SIQueryPlan MapQueryToSILookups(const bit_lsm::BitLSMQuery& query,
           SILookup lk;
           lk.attr_idx = cond.attr_idx;
           lk.type = SILookupType::kRangeScan;
-          lk.attr_type = bit_lsm::AttrRole::ORDERED;
+          lk.attr_type = bit_lsm::IndexType::kRange;
           plan.si_lookups.push_back(std::move(lk));
         }
         auto& lk = plan.si_lookups[it->second];
@@ -117,7 +117,7 @@ inline SIQueryPlan MapQueryToSILookups(const bit_lsm::BitLSMQuery& query,
         SILookup lk;
         lk.attr_idx = cond.attr_idx;
         lk.type = SILookupType::kPointLookup;
-        lk.attr_type = bit_lsm::AttrRole::UNORDERED;
+        lk.attr_type = bit_lsm::IndexType::kEquality;
         lk.sk_values.push_back(std::get<std::string>(cond.value));
         plan.si_lookups.push_back(std::move(lk));
       } else {
