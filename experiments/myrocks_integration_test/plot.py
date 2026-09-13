@@ -63,6 +63,7 @@ ENGINE_LEGEND = [
     ("BitLSM", "#E04040"),
     ("InnoDB", "#9888B8"),
 ]
+ENGINE_KEYS = {"MyRocks": "myrocks", "BitLSM": "bitlsm", "InnoDB": "innodb"}
 
 GIB = float(1 << 30)
 
@@ -174,9 +175,14 @@ def plot_ingest(data, output_dir, log, cap, fmts):
     draw_panel(axes[1], cells, gib, "Datadir size (GiB)",
                lambda v: f"{v:.2f}")
 
-    handles = [plt.Rectangle((0, 0), 1, 1, color=c) for _, c in ENGINE_LEGEND]
-    axes[0].legend(handles, [n for n, _ in ENGINE_LEGEND],
-                   loc="upper left", frameon=False, ncol=3,
+    # Only the engines that actually have bars: a sweep may cover the LSM cells
+    # alone, and a legend key with nothing under it reads as a dropped bar.
+    present = {engine for engine, _ in cells}
+    legend = [(name, c) for name, c in ENGINE_LEGEND
+              if ENGINE_KEYS[name] in present]
+    handles = [plt.Rectangle((0, 0), 1, 1, color=c) for _, c in legend]
+    axes[0].legend(handles, [n for n, _ in legend],
+                   loc="upper left", frameon=False, ncol=len(legend),
                    handlelength=1.0, columnspacing=1.0)
 
     fig.tight_layout()
