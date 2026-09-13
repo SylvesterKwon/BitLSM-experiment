@@ -77,7 +77,7 @@ set(COMMON_LINK_LIBS
 )
 
 # EXPERIMENT BINDINGS (정적 라이브러리)
-file(GLOB BINDING_SOURCES "src/bindings/*.cpp" "src/bindings/embedded/*.cpp" "src/bindings/sai/*.cpp")
+file(GLOB BINDING_SOURCES "src/bindings/*.cpp" "src/bindings/embedded/*.cpp" "src/bindings/sai/*.cpp" "src/bindings/global_bins/*.cpp")
 add_library(experiment_bindings STATIC ${BINDING_SOURCES})
 
 # Path to the patched RocksDB vendored inside BitLSM. Referenced DIRECTLY so this
@@ -89,6 +89,7 @@ target_include_directories(experiment_bindings PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/bindings
     ${CMAKE_CURRENT_SOURCE_DIR}/src/bindings/embedded
     ${CMAKE_CURRENT_SOURCE_DIR}/src/bindings/sai
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/bindings/global_bins
     ${CMAKE_CURRENT_SOURCE_DIR}/src/benchmark
     ${EMBEDDED_ROCKSDB_DIR}
     ${EMBEDDED_ROCKSDB_DIR}/include
