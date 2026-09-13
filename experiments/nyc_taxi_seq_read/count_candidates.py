@@ -49,6 +49,8 @@ def main():
     common = config.get("common_params", {})
     output_dir = None if args.dry_run else make_result_dir(
         f"nyc_taxi_seq_read_candidates_{exp_set}")
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
 
     for workload in resolve_workload_paths(config["workload"]):
         for method in config["methods"]:

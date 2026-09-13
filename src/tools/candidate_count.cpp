@@ -273,6 +273,11 @@ int main(int argc, char* argv[]) {
     out << "\n";
     misses += q.false_negatives;
   }
+  out.close();
+  if (!out) {
+    std::cerr << "cannot write " << result["output"].as<std::string>() << "\n";
+    return 1;
+  }
   std::cout << "[candidate_count] " << queries.size() << " queries over "
             << ssts << " SSTs -> " << result["output"].as<std::string>()
             << "\n";
