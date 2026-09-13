@@ -156,7 +156,15 @@ def plot(result_dirs, out_dir, fmts, title):
     for ax, d in zip(axes[0], result_dirs):
         cells, workload, reps = load(d)
         missing = [k for k, _, _, _ in ROWS if k not in cells]
-        queries = sorted(set.intersection(*[set(v) for v in cells.values()]))
+        # Every row must plot the same queries or the geometric means are
+        # not comparable. The intersection guarantees that; saying so out
+        # loud is what stops a cell quietly shrinking the panel.
+        sets = [set(v) for v in cells.values()]
+        queries = sorted(set.intersection(*sets))
+        dropped = sorted(set.union(*sets) - set(queries))
+        if dropped:
+            print(f"WARNING: {d} drops {', '.join(dropped)} — not every "
+                  f"cell measured them")
         present = panel(ax, cells, queries)
         ax.set_title(dataset_name(workload), fontsize=6.5)
         # The panel carries the dataset name only; the rest of the subcaption
