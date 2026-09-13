@@ -22,8 +22,8 @@ int main() {
   const double inf = std::numeric_limits<double>::infinity();
   bit_lsm::BitLSMOptions opts;
   opts.attr_num = 2;
-  opts.attr_specs = {bit_lsm::AttrSpec(bit_lsm::UNORDERED),
-                     bit_lsm::AttrSpec(bit_lsm::ORDERED)};
+  opts.attr_specs = {bit_lsm::AttrSpec(bit_lsm::IndexType::kEquality, bit_lsm::PhysicalType::kVarBinary, 0),
+                     bit_lsm::AttrSpec(bit_lsm::IndexType::kRange, bit_lsm::PhysicalType::kFloat, 8)};
 
   const char* vocab[4] = {"aa", "bb", "cc", "dd"};
   const uint32_t N = 5000, PER_BLOCK = 100;

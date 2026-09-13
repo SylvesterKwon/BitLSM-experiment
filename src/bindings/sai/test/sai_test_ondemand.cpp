@@ -35,8 +35,8 @@ int main() {
   const double inf = std::numeric_limits<double>::infinity();
   bit_lsm::BitLSMOptions opts;
   opts.attr_num = 2;
-  opts.attr_specs = {bit_lsm::AttrSpec(bit_lsm::UNORDERED),
-                     bit_lsm::AttrSpec(bit_lsm::ORDERED)};
+  opts.attr_specs = {bit_lsm::AttrSpec(bit_lsm::IndexType::kEquality, bit_lsm::PhysicalType::kVarBinary, 0),
+                     bit_lsm::AttrSpec(bit_lsm::IndexType::kRange, bit_lsm::PhysicalType::kFloat, 8)};
 
   // Vocabulary of 40 terms so the trie has real depth and fan-out, and 40k
   // rows so posting lists span many 128-posting blocks and the numeric index

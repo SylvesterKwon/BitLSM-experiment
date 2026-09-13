@@ -58,7 +58,7 @@ void SIEagerBinding::Put(const string& pk, const vector<Attr>& attrs,
   ReadOptions ro;
   for (uint32_t attr_idx = 0; attr_idx < options_.attr_num; ++attr_idx) {
     string si_key;
-    if (options_.attr_specs[attr_idx].role == AttrRole::UNORDERED) {
+    if (options_.attr_specs[attr_idx].index_type == IndexType::kEquality) {
       const string& sk_value = get<string>(attrs[attr_idx]);
       si_key = GetInternalSIKey(attr_idx, sk_value);
     } else {

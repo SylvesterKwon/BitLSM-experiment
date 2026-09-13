@@ -25,7 +25,7 @@ std::vector<SAIFact> ExtractFacts(const bit_lsm::BitLSMQuery& q,
     if (clause.size() != 1) continue;  // OR / non-single shapes: post-filter only
     const bit_lsm::QueryCondition& c = clause[0];
     if (c.attr_idx >= opts.attr_specs.size()) continue;
-    if (opts.attr_specs[c.attr_idx].role == bit_lsm::AttrRole::UNORDERED) {
+    if (opts.attr_specs[c.attr_idx].index_type == bit_lsm::IndexType::kEquality) {
       if (c.op != bit_lsm::CompareOp::EQUAL) continue;
       SAIFact f;
       f.is_cat = true;

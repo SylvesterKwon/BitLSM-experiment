@@ -5,7 +5,7 @@
 #include <limits>
 
 using namespace experiment::sai;
-using bit_lsm::AttrRole;
+using bit_lsm::IndexType;
 using bit_lsm::AttrSpec;
 using bit_lsm::BitLSMOptions;
 using bit_lsm::BitLSMQuery;
@@ -16,8 +16,8 @@ int main() {
   const double inf = std::numeric_limits<double>::infinity();
   BitLSMOptions opts;
   opts.attr_num = 3;
-  opts.attr_specs = {AttrSpec(bit_lsm::UNORDERED), AttrSpec(bit_lsm::ORDERED),
-                     AttrSpec(bit_lsm::ORDERED)};
+  opts.attr_specs = {AttrSpec(bit_lsm::IndexType::kEquality, bit_lsm::PhysicalType::kVarBinary, 0), AttrSpec(bit_lsm::IndexType::kRange, bit_lsm::PhysicalType::kFloat, 8),
+                     AttrSpec(bit_lsm::IndexType::kRange, bit_lsm::PhysicalType::kFloat, 8)};
 
   // 1. cat eq + two cont conds on the same attr coalesce (tightened), OR skipped.
   {
