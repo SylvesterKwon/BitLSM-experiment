@@ -37,14 +37,14 @@ from run_common import (  # noqa: E402
 )
 from myrocks import metrics, server_profile  # noqa: E402
 from myrocks.loader import (  # noqa: E402
-    datadir_for, ensure_loaded, is_loaded,
+    datadir_for, ensure_loaded, is_loaded, stale_fixture_warning,
 )
 from myrocks.server import MysqldServer  # noqa: E402
 from myrocks.workloads.registry import make_workload  # noqa: E402
 
 CSV_FIELDS = [
     "ts", "workload", "engine", "index_layout", "engine_params",
-    "session_vars", "query_id", "plan",
+    "session_vars", "query_id", "plan", "forced_index",
     "chosen_access", "chosen_key",
     "cold_ms", "cold_ms_min", "cold_ms_max", "cold_reps",
     "warm_ms_median", "warm_ms_min", "warm_ms_max", "warm_reps",
@@ -164,6 +164,9 @@ def run(config_path, dry_run, start_from):
                 engine, layout = cell["engine"], cell["index_layout"]
                 eparams = cell.get("engine_params")
                 identity = workload.identity(engine, layout, eparams)
+                drift = stale_fixture_warning(identity, "release")
+                if drift:
+                    print(f"WARNING: {drift}")
                 ensure_loaded(workload, engine, layout, "release", eparams)
                 with open(os.path.join(datadir_for(identity),
                                        "LOADED.json")) as f:
@@ -176,13 +179,19 @@ def run(config_path, dry_run, start_from):
                             continue
                         force_index = (workload.composite_index_for(qid)
                                        if plan == "force_composite" else None)
-                        if plan == "force_composite" and not force_index:
-                            # No sargable predicate to index (taxpayer q02).
-                            # Skipping is louder than emitting an un-hinted
-                            # row labelled force_composite.
-                            print(f"[{idx}/{total}] SKIP {engine}/{layout} "
-                                  f"{qid} {plan}: no designed composite")
-                            continue
+                        # A force_composite query with no designed composite
+                        # (taxpayer q02 has no WHERE, so no composite can
+                        # serve it) still runs, un-hinted -- there is nothing
+                        # to pin, and the layout pays whatever that query
+                        # costs it. Dropping the row instead would leave the
+                        # composite cells covering fewer queries than every
+                        # other cell, and an aggregate over the two sets is
+                        # not a comparison: it excuses the composite layouts
+                        # from the one query they cannot serve. forced_index
+                        # records that nothing was pinned.
+                        exec_plan = ("auto"
+                                     if plan == "force_composite"
+                                     and not force_index else plan)
                         sidecar = os.path.join(
                             out_dir, "counters",
                             f"{engine}-{layout}-{qid}-{plan}")
@@ -190,7 +199,7 @@ def run(config_path, dry_run, start_from):
                         for rep in range(cold_reps):
                             reps.append(_measure_cold_once(
                                 datadir_for(identity), profile, engine,
-                                workload, qid, sql, plan, sec_idx,
+                                workload, qid, sql, exec_plan, sec_idx,
                                 cell.get("session_vars"), warm_reps,
                                 f"{sidecar}-rep{rep}.json" if cold_reps > 1
                                 else f"{sidecar}.json",
@@ -221,6 +230,10 @@ def run(config_path, dry_run, start_from):
                             "workload": workload.name,
                             "engine": engine,
                             "index_layout": layout,
+                            # The driver stamps the plan it executed; the row
+                            # belongs to the cell that asked for it.
+                            "plan": plan,
+                            "forced_index": force_index or "",
                             "engine_params": ";".join(
                                 f"{k}={v}" for k, v in
                                 sorted((eparams or {}).items())),
