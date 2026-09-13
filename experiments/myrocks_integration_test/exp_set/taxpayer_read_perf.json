@@ -3,7 +3,7 @@
   "build_kind": "release",
   "cold_reps": 5,
   "queries": "all",
-  "warm_reps": 5,
+  "warm_reps": 0,
   "server_common": {
     "cache_bytes": 1073741824,
     "direct_io": true,
@@ -15,14 +15,20 @@
       "index_layout": "bi_v1",
       "plans": [
         "auto"
-      ]
+      ],
+      "engine_params": {
+        "sabi": "v8"
+      }
     },
     {
       "engine": "bitlsm",
       "index_layout": "sk_bi_v1",
       "plans": [
         "auto"
-      ]
+      ],
+      "engine_params": {
+        "sabi": "v8"
+      }
     },
     {
       "engine": "myrocks",

@@ -63,6 +63,42 @@ def is_loaded(identity: str) -> bool:
     return os.path.exists(os.path.join(datadir_for(identity), MARKER))
 
 
+def fixture_build(identity: str) -> dict:
+    """The build recorded in a fixture's marker, or {} when unloaded."""
+    path = os.path.join(datadir_for(identity), MARKER)
+    if not os.path.exists(path):
+        return {}
+    with open(path) as f:
+        return json.load(f).get("build_info", {})
+
+
+def stale_fixture_warning(identity: str, build_kind: str = "release") -> str:
+    """A line naming the drift when a fixture was built by a different engine,
+    or "" when it matches.
+
+    A datadir's name encodes (workload, layout, engine, engine_params) and
+    nothing about the engine that wrote it, so a core change that alters the
+    on-disk SABI format leaves every fixture looking loaded and silently
+    reusable. That is not hypothetical: the v7 -> v8 format change did exactly
+    this, and the SSTs a run reads have to come from the engine the run
+    measures. The caller decides what to do -- the point here is that the drift
+    is never invisible."""
+    was = fixture_build(identity)
+    if not was:
+        return ""
+    try:
+        now = MysqldServer(datadir_for(identity), build_kind).build_info()
+    except OSError:
+        return ""
+    drift = [(k, was.get(k), now.get(k))
+             for k in ("bitlsm_commit", "mysql_commit")
+             if was.get(k) and now.get(k) and was[k] != now[k]]
+    if not drift:
+        return ""
+    parts = ", ".join(f"{k} {a[:12]} -> {b[:12]}" for k, a, b in drift)
+    return f"{identity}: built by a different engine ({parts})"
+
+
 def server_for(workload, engine: str, index_layout: str,
                build_kind: str = "debug", engine_params: dict = None
                ) -> MysqldServer:

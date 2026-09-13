@@ -10,7 +10,10 @@
       "plans": [
         "auto",
         "force_bi"
-      ]
+      ],
+      "engine_params": {
+        "sabi": "v8"
+      }
     },
     {
       "engine": "bitlsm",
@@ -18,7 +21,10 @@
       "plans": [
         "auto",
         "force_bi"
-      ]
+      ],
+      "engine_params": {
+        "sabi": "v8"
+      }
     }
   ]
 }
