@@ -52,20 +52,20 @@ plt.rcParams.update({"font.size": 6})
 #
 # Paired by index scheme, B-tree first within a pair. That buys both
 # adjacencies at once: the engine comparison is rows 1-2 and 3-4, and putting
-# InnoDB first in each pair leaves "single" directly above "single + BitLSM",
+# InnoDB first in each pair leaves "Single" directly above "Single + BitLSM",
 # which is the pair the section argues. Ordering the pairs the other way would
 # push InnoDB between them and break that.
 #
 # Read without the InnoDB rows, the sequence is the ingestion table's:
-# composite, single, the bitmap on top of single, the bitmap alone.
+# Composite, Single, the bitmap on top of Single, the bitmap alone.
 ROWS = [
     (("innodb", "composite_v1", "force_composite"),
-     "InnoDB", "composite", "#6A5A8A"),
+     "InnoDB", "Composite", "#6A5A8A"),
     (("myrocks", "composite_v1", "force_composite"),
-     "", "composite", "#2E8B57"),
-    (("innodb", "sk_v1", "auto"), "InnoDB", "single", "#9888B8"),
-    (("myrocks", "sk_v1", "auto"), "", "single", "#4CC850"),
-    (("bitlsm", "sk_bi_v1", "auto"), "", "single + BitLSM", "#9B1B1B"),
+     "", "Composite", "#2E8B57"),
+    (("innodb", "sk_v1", "auto"), "InnoDB", "Single", "#9888B8"),
+    (("myrocks", "sk_v1", "auto"), "", "Single", "#4CC850"),
+    (("bitlsm", "sk_bi_v1", "auto"), "", "Single + BitLSM", "#9B1B1B"),
     (("bitlsm", "bi_v1", "auto"), "", "BitLSM", "#E04040"),
 ]
 

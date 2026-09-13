@@ -30,21 +30,23 @@ plt.rcParams.update({"font.size": 6})
 # Ordered so the BitLSM cells sit next to the baseline they are argued against.
 # Engine is carried by colour + legend, so the tick labels name only the
 # index layout -- spelling out the engine here overruns the tick spacing.
+# The layout names are the paper's proper nouns, spelled as the read and
+# ingest figures spell them.
 PRIMARY = [
-    (("bitlsm", "bi_v1", False, "auto"), "bi", "#E04040"),
-    (("bitlsm", "sk_bi_v1", False, "auto"), "SK + bi", "#9B1B1B"),
-    (("myrocks", "sk_v1", False, "auto"), "+ SK", "#4CC850"),
+    (("bitlsm", "bi_v1", False, "auto"), "BitLSM", "#E04040"),
+    (("bitlsm", "sk_bi_v1", False, "auto"), "Single + BitLSM", "#9B1B1B"),
+    (("myrocks", "sk_v1", False, "auto"), "Single", "#4CC850"),
     (("myrocks", "composite_v1", False, "force_composite"),
-     "+ comp", "#2E8B57"),
-    (("innodb", "sk_v1", False, "auto"), "+ SK", "#9888B8"),
+     "Composite", "#2E8B57"),
+    (("innodb", "sk_v1", False, "auto"), "Single", "#9888B8"),
     (("innodb", "composite_v1", False, "force_composite"),
-     "+ comp", "#6A5A8A"),
+     "Composite", "#6A5A8A"),
 ]
 EXTRA = [
-    (("bitlsm", "bi_v1", False, "force_bi"), "bi\nforced", "#F0A0A0"),
-    (("bitlsm", "sk_bi_v1", False, "force_bi"), "SK + bi\nforced", "#B85050"),
-    (("myrocks", "sk_v1", False, "index_merge"), "+ SK\nidx mrg", "#A8D8A0"),
-    (("innodb", "sk_v1", False, "index_merge"), "+ SK\nidx mrg", "#B0A4C8"),
+    (("bitlsm", "bi_v1", False, "force_bi"), "BitLSM\nforced", "#F0A0A0"),
+    (("bitlsm", "sk_bi_v1", False, "force_bi"), "Single + BitLSM\nforced", "#B85050"),
+    (("myrocks", "sk_v1", False, "index_merge"), "Single\nidx mrg", "#A8D8A0"),
+    (("innodb", "sk_v1", False, "index_merge"), "Single\nidx mrg", "#B0A4C8"),
 ]
 
 ENGINE_LEGEND = [("BitLSM", "#9B1B1B"), ("MyRocks", "#4CC850"),
