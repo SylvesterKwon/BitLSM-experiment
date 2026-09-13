@@ -1,0 +1,38 @@
+{
+  "db_path_base": "/scratch/honk",
+  "workload": "workloads/write_seq_2024-2025_all_ulid.tsv",
+  "common_params": {
+    "indexed_attrs": "PULocationID,DOLocationID,tpep_pickup_datetime,tpep_dropoff_datetime,fare_amount,passenger_count"
+  },
+  "methods": [
+    {
+      "name": "no-index",
+      "params": {}
+    },
+    {
+      "name": "bitlsm",
+      "params": {
+        "rho": [
+          0.001
+        ]
+      }
+    },
+    {
+      "name": "bitlsm-global",
+      "params": {
+        "rho": [
+          0.001
+        ],
+        "bin_policy": [
+          "/scratch/honk/bin_policy/write_seq_2024-2025_all_ulid_rho0.001.bin"
+        ]
+      }
+    },
+    {
+      "name": "embedded",
+      "params": {
+        "bloom_bits": 10
+      }
+    }
+  ]
+}
