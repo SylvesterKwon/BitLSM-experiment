@@ -1,5 +1,6 @@
 #include "binding.h"
 #include "bitlsm_binding.h"
+#include "bitlsm_global_binding.h"
 #include "embedded_binding.h"
 #include "no_index_binding.h"
 #include "sai_binding.h"
@@ -11,6 +12,7 @@ namespace experiment {
 
 std::unique_ptr<Binding> CreateBinding(const std::string& name) {
   if (name == "bitlsm") return std::make_unique<BitLSMBinding>();
+  if (name == "bitlsm-global") return std::make_unique<BitLSMGlobalBinding>();
   if (name == "embedded") return std::make_unique<EmbeddedBinding>();
   if (name == "sai") return std::make_unique<SAIBinding>();
   if (name == "no-index") return std::make_unique<NoIndexBinding>();

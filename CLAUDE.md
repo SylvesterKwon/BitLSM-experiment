@@ -52,6 +52,7 @@ src/
 | Method | Binding | Binary | Description |
 |---|---|---|---|
 | bitlsm | `BitLSMBinding` | `build/bin/bit-lsm` | Bitmap-indexed LSM-Tree |
+| bitlsm-global | `BitLSMGlobalBinding` | `honk_player` only | Ablation: BitLSM with oracle global bin boundaries (`src/bindings/global_bins/`, forked SABI builder; core untouched). Build with `--bin_policy <file>` from `build/bin/global_bin_policy`, query without it. Gate: `build/bin/global_bins_xcheck` |
 | no-index | `NoIndexBinding` | `build/bin/no-index` | Plain RocksDB (full table scan) |
 | si-ck | `SICKBinding` | `build/bin/si-ck` | Secondary index — concatenated key |
 | si-lu | `SILUBinding` | `build/bin/si-lu` | Secondary index — list union (merge operator) |
