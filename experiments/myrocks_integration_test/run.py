@@ -32,8 +32,7 @@ from run_common import (  # noqa: E402
 )
 from myrocks import driver as drv  # noqa: E402
 from myrocks.loader import (  # noqa: E402
-    datadir_for, ensure_loaded, is_loaded, server_for,
-    stale_fixture_warning,
+    check_fixture_build, datadir_for, ensure_loaded, is_loaded, server_for,
 )
 from myrocks.workloads.registry import make_workload  # noqa: E402
 
@@ -144,9 +143,7 @@ def run(config_path, dry_run, start_from):
                 engine, layout = cell["engine"], cell["index_layout"]
                 eparams = cell.get("engine_params")
                 identity = workload.identity(engine, layout, eparams)
-                drift = stale_fixture_warning(identity, build_kind)
-                if drift:
-                    print(f"WARNING: {drift}")
+                check_fixture_build(identity, build_kind)
                 ensure_loaded(workload, engine, layout, build_kind, eparams)
                 with open(os.path.join(datadir_for(identity),
                                        "LOADED.json")) as f:
