@@ -1,30 +1,30 @@
 #!/usr/bin/env python3
 """Plot the ULID key-correlation subsection: latency against query selectivity.
 
-One single-column panel. Every query of the interval_window workloads
-(pickup >= x AND dropoff < y) is placed at its own selectivity -- rows matched
-over rows in the DB -- the queries are cut into log-spaced selectivity bins,
-and each bin's MEDIAN latency is drawn per method. Selectivity is the one
-thing that varies across the 900 queries (one template, one DB), so the
-binned medians form a curve, and the curve is the mechanism: BitLSM-Global
-sits on a floor while the query selects fewer rows than one global bin holds
-(it fetches the whole bin however narrow the window), BitLSM tracks the query
-because its per-SST bins are minutes wide, and the two meet where the query
-outgrows a global bin. Per-Block Filters lie on BitLSM throughout: block zone
-maps prune fully once the predicate is on the key-correlated attribute.
+One single-column panel over the read_point workloads: the window template
+(pickup >= x AND dropoff < y) generated at ten selectivity levels spaced
+evenly in log10 over [1e-5, 1e-2], every query pinned to its level within
+2 %. Each point is the MEDIAN latency of one level's queries for one method,
+and the levels are joined by lines, as in the paper's other sweeps. The
+curve is the mechanism: BitLSM-Global sits on a floor while the query selects
+fewer rows than one global bin holds (it fetches the whole bin however narrow
+the window), BitLSM tracks the query because its per-SST bins are minutes
+wide, and the two meet where the query outgrows a global bin. Per-Block
+Filters lie on BitLSM throughout: block zone maps prune fully once the
+predicate is on the key-correlated attribute.
 
-Selectivity rather than window width is the axis so the floor reads against
-rho: with equi-depth bins every global pickup bin holds exactly 1/bins of the
-rows, and that fraction is the dotted vertical line, read from the bin policy
-the BitLSM-Global DB was built with (1/1821 at rho = 0.001, the attr_num/rho
-budget shared by the greedy over six attributes). The line carries no label in
-the figure; the caption names it.
+Selectivity is the axis so the floor reads against rho: with equi-depth bins
+every global pickup bin holds exactly 1/bins of the rows, and that fraction is
+the dotted vertical line, read from the bin policy the BitLSM-Global DB was
+built with (1/1821 at rho = 0.001, the attr_num/rho budget shared by the
+greedy over six attributes). The line carries no label in the figure; the
+caption names it.
 
-Inputs: the read_window result directory (key_correlation_queries.csv from
+Inputs: the read_point result directory (key_correlation_queries.csv from
 summarize_key_correlation.py) and the bin policy file.
 
 Usage:
-    python3 experiments/nyc_taxi_seq_read/plot_key_correlation.py <window_result_dir> \
+    python3 experiments/nyc_taxi_seq_read/plot_key_correlation.py <point_result_dir> \
         --bin_policy /scratch/honk/bin_policy/write_seq_2024-2025_all_ulid_rho0.001.bin \
         [-o <output_dir>]
 """
@@ -80,17 +80,8 @@ DRAW_ORDER = ["bitlsm-global_rho0.001", "bitlsm_rho0.001",
               "embedded_bloom_bits10"]
 START_ATTR = "tpep_pickup_datetime"   # the window's lower bound, and the key
 
-# honk_player logs records_total as 0 for read workloads, so per-query
-# selectivity is recovered against the known row count of the ingest.
-TOTAL_ROWS = 89_892_322
-
-# Selectivity bins: 12 log-spaced bins (four per decade) over the three
-# workload bands, [1e-5, 1e-2). A bin holding fewer queries than
-# MIN_BIN_QUERIES is not drawn -- its median would be one or two queries'
-# noise.
-SEL_BINS = 12
+# The x range: the levels' span, so every decade gets a tick label.
 SEL_MIN, SEL_MAX = 1e-5, 1e-2
-MIN_BIN_QUERIES = 10
 
 QUERIES_CSV = "key_correlation_queries.csv"
 POLICY_MAGIC = b"GBINPOL1"
@@ -130,42 +121,32 @@ def global_bin_count(policy_path, attr_names, attr):
     raise SystemExit(f"{attr} is not a range attribute of {policy_path}")
 
 
-def load_points(result_dir):
-    """{method: [(query selectivity, latency s)]} over the window queries."""
+def load_levels(result_dir):
+    """{method: {level selectivity: [latency s, ...]}} over the point queries.
+
+    The level is the workload's nominal selectivity (its file name), which is
+    what the queries were generated to hit; the measured selectivity of every
+    query lies within 2 % of it by construction."""
     path = os.path.join(result_dir, QUERIES_CSV)
     if not os.path.exists(path):
         raise SystemExit(f"{path} not found; run summarize_key_correlation.py "
                          "first")
-    points = defaultdict(list)
+    levels = defaultdict(lambda: defaultdict(list))
     with open(path, newline="") as f:
         for r in csv.DictReader(f):
-            if r["family"] != "window":
+            if r["family"] != "point":
                 continue
-            points[r["method"]].append(
-                (int(r["records_matched"]) / TOTAL_ROWS,
-                 float(r["time_elapsed_ms"]) / 1000.0))
-    return points
+            levels[r["method"]][float(r["selectivity"])].append(
+                float(r["time_elapsed_ms"]) / 1000.0)
+    return levels
 
 
-def binned_medians(points):
-    """[(median selectivity, median latency s)] over the log-spaced bins.
-
-    A point sits at the median selectivity of the queries in its bin, not at
-    the bin's centre, so the segments between points join where the queries
-    actually are; the bins only decide which queries are summarised together.
-    """
-    edges = [SEL_MIN * (SEL_MAX / SEL_MIN) ** (i / SEL_BINS)
-             for i in range(SEL_BINS + 1)]
-    out = []
-    for lo, hi in zip(edges, edges[1:]):
-        members = [(x, y) for x, y in points if lo <= x < hi]
-        if len(members) >= MIN_BIN_QUERIES:
-            out.append((statistics.median(x for x, _ in members),
-                        statistics.median(y for _, y in members)))
-    return out
+def level_medians(levels):
+    """[(level selectivity, median latency s)] in ascending selectivity."""
+    return [(s, statistics.median(lat)) for s, lat in sorted(levels.items())]
 
 
-def plot(points, global_bin_selectivity, out_path):
+def plot(levels, global_bin_selectivity, out_path):
     box_w = FIG_W * (RIGHT - LEFT)
     box_h = box_w * PANEL_BOX_ASPECT + 0.01   # a hair of slack, never less
     above, below = LEGEND_H, TICKS_H + XLABEL_H
@@ -175,10 +156,10 @@ def plot(points, global_bin_selectivity, out_path):
     style = {key: (label, color, marker, ls)
              for key, label, color, marker, ls in METHODS}
     for key in DRAW_ORDER:
-        if key not in points:
+        if key not in levels:
             continue
         label, color, marker, ls = style[key]
-        xs, ys = zip(*binned_medians(points[key]))
+        xs, ys = zip(*level_medians(levels[key]))
         plus = marker == "+"
         ax.plot(xs, ys, marker=marker, linestyle=ls, linewidth=0.9,
                 markersize=3.2 if plus else 2.5,
@@ -189,7 +170,7 @@ def plot(points, global_bin_selectivity, out_path):
 
     ax.set_xscale("log")
     ax.set_yscale("log")
-    ax.set_xlim(SEL_MIN, SEL_MAX)   # the bands' range, so every decade is labelled
+    ax.set_xlim(SEL_MIN, SEL_MAX)
     # Selectivity reads as powers of ten (the paper's sigma notation);
     # latency as plain seconds.
     ax.xaxis.set_major_formatter(mticker.LogFormatterMathtext())
@@ -218,7 +199,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Plot ULID window-query latency against window width")
     parser.add_argument("result_dir",
-                        help=f"read_window result directory ({QUERIES_CSV})")
+                        help=f"read_point result directory ({QUERIES_CSV})")
     parser.add_argument("--bin_policy", required=True,
                         help="Bin policy the BitLSM-Global DB was built with")
     parser.add_argument("--indexed_attrs",
@@ -237,7 +218,7 @@ def main():
 
     output_dir = args.output_dir or args.result_dir
     os.makedirs(output_dir, exist_ok=True)
-    plot(load_points(args.result_dir), 1.0 / bins,
+    plot(load_levels(args.result_dir), 1.0 / bins,
          os.path.join(output_dir, "key_correlation_latency.pdf"))
 
 
