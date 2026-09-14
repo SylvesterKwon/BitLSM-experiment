@@ -15,18 +15,15 @@ Filters lie on BitLSM throughout: block zone maps prune fully once the
 predicate is on the key-correlated attribute.
 
 Selectivity is the axis so the floor reads against rho: with equi-depth bins
-every global pickup bin holds exactly 1/bins of the rows, and that fraction is
-the dotted vertical line, read from the bin policy the BitLSM-Global DB was
-built with (1/1821 at rho = 0.001, the attr_num/rho budget shared by the
-greedy over six attributes). The line carries no label in the figure; the
-caption names it.
+every global pickup bin holds 1/bins of the rows (1/1821 at rho = 0.001, the
+attr_num/rho budget shared by the greedy over six attributes), and the text
+can name that level without the figure marking it.
 
-Inputs: the read_point result directory (key_correlation_queries.csv from
-summarize_key_correlation.py) and the bin policy file.
+Input: the read_point result directory (key_correlation_queries.csv from
+summarize_key_correlation.py).
 
 Usage:
     python3 experiments/nyc_taxi_seq_read/plot_key_correlation.py <point_result_dir> \
-        --bin_policy /scratch/honk/bin_policy/write_seq_2024-2025_all_ulid_rho0.001.bin \
         [-o <output_dir>]
 """
 
@@ -34,7 +31,6 @@ import argparse
 import csv
 import os
 import statistics
-import struct
 from collections import defaultdict
 
 import matplotlib.pyplot as plt
@@ -79,47 +75,10 @@ METHODS = [
 ]
 DRAW_ORDER = ["bitlsm-global_rho0.001", "bitlsm_rho0.001",
               "embedded_bloom_bits10"]
-START_ATTR = "tpep_pickup_datetime"   # the window's lower bound, and the key
-
 # The x range: the levels' span, so every decade gets a tick label.
 SEL_MIN, SEL_MAX = 1e-5, 1e-2
 
 QUERIES_CSV = "key_correlation_queries.csv"
-POLICY_MAGIC = b"GBINPOL1"
-
-
-def global_bin_count(policy_path, attr_names, attr):
-    """Number of bins the policy gives `attr` (bin_policy.cpp layout: header,
-    then per attribute [type u8][bins u32] and a BytesList of boundaries for
-    range attributes or (value, bin) entries otherwise)."""
-    data = open(policy_path, "rb").read()
-    if data[:8] != POLICY_MAGIC or data[-8:] != POLICY_MAGIC:
-        raise SystemExit(f"{policy_path} is not a bin policy file")
-    p = 8 + 8 + 8                      # magic, rho f64, rows u64
-    (slen,) = struct.unpack_from("<I", data, p)
-    p += 4 + slen + 8                  # source string, source_bytes u64
-    (attr_num,) = struct.unpack_from("<I", data, p)
-    p += 4
-    if attr_num != len(attr_names):
-        raise SystemExit(f"{policy_path} has {attr_num} attributes, expected "
-                         f"{len(attr_names)}")
-    for i in range(attr_num):
-        typ, bins = struct.unpack_from("<BI", data, p)
-        p += 5
-        if typ == 1:                   # kRange: BytesList of bins + 1 bounds
-            if attr_names[i] == attr:
-                return bins
-            (count,) = struct.unpack_from("<I", data, p)
-            p += 4
-            ends = struct.unpack_from(f"<{count}I", data, p)
-            p += 4 * count + (ends[-1] if count else 0)
-        else:                          # kEquality: (value, bin) entries
-            (count,) = struct.unpack_from("<I", data, p)
-            p += 4
-            for _ in range(count):
-                (vlen,) = struct.unpack_from("<I", data, p)
-                p += 4 + vlen + 4
-    raise SystemExit(f"{attr} is not a range attribute of {policy_path}")
 
 
 def load_levels(result_dir):
@@ -157,7 +116,7 @@ def level_stat(levels, stat):
     return [(s, agg(lat)) for s, lat in sorted(levels.items())]
 
 
-def plot(levels, global_bin_selectivity, stat, out_path):
+def plot(levels, stat, out_path):
     box_w = FIG_W * (RIGHT - LEFT)
     box_h = box_w * PANEL_BOX_ASPECT + 0.01   # a hair of slack, never less
     above, below = LEGEND_H, TICKS_H + XLABEL_H
@@ -175,10 +134,6 @@ def plot(levels, global_bin_selectivity, stat, out_path):
         ax.plot(xs, ys, marker=marker, linestyle=ls, linewidth=0.9,
                 markersize=3.2 if plus else 2.5,
                 markeredgewidth=0.8 if plus else 0.5, color=color, label=label)
-    # The fraction of rows one global bin holds, named in the caption.
-    ax.axvline(global_bin_selectivity, color="#999999", linewidth=0.6,
-               linestyle=":")
-
     ax.set_xscale("log")
     ax.set_yscale("log")
     ax.set_xlim(SEL_MIN, SEL_MAX)
@@ -211,27 +166,15 @@ def main():
         description="Plot ULID window-query latency against window width")
     parser.add_argument("result_dir",
                         help=f"read_point result directory ({QUERIES_CSV})")
-    parser.add_argument("--bin_policy", required=True,
-                        help="Bin policy the BitLSM-Global DB was built with")
-    parser.add_argument("--indexed_attrs",
-                        default="PULocationID,DOLocationID,tpep_pickup_datetime,"
-                                "tpep_dropoff_datetime,fare_amount,"
-                                "passenger_count",
-                        help="Attribute order the policy was computed with")
     parser.add_argument("--stat", choices=["mean", "median"], default="mean",
                         help="Per-level statistic (see level_stat)")
     parser.add_argument("-o", "--output-dir", default=None,
                         help="Output directory (default: result_dir)")
     args = parser.parse_args()
 
-    bins = global_bin_count(args.bin_policy, args.indexed_attrs.split(","),
-                            START_ATTR)
-    print(f"global {START_ATTR} bins: {bins} -> one bin holds "
-          f"{1 / bins:.2e} of the rows")
-
     output_dir = args.output_dir or args.result_dir
     os.makedirs(output_dir, exist_ok=True)
-    plot(load_levels(args.result_dir), 1.0 / bins, args.stat,
+    plot(load_levels(args.result_dir), args.stat,
          os.path.join(output_dir, "key_correlation_latency.pdf"))
 
 
