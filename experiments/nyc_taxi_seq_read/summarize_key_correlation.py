@@ -35,10 +35,14 @@ import statistics
 import sys
 from collections import defaultdict
 
+# Two workload families share the directory: read_seq_sel{s}_k{c}_r{n} (the
+# generator's random attribute draws) and read_window_sel{s}_r{n} (the fixed
+# pickup/dropoff window template, always two predicates).
 READ_PATTERN = re.compile(
-    r"^read_seq_sel([\d.]+)_k(\d+)_r(\d+)_(.+)_read_log\.csv$")
+    r"^read_(seq|window)_sel([\d.]+)(?:_k(\d+))?_r(\d+)_(.+)_read_log\.csv$")
 CANDIDATE_PATTERN = re.compile(
-    r"^read_seq_sel([\d.]+)_k(\d+)_r(\d+)_(.+)_candidates\.csv$")
+    r"^read_(seq|window)_sel([\d.]+)(?:_k(\d+))?_r(\d+)_(.+)_candidates\.csv$")
+WINDOW_PREDICATES = 2
 
 TIME_CORRELATED_ATTRS = {"tpep_pickup_datetime", "tpep_dropoff_datetime"}
 
@@ -51,12 +55,12 @@ METHOD_LABELS = {
 }
 
 QUERY_COLUMNS = [
-    "method", "label", "selectivity", "k", "query_id", "filter_attrs",
+    "family", "method", "label", "selectivity", "k", "query_id", "filter_attrs",
     "time_correlated", "time_elapsed_ms", "records_matched",
     "data_read_mb", "candidates", "candidate_blocks", "ssts_skipped",
 ]
 SUMMARY_COLUMNS = [
-    "selectivity", "k", "group", "method", "label", "queries",
+    "family", "selectivity", "k", "group", "method", "label", "queries",
     "median_latency_ms", "mean_records_matched", "mean_data_read_mb",
     "mean_candidates", "mean_candidate_blocks",
 ]
@@ -67,17 +71,23 @@ def is_time_correlated(filter_attrs):
     return bool(attrs & TIME_CORRELATED_ATTRS)
 
 
+def parse_name(match):
+    """(family, selectivity, k, method) from a matched file name."""
+    family, selectivity, k, _, method = match.groups()
+    return family, selectivity, int(k) if k else WINDOW_PREDICATES, method
+
+
 def read_candidates(candidates_dir):
-    """{(selectivity, k, method, query_id): candidate row}."""
+    """{(family, selectivity, k, method, query_id): candidate row}."""
     out = {}
     for fname in sorted(os.listdir(candidates_dir)):
         m = CANDIDATE_PATTERN.match(fname)
         if not m:
             continue
-        selectivity, k, _, method = m.groups()
+        family, selectivity, k, method = parse_name(m)
         with open(os.path.join(candidates_dir, fname), newline="") as f:
             for r in csv.DictReader(f):
-                out[(selectivity, int(k), method, int(r["query_id"]))] = r
+                out[(family, selectivity, k, method, int(r["query_id"]))] = r
     return out
 
 
@@ -87,13 +97,13 @@ def read_queries(read_dir, candidates):
         m = READ_PATTERN.match(fname)
         if not m:
             continue
-        selectivity, k, _, method = m.groups()
-        k = int(k)
+        family, selectivity, k, method = parse_name(m)
         with open(os.path.join(read_dir, fname), newline="") as f:
             for r in csv.DictReader(f):
                 qid = int(r["query_id"])
-                cand = candidates.get((selectivity, k, method, qid))
+                cand = candidates.get((family, selectivity, k, method, qid))
                 rows.append({
+                    "family": family,
                     "method": method,
                     "label": METHOD_LABELS.get(method, method),
                     "selectivity": selectivity,
@@ -110,8 +120,8 @@ def read_queries(read_dir, candidates):
                         int(cand["candidate_blocks"]) if cand else "",
                     "ssts_skipped": int(cand["ssts_skipped"]) if cand else "",
                 })
-    rows.sort(key=lambda r: (float(r["selectivity"]), r["k"], r["method"],
-                             r["query_id"]))
+    rows.sort(key=lambda r: (r["family"], float(r["selectivity"]), r["k"],
+                             r["method"], r["query_id"]))
     return rows
 
 
@@ -121,27 +131,28 @@ def check(rows, candidates):
     problems = []
     by_query = defaultdict(dict)
     for r in rows:
-        by_query[(r["selectivity"], r["k"], r["query_id"])][r["method"]] = r
+        by_query[(r["family"], r["selectivity"], r["k"],
+                  r["query_id"])][r["method"]] = r
     for key, methods in by_query.items():
+        where = f"{key[0]} sel{key[1]} k{key[2]} q{key[3]}"
         matched = {m: r["records_matched"] for m, r in methods.items()}
         if len(set(matched.values())) > 1:
-            problems.append(f"sel{key[0]} k{key[1]} q{key[2]}: matched "
-                            f"differs across methods {matched}")
+            problems.append(f"{where}: matched differs across methods "
+                            f"{matched}")
         for m, r in methods.items():
             if r["candidates"] != "" and r["candidates"] < r["records_matched"]:
-                problems.append(f"sel{key[0]} k{key[1]} q{key[2]} {m}: "
-                                f"{r['candidates']} candidates < "
-                                f"{r['records_matched']} matched")
+                problems.append(f"{where} {m}: {r['candidates']} candidates "
+                                f"< {r['records_matched']} matched")
     expected = [m for m in METHOD_LABELS if m.startswith("bitlsm")]
-    cells = {(r["selectivity"], r["k"]) for r in rows}
-    for s, k in sorted(cells):
+    cells = {(r["family"], r["selectivity"], r["k"]) for r in rows}
+    for fam, s, k in sorted(cells):
         for m in expected:
-            n_read = sum(1 for r in rows
-                         if (r["selectivity"], r["k"], r["method"]) == (s, k, m))
-            n_cand = sum(1 for key in candidates if key[:3] == (s, k, m))
+            n_read = sum(1 for r in rows if (r["family"], r["selectivity"],
+                                             r["k"], r["method"]) == (fam, s, k, m))
+            n_cand = sum(1 for key in candidates if key[:4] == (fam, s, k, m))
             if n_read and n_read != n_cand:
-                problems.append(f"sel{s} k{k} {m}: {n_read} read rows but "
-                                f"{n_cand} candidate rows")
+                problems.append(f"{fam} sel{s} k{k} {m}: {n_read} read rows "
+                                f"but {n_cand} candidate rows")
     return problems
 
 
@@ -150,7 +161,8 @@ def summarize(rows):
     for r in rows:
         group = "time_correlated" if r["time_correlated"] else "uncorrelated"
         for g in (group, "all"):
-            cells[(r["selectivity"], r["k"], g, r["method"])].append(r)
+            cells[(r["family"], r["selectivity"], r["k"], g,
+                   r["method"])].append(r)
 
     def mean_of(items, col):
         vals = [i[col] for i in items if i[col] != ""]
@@ -159,13 +171,14 @@ def summarize(rows):
     out = []
     order = {"time_correlated": 0, "uncorrelated": 1, "all": 2}
     methods = list(METHOD_LABELS)
-    for (s, k, g, m), items in sorted(
+    for (fam, s, k, g, m), items in sorted(
             cells.items(),
-            key=lambda kv: (float(kv[0][0]), kv[0][1], order[kv[0][2]],
-                            methods.index(kv[0][3])
-                            if kv[0][3] in methods else len(methods))):
+            key=lambda kv: (kv[0][0], float(kv[0][1]), kv[0][2],
+                            order[kv[0][3]],
+                            methods.index(kv[0][4])
+                            if kv[0][4] in methods else len(methods))):
         out.append({
-            "selectivity": s, "k": k, "group": g, "method": m,
+            "family": fam, "selectivity": s, "k": k, "group": g, "method": m,
             "label": METHOD_LABELS.get(m, m),
             "queries": len(items),
             "median_latency_ms":
