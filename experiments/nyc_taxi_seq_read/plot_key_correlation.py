@@ -12,9 +12,9 @@ selectivity budget -- so nothing connects them and methods are compared only
 within a cluster.
 
 Boxes follow nyc_taxi_seq_read/plot.py: per-query latency in seconds on a log
-axis, median line, no fliers, and the same-hue variant hatched (BitLSM-Global
-beside BitLSM). Order within a cluster: Per-Block Filters, BitLSM-Global,
-BitLSM.
+axis, median line, no fliers. BitLSM-Global is orange (CLAUDE.md figure style):
+a hatch on BitLSM's red is unreadable at this box size. Order within a cluster:
+Per-Block Filters, BitLSM-Global, BitLSM.
 
 Input is key_correlation_queries.csv from summarize_key_correlation.py.
 
@@ -59,10 +59,11 @@ TITLES_H = 0.14             # panel titles
 TICKS_H = 0.13              # "c = N" tick labels under the box
 
 # (method key as in the result file names, legend label, color, hatch).
-# Colors and the hatch-for-variant rule come from nyc_taxi_seq_read/plot.py.
+# Per-Block Filters and BitLSM keep nyc_taxi_seq_read/plot.py's colors;
+# BitLSM-Global's orange is its own convention (CLAUDE.md figure style).
 METHODS = [
     ("embedded_bloom_bits10", "Per-Block Filters", "#1FA8A0", ""),
-    ("bitlsm-global_rho0.001", "BitLSM-Global", "#9B1B1B", "xxxxxx"),
+    ("bitlsm-global_rho0.001", "BitLSM-Global", "#E69F00", ""),
     ("bitlsm_rho0.001", "BitLSM", "#9B1B1B", ""),
 ]
 PANELS = [

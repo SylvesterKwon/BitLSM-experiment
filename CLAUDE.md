@@ -255,6 +255,11 @@ these across experiments:
   panels titled `c = 2`. The shipped default (Cassandra intersects its two
   most selective predicates) is solid and listed first; the variant we added
   to be generous to the baseline is dashed.
+- BitLSM-Global (the `bitlsm-global` ablation arm) is orange `#E69F00`, solid,
+  with no hatch or dash. BitLSM's own red at the size of a single-column box
+  swallows the usual same-hue hatch, so the ablation arm gets its own color
+  instead. The methods read Per-Block Filters, BitLSM-Global, BitLSM, in that
+  order.
 - Do not hedge a re-implemented baseline in the legend (`SAI-like`). The text
   says once that it is a best-effort implementation; repeating it per figure
   invites the "how unlike?" question that the paper deliberately does not
