@@ -44,10 +44,10 @@ TIME_CORRELATED_ATTRS = {"tpep_pickup_datetime", "tpep_dropoff_datetime"}
 
 # Method key as it appears in the file names -> label used in the paper.
 METHOD_LABELS = {
-    "bitlsm_rho0.001": "BitLSM",
-    "bitlsm-global_rho0.001": "BitLSM (global bins)",
-    "embedded_bloom_bits10": "Bloom + Zone Map",
     "no-index": "No Index",
+    "embedded_bloom_bits10": "Per-Block Filters",
+    "bitlsm-global_rho0.001": "BitLSM-Global",
+    "bitlsm_rho0.001": "BitLSM",
 }
 
 QUERY_COLUMNS = [

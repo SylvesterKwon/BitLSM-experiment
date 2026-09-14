@@ -12,8 +12,9 @@ selectivity budget -- so nothing connects them and methods are compared only
 within a cluster.
 
 Boxes follow nyc_taxi_seq_read/plot.py: per-query latency in seconds on a log
-axis, median line, no fliers, and the same-hue variant hatched (BitLSM with
-global bins beside BitLSM).
+axis, median line, no fliers, and the same-hue variant hatched (BitLSM-Global
+beside BitLSM). Order within a cluster: Per-Block Filters, BitLSM-Global,
+BitLSM.
 
 Input is key_correlation_queries.csv from summarize_key_correlation.py.
 
@@ -33,6 +34,7 @@ from matplotlib.patches import Patch
 
 plt.rcParams.update({
     "font.size": 6,
+    "axes.titlesize": 6,    # titles default to "large"; keep one size throughout
     "hatch.linewidth": 0.3,
     # Ticks point into the axes, short and hairline-thin, matching
     # seq_write_wa/plot.py.
@@ -59,9 +61,9 @@ TICKS_H = 0.13              # "c = N" tick labels under the box
 # (method key as in the result file names, legend label, color, hatch).
 # Colors and the hatch-for-variant rule come from nyc_taxi_seq_read/plot.py.
 METHODS = [
+    ("embedded_bloom_bits10", "Per-Block Filters", "#1FA8A0", ""),
+    ("bitlsm-global_rho0.001", "BitLSM-Global", "#9B1B1B", "xxxxxx"),
     ("bitlsm_rho0.001", "BitLSM", "#9B1B1B", ""),
-    ("bitlsm-global_rho0.001", "BitLSM (global bins)", "#9B1B1B", "xxxxxx"),
-    ("embedded_bloom_bits10", "Bloom + Zone Map", "#1FA8A0", ""),
 ]
 PANELS = [
     ("True", "Time-correlated queries"),
@@ -114,14 +116,14 @@ def plot(lat, out_path):
         ax.tick_params(axis="x", length=0)
         half = CLUSTER_STEP / 2
         ax.set_xlim(-half, (len(ks) - 1) * CLUSTER_STEP + half)
-        # Latency spans milliseconds (BitLSM) to minutes (Bloom + Zone Map on
+        # Latency spans milliseconds (BitLSM) to minutes (Per-Block Filters on
         # uncorrelated predicates); on a linear axis the fast boxes vanish.
         ax.set_yscale("log")
         ax.yaxis.set_major_formatter(
             mticker.FuncFormatter(lambda v, _: f"{v:g}"))
         ax.yaxis.set_minor_formatter(mticker.NullFormatter())
         ax.set_box_aspect(PANEL_BOX_ASPECT)
-        ax.set_title(title, fontsize=6)
+        ax.set_title(title)
         ax.grid(False)
     axes[0].set_ylabel("Query latency (s)")
 
@@ -129,7 +131,7 @@ def plot(lat, out_path):
                      linewidth=0.5, label=label)
                for _, label, color, hatch in METHODS]
     fig.legend(handles=handles, loc="upper center", ncol=len(handles),
-               frameon=False, fontsize=6, handlelength=1.6, columnspacing=1.4)
+               frameon=False, handlelength=1.6, columnspacing=1.4)
     fig.subplots_adjust(left=LEFT, right=RIGHT, bottom=below / fig_h,
                         top=1 - above / fig_h, wspace=WSPACE)
     fig.savefig(out_path, dpi=150)
