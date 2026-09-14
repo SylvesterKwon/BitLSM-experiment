@@ -1,0 +1,53 @@
+{
+  "dataset": [
+    "yellow_tripdata_2024-01.parquet",
+    "yellow_tripdata_2024-02.parquet",
+    "yellow_tripdata_2024-03.parquet",
+    "yellow_tripdata_2024-04.parquet",
+    "yellow_tripdata_2024-05.parquet",
+    "yellow_tripdata_2024-06.parquet",
+    "yellow_tripdata_2024-07.parquet",
+    "yellow_tripdata_2024-08.parquet",
+    "yellow_tripdata_2024-09.parquet",
+    "yellow_tripdata_2024-10.parquet",
+    "yellow_tripdata_2024-11.parquet",
+    "yellow_tripdata_2024-12.parquet",
+    "yellow_tripdata_2025-01.parquet",
+    "yellow_tripdata_2025-02.parquet",
+    "yellow_tripdata_2025-03.parquet",
+    "yellow_tripdata_2025-04.parquet",
+    "yellow_tripdata_2025-05.parquet",
+    "yellow_tripdata_2025-06.parquet",
+    "yellow_tripdata_2025-07.parquet",
+    "yellow_tripdata_2025-08.parquet",
+    "yellow_tripdata_2025-09.parquet",
+    "yellow_tripdata_2025-10.parquet",
+    "yellow_tripdata_2025-11.parquet",
+    "yellow_tripdata_2025-12.parquet"
+  ],
+  "seed": 42,
+  "pk_mode": "ulid",
+  "phases": [
+    {
+      "label": "read_point_sel2.15e-05",
+      "type": "read_only",
+      "num_queries": 100,
+      "queries": [
+        {
+          "label": "point_sel2.15e-05",
+          "strategy": "interval_window",
+          "query_attr_num": 2,
+          "weight": 1,
+          "window": {
+            "start_attr": "tpep_pickup_datetime",
+            "end_attr": "tpep_dropoff_datetime"
+          },
+          "target_selectivity_percent": {
+            "lo": 0.0021113459962312448,
+            "hi": 0.0021975233838325203
+          }
+        }
+      ]
+    }
+  ]
+}

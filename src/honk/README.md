@@ -60,10 +60,12 @@ work. (Note: `sample(frac=1)` copies the frame, ~2× peak memory.)
 
 `start_attr >= x AND end_attr < y`: the intervals that begin and end inside one
 window (trips picked up after x and dropped off before y). The attribute pair
-is fixed by the block, so only the window moves; its width is what the
-selectivity band gives it, the way `guided_two_point` sizes a single range.
-Used by the ULID key-correlation experiment, where the window width against
-the bin width is the variable under test.
+is fixed by the block, so only the window moves. A target selectivity is drawn
+from the band, x is a random row's start value and y is the k-th smallest end
+value among the rows starting at or after x, so the query matches exactly k
+rows; a tight band (e.g. ±2 %) pins every query to one selectivity level.
+Used by the ULID key-correlation experiment, where selectivity against the
+global bin's share of rows is the variable under test.
 
 ```jsonc
 { "label": "window_sel0.0001", "strategy": "interval_window",
@@ -75,7 +77,9 @@ the bin width is the variable under test.
 
 The open side of each bound is written as a sentinel (1970 / 2100) inside an
 ordinary two-sided `range`, so the player needs no one-sided range support and
-BitLSM folds each pair into one interval. Configs: `workloads/read_window_sel*_r300.json`.
+BitLSM folds each pair into one interval. Configs: `workloads/read_point_sel*_r100.json`
+(ten levels, 10^(-5+k/3), 100 queries each) and the earlier band-wide
+`workloads/read_window_sel*_r300.json`.
 
 ## `ingestion` flags
 
