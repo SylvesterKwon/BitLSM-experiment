@@ -6,10 +6,6 @@
   },
   "methods": [
     {
-      "name": "no-index",
-      "params": {}
-    },
-    {
       "name": "bitlsm",
       "params": {
         "rho": [

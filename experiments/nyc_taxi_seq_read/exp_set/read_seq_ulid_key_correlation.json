@@ -12,11 +12,6 @@
   },
   "methods": [
     {
-      "name": "no-index",
-      "query_limit": 10,
-      "params": {}
-    },
-    {
       "name": "bitlsm",
       "params": {
         "rho": [
