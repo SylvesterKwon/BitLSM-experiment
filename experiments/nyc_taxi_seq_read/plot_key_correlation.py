@@ -1,36 +1,36 @@
 #!/usr/bin/env python3
-"""Plot the ULID key-correlation subsection: latency against window width.
+"""Plot the ULID key-correlation subsection: latency against query selectivity.
 
 One single-column panel. Every query of the interval_window workloads
-(pickup >= x AND dropoff < y) is placed at its own window width y - x, the
-queries are cut into log-spaced width bins, and each bin's MEDIAN latency is
-drawn per method. Width is the one thing that varies across the 900 queries --
-they share one template and one DB -- so the binned medians form a curve, and
-the curve is the mechanism: BitLSM-Global sits on a floor set by the width of
-a global bin (it fetches the whole bin however narrow the window), BitLSM
-tracks the window because its per-SST bins are minutes wide, and the two meet
-where the window outgrows a global bin. Per-Block Filters lie on BitLSM
-throughout: block zone maps prune fully once the predicate is on the
-key-correlated attribute.
+(pickup >= x AND dropoff < y) is placed at its own selectivity -- rows matched
+over rows in the DB -- the queries are cut into log-spaced selectivity bins,
+and each bin's MEDIAN latency is drawn per method. Selectivity is the one
+thing that varies across the 900 queries (one template, one DB), so the
+binned medians form a curve, and the curve is the mechanism: BitLSM-Global
+sits on a floor while the query selects fewer rows than one global bin holds
+(it fetches the whole bin however narrow the window), BitLSM tracks the query
+because its per-SST bins are minutes wide, and the two meet where the query
+outgrows a global bin. Per-Block Filters lie on BitLSM throughout: block zone
+maps prune fully once the predicate is on the key-correlated attribute.
 
-The dotted vertical line is the median width of the global pickup bins, read
-from the bin policy the BitLSM-Global DB was built with. The line carries no
-label in the figure; the caption names it.
+Selectivity rather than window width is the axis so the floor reads against
+rho: with equi-depth bins every global pickup bin holds exactly 1/bins of the
+rows, and that fraction is the dotted vertical line, read from the bin policy
+the BitLSM-Global DB was built with (1/1821 at rho = 0.001, the attr_num/rho
+budget shared by the greedy over six attributes). The line carries no label in
+the figure; the caption names it.
 
 Inputs: the read_window result directory (key_correlation_queries.csv from
-summarize_key_correlation.py), the workload TSVs the bounds come from, and
-the bin policy file.
+summarize_key_correlation.py) and the bin policy file.
 
 Usage:
     python3 experiments/nyc_taxi_seq_read/plot_key_correlation.py <window_result_dir> \
         --bin_policy /scratch/honk/bin_policy/write_seq_2024-2025_all_ulid_rho0.001.bin \
-        [--workload_dir workloads/read_seq] [-o <output_dir>]
+        [-o <output_dir>]
 """
 
 import argparse
 import csv
-import glob
-import json
 import math
 import os
 import statistics
@@ -51,16 +51,18 @@ plt.rcParams.update({
     "xtick.minor.width": 0.3, "ytick.minor.width": 0.3,
 })
 
-# Height/width of the plot box, measured from nyc_taxi_seq_read's 4x4 grid
-# (1.294 x 0.909 in). A lone panel does not reach it on its own, so it is
-# pinned, and the figure height is derived from the box plus the furniture it
-# carries rather than left to tight_layout.
-PANEL_BOX_ASPECT = 0.702
+# Height/width of the plot box. The paper's grid cells are 0.702, but that was
+# measured on 1.3-in-wide cells; a lone box spanning the column at 0.702 is
+# 2 in tall, so this one is flatter by request. Pinned, with the figure height
+# derived from the box plus the furniture it carries rather than left to
+# tight_layout.
+PANEL_BOX_ASPECT = 0.5
 FIG_W = 3.333               # single text column, inches
-LEFT, RIGHT = 0.135, 0.99   # room for the y label and "0.01" tick labels
+LEFT, RIGHT = 0.135, 0.965  # room for the y label, and for the last x
+                            # tick label ($10^{-2}$) to sit on the right edge
 LEGEND_H = 0.20             # legend strip above the box
-TICKS_H = 0.13              # x tick labels under the box
-XLABEL_H = 0.12             # x label under the ticks
+TICKS_H = 0.15              # x tick labels under the box (math text is taller)
+XLABEL_H = 0.15             # x label under the ticks
 
 # (method key as in the result file names, legend label, color, marker).
 # Per-Block Filters and BitLSM keep nyc_taxi_seq_read/plot.py's colors;
@@ -71,34 +73,27 @@ METHODS = [
     ("bitlsm_rho0.001", "BitLSM", "#9B1B1B", "o"),
 ]
 START_ATTR = "tpep_pickup_datetime"   # the window's lower bound, and the key
-END_ATTR = "tpep_dropoff_datetime"
 
-# Width bins: 12 log-spaced bins from 0.3 h to 300 h cover every window the
-# three selectivity bands produce (0.3 h to 240 h). A bin holding fewer
-# queries than MIN_BIN_QUERIES is not drawn -- its median would be one or two
-# queries' noise.
-WIDTH_BINS = 12
-WIDTH_MIN_H, WIDTH_MAX_H = 0.3, 300.0
+# honk_player logs records_total as 0 for read workloads, so per-query
+# selectivity is recovered against the known row count of the ingest.
+TOTAL_ROWS = 89_892_322
+
+# Selectivity bins: 12 log-spaced bins (four per decade) over the three
+# workload bands, [1e-5, 1e-2). A bin holding fewer queries than
+# MIN_BIN_QUERIES is not drawn -- its median would be one or two queries'
+# noise.
+SEL_BINS = 12
+SEL_MIN, SEL_MAX = 1e-5, 1e-2
 MIN_BIN_QUERIES = 10
 
 QUERIES_CSV = "key_correlation_queries.csv"
 POLICY_MAGIC = b"GBINPOL1"
 
 
-def okey_to_f64(b):
-    """Undo bit_lsm::F64ToOkey (bit_lsm_encoding.h) on an 8-byte boundary."""
-    okey = int.from_bytes(b, "big")
-    if okey & (1 << 63):
-        u = okey ^ (1 << 63)
-    else:
-        u = (~okey) & ((1 << 64) - 1)
-    return struct.unpack("<d", struct.pack("<Q", u))[0]
-
-
-def global_bin_widths_h(policy_path, attr_names, attr):
-    """Widths in hours of `attr`'s bins in a bin policy file (bin_policy.cpp
-    layout: header, then per attribute [type u8][bins u32] and a BytesList
-    of boundaries for range attributes or (value, bin) entries otherwise)."""
+def global_bin_count(policy_path, attr_names, attr):
+    """Number of bins the policy gives `attr` (bin_policy.cpp layout: header,
+    then per attribute [type u8][bins u32] and a BytesList of boundaries for
+    range attributes or (value, bin) entries otherwise)."""
     data = open(policy_path, "rb").read()
     if data[:8] != POLICY_MAGIC or data[-8:] != POLICY_MAGIC:
         raise SystemExit(f"{policy_path} is not a bin policy file")
@@ -114,16 +109,12 @@ def global_bin_widths_h(policy_path, attr_names, attr):
         typ, bins = struct.unpack_from("<BI", data, p)
         p += 5
         if typ == 1:                   # kRange: BytesList of bins + 1 bounds
+            if attr_names[i] == attr:
+                return bins
             (count,) = struct.unpack_from("<I", data, p)
             p += 4
             ends = struct.unpack_from(f"<{count}I", data, p)
-            p += 4 * count
-            arena = data[p:p + ends[-1]]
-            p += ends[-1]
-            if attr_names[i] == attr:
-                starts = (0,) + ends[:-1]
-                bounds = [okey_to_f64(arena[s:e]) for s, e in zip(starts, ends)]
-                return [(hi - lo) / 3600 for lo, hi in zip(bounds, bounds[1:])]
+            p += 4 * count + (ends[-1] if count else 0)
         else:                          # kEquality: (value, bin) entries
             (count,) = struct.unpack_from("<I", data, p)
             p += 4
@@ -133,48 +124,27 @@ def global_bin_widths_h(policy_path, attr_names, attr):
     raise SystemExit(f"{attr} is not a range attribute of {policy_path}")
 
 
-def window_widths_h(workload_dir, selectivity):
-    """{query_id: window width in hours} of one band's workload TSV."""
-    paths = glob.glob(os.path.join(workload_dir,
-                                   f"read_window_sel{selectivity}_r*.tsv"))
-    if len(paths) != 1:
-        raise SystemExit(f"expected one read_window_sel{selectivity}_r*.tsv "
-                         f"in {workload_dir}, found {len(paths)}")
-    widths = {}
-    with open(paths[0]) as f:
-        for qid, line in enumerate(f):
-            filters = json.loads(line.split("\t", 1)[1])["filters"]
-            lo = next(fl["lo"] for fl in filters if fl["attr"] == START_ATTR)
-            hi = next(fl["hi"] for fl in filters if fl["attr"] == END_ATTR)
-            widths[qid] = (hi - lo) / 3600
-    return widths
-
-
-def load_points(result_dir, workload_dir):
-    """{method: [(window width h, latency s)]} over the window queries."""
+def load_points(result_dir):
+    """{method: [(query selectivity, latency s)]} over the window queries."""
     path = os.path.join(result_dir, QUERIES_CSV)
     if not os.path.exists(path):
         raise SystemExit(f"{path} not found; run summarize_key_correlation.py "
                          "first")
-    widths = {}
     points = defaultdict(list)
     with open(path, newline="") as f:
         for r in csv.DictReader(f):
             if r["family"] != "window":
                 continue
-            if r["selectivity"] not in widths:
-                widths[r["selectivity"]] = window_widths_h(workload_dir,
-                                                           r["selectivity"])
             points[r["method"]].append(
-                (widths[r["selectivity"]][int(r["query_id"])],
+                (int(r["records_matched"]) / TOTAL_ROWS,
                  float(r["time_elapsed_ms"]) / 1000.0))
     return points
 
 
 def binned_medians(points):
-    """[(bin centre h, median latency s)] over the log-spaced width bins."""
-    edges = [WIDTH_MIN_H * (WIDTH_MAX_H / WIDTH_MIN_H) ** (i / WIDTH_BINS)
-             for i in range(WIDTH_BINS + 1)]
+    """[(bin centre, median latency s)] over the log-spaced selectivity bins."""
+    edges = [SEL_MIN * (SEL_MAX / SEL_MIN) ** (i / SEL_BINS)
+             for i in range(SEL_BINS + 1)]
     out = []
     for lo, hi in zip(edges, edges[1:]):
         lat = [y for x, y in points if lo <= x < hi]
@@ -183,7 +153,7 @@ def binned_medians(points):
     return out
 
 
-def plot(points, global_bin_h, out_path):
+def plot(points, global_bin_selectivity, out_path):
     box_w = FIG_W * (RIGHT - LEFT)
     box_h = box_w * PANEL_BOX_ASPECT + 0.01   # a hair of slack, never less
     above, below = LEGEND_H, TICKS_H + XLABEL_H
@@ -196,15 +166,19 @@ def plot(points, global_bin_h, out_path):
         xs, ys = zip(*binned_medians(points[key]))
         ax.plot(xs, ys, marker=marker, markersize=2.5, linewidth=0.9,
                 color=color, label=label)
-    # The global bin width, named in the caption.
-    ax.axvline(global_bin_h, color="#999999", linewidth=0.6, linestyle=":")
+    # The fraction of rows one global bin holds, named in the caption.
+    ax.axvline(global_bin_selectivity, color="#999999", linewidth=0.6,
+               linestyle=":")
 
     ax.set_xscale("log")
     ax.set_yscale("log")
-    for axis in (ax.xaxis, ax.yaxis):
-        axis.set_major_formatter(mticker.FuncFormatter(lambda v, _: f"{v:g}"))
-        axis.set_minor_formatter(mticker.NullFormatter())
-    ax.set_xlabel("Window width (h)")
+    # Selectivity reads as powers of ten (the paper's sigma notation);
+    # latency as plain seconds.
+    ax.xaxis.set_major_formatter(mticker.LogFormatterMathtext())
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda v, _: f"{v:g}"))
+    ax.xaxis.set_minor_formatter(mticker.NullFormatter())
+    ax.yaxis.set_minor_formatter(mticker.NullFormatter())
+    ax.set_xlabel(r"Query selectivity $\sigma$")
     ax.set_ylabel("Median query latency (s)")
     ax.set_box_aspect(PANEL_BOX_ASPECT)
     ax.grid(False)
@@ -231,23 +205,18 @@ def main():
                                 "tpep_dropoff_datetime,fare_amount,"
                                 "passenger_count",
                         help="Attribute order the policy was computed with")
-    parser.add_argument("--workload_dir",
-                        default=os.path.join(os.path.dirname(__file__), "..",
-                                             "..", "workloads", "read_seq"),
-                        help="Where the read_window_*.tsv workloads live")
     parser.add_argument("-o", "--output-dir", default=None,
                         help="Output directory (default: result_dir)")
     args = parser.parse_args()
 
-    widths = global_bin_widths_h(args.bin_policy, args.indexed_attrs.split(","),
-                                 START_ATTR)
-    global_bin_h = statistics.median(widths)
-    print(f"global {START_ATTR} bin width: median {global_bin_h:.2f} h "
-          f"over {len(widths)} bins")
+    bins = global_bin_count(args.bin_policy, args.indexed_attrs.split(","),
+                            START_ATTR)
+    print(f"global {START_ATTR} bins: {bins} -> one bin holds "
+          f"{1 / bins:.2e} of the rows")
 
     output_dir = args.output_dir or args.result_dir
     os.makedirs(output_dir, exist_ok=True)
-    plot(load_points(args.result_dir, args.workload_dir), global_bin_h,
+    plot(load_points(args.result_dir), 1.0 / bins,
          os.path.join(output_dir, "key_correlation_latency.pdf"))
 
 
