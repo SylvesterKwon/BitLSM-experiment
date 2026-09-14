@@ -1,0 +1,43 @@
+{
+  "db_path_base": "/scratch/honk",
+  "workload": [
+    "workloads/read_seq/read_window_sel1.00e-05_r100.tsv",
+    "workloads/read_seq/read_window_sel2.15e-05_r100.tsv",
+    "workloads/read_seq/read_window_sel4.64e-05_r100.tsv",
+    "workloads/read_seq/read_window_sel1.00e-04_r100.tsv",
+    "workloads/read_seq/read_window_sel2.15e-04_r100.tsv",
+    "workloads/read_seq/read_window_sel4.64e-04_r100.tsv",
+    "workloads/read_seq/read_window_sel1.00e-03_r100.tsv",
+    "workloads/read_seq/read_window_sel2.15e-03_r100.tsv",
+    "workloads/read_seq/read_window_sel4.64e-03_r100.tsv",
+    "workloads/read_seq/read_window_sel1.00e-02_r100.tsv"
+  ],
+  "common_params": {
+    "indexed_attrs": "PULocationID,DOLocationID,tpep_pickup_datetime,tpep_dropoff_datetime,fare_amount,passenger_count",
+    "scan_prefetch_depth": 32
+  },
+  "methods": [
+    {
+      "name": "bitlsm",
+      "params": {
+        "rho": [
+          0.001
+        ]
+      }
+    },
+    {
+      "name": "bitlsm-global",
+      "params": {
+        "rho": [
+          0.001
+        ]
+      }
+    },
+    {
+      "name": "embedded",
+      "params": {
+        "bloom_bits": 10
+      }
+    }
+  ]
+}

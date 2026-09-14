@@ -56,6 +56,30 @@ variant) so the **only** difference between the two variants is PK↔attribute
 correlation. The final on-disk DB is PK-sorted either way, so zone maps still
 work. (Note: `sample(frac=1)` copies the frame, ~2× peak memory.)
 
+### `interval_window` — fixed two-predicate window queries
+
+`start_attr >= x AND end_attr < y`: the intervals that begin and end inside one
+window (trips picked up after x and dropped off before y). The attribute pair
+is fixed by the block, so only the window moves. A target selectivity is drawn
+from the band, x is a random row's start value and y is the k-th smallest end
+value among the rows starting at or after x, so the query matches exactly k
+rows; a tight band (e.g. ±2 %) pins every query to one selectivity level.
+Used by the ULID key-correlation experiment, where selectivity against the
+global bin's share of rows is the variable under test.
+
+```jsonc
+{ "label": "window_sel0.0001", "strategy": "interval_window",
+  "query_attr_num": 2,                                   // always 2
+  "window": { "start_attr": "tpep_pickup_datetime",
+              "end_attr": "tpep_dropoff_datetime" },
+  "target_selectivity_percent": { "lo": 0.001, "hi": 0.01 } }
+```
+
+The open side of each bound is written as a sentinel (1970 / 2100) inside an
+ordinary two-sided `range`, so the player needs no one-sided range support and
+BitLSM folds each pair into one interval. Configs: `workloads/read_window_sel*_r100.json`
+(ten levels, 10^(-5+k/3), 100 queries each).
+
 ## `ingestion` flags
 
 Same `pk_mode` / `shuffle` are exposed as CLI flags:

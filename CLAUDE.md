@@ -52,6 +52,7 @@ src/
 | Method | Binding | Binary | Description |
 |---|---|---|---|
 | bitlsm | `BitLSMBinding` | `build/bin/bit-lsm` | Bitmap-indexed LSM-Tree |
+| bitlsm-global | `BitLSMGlobalBinding` | `honk_player` only | Ablation: BitLSM with oracle global bin boundaries (`src/bindings/global_bins/`, forked SABI builder; core untouched). Build with `--bin_policy <file>` from `build/bin/global_bin_policy`, query without it. Gate: `build/bin/global_bins_xcheck` |
 | no-index | `NoIndexBinding` | `build/bin/no-index` | Plain RocksDB (full table scan) |
 | si-ck | `SICKBinding` | `build/bin/si-ck` | Secondary index — concatenated key |
 | si-lu | `SILUBinding` | `build/bin/si-lu` | Secondary index — list union (merge operator) |
@@ -254,6 +255,11 @@ these across experiments:
   panels titled `c = 2`. The shipped default (Cassandra intersects its two
   most selective predicates) is solid and listed first; the variant we added
   to be generous to the baseline is dashed.
+- BitLSM-Global (the `bitlsm-global` ablation arm) is orange `#E69F00`, solid,
+  with no hatch or dash. BitLSM's own red at the size of a single-column box
+  swallows the usual same-hue hatch, so the ablation arm gets its own color
+  instead. The methods read Per-Block Filters, BitLSM-Global, BitLSM, in that
+  order.
 - Do not hedge a re-implemented baseline in the legend (`SAI-like`). The text
   says once that it is a best-effort implementation; repeating it per figure
   invites the "how unlike?" question that the paper deliberately does not

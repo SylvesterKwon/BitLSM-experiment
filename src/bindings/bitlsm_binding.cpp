@@ -11,8 +11,11 @@
 
 namespace experiment {
 
-void BitLSMBinding::Open(int argc, char* argv[], const std::string& db_path,
-                          const BitLSMOptions& opts) {
+void BitLSMBinding::BuildOpenOptions(
+    int argc, char* argv[], const BitLSMOptions& opts,
+    rocksdb::Options* rocksdb_options_out,
+    rocksdb::BlockBasedTableOptions* table_options_out,
+    BitLSMOptions* bitlsm_opts_out) {
   cxxopts::Options cxx("bitlsm", "");
   cxx.allow_unrecognised_options();
   cxx.add_options()("rho", "BitLSM rho threshold",
@@ -58,6 +61,19 @@ void BitLSMBinding::Open(int argc, char* argv[], const std::string& db_path,
   bitlsm_opts.rho = rho_;
   bitlsm_opts.scan_prefetch_depth = scan_prefetch_depth_;
   bitlsm_opts.ondemand_index = ondemand_index_;
+
+  *rocksdb_options_out = std::move(rocksdb_options);
+  *table_options_out = std::move(table_options);
+  *bitlsm_opts_out = std::move(bitlsm_opts);
+}
+
+void BitLSMBinding::Open(int argc, char* argv[], const std::string& db_path,
+                          const BitLSMOptions& opts) {
+  rocksdb::Options rocksdb_options;
+  rocksdb::BlockBasedTableOptions table_options;
+  BitLSMOptions bitlsm_opts{};
+  BuildOpenOptions(argc, argv, opts, &rocksdb_options, &table_options,
+                   &bitlsm_opts);
   db_ = std::make_unique<bit_lsm::BitLSM>(db_path, bitlsm_opts,
                                             rocksdb_options, table_options);
   // Zero the process-wide on-demand bin cache counters so this run's totals

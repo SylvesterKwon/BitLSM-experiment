@@ -16,11 +16,13 @@ class HonkConfigError(Exception):
 @dataclass
 class ExpandedQueryBlock:
     label: str
-    strategy: str  # "uniform" | "two_point"
+    strategy: str  # "uniform" | "two_point" | "guided_two_point" | "interval_window"
     weight: float
     query_attr_num: int | None = None
     query_attrs: list[str] | None = None
     target_selectivity_percent: dict | None = None  # {"lo": float, "hi": float}
+    # interval_window only: {"start_attr": str, "end_attr": str}
+    window: dict | None = None
 
 
 @dataclass
@@ -94,6 +96,7 @@ def _expand_queries(raw_queries: list[dict]) -> list[ExpandedQueryBlock]:
         weight = q.get("weight", 1)
         query_attrs = q.get("query_attrs")
         target_selectivity_percent = q.get("target_selectivity_percent")
+        window = q.get("window")
 
         # Identify list-valued expansion params
         expand_params: dict[str, list] = {}
@@ -114,6 +117,7 @@ def _expand_queries(raw_queries: list[dict]) -> list[ExpandedQueryBlock]:
                 query_attr_num=q.get("query_attr_num"),
                 query_attrs=query_attrs,
                 target_selectivity_percent=target_selectivity_percent,
+                window=window,
             ))
             continue
 
@@ -127,6 +131,7 @@ def _expand_queries(raw_queries: list[dict]) -> list[ExpandedQueryBlock]:
                 query_attr_num=overrides.get("query_attr_num"),
                 query_attrs=query_attrs,
                 target_selectivity_percent=target_selectivity_percent,
+                window=window,
             ))
 
     return result
@@ -139,10 +144,13 @@ def _validate_query_block(q: dict) -> None:
     label = q.get("label", "<unnamed>")
     strategy = q.get("strategy")
 
-    if strategy not in ("uniform", "two_point", "guided_two_point"):
+    if strategy not in ("uniform", "two_point", "guided_two_point", "interval_window"):
         raise HonkConfigError(
-            f"Query '{label}': unknown strategy '{strategy}', expected 'uniform', 'two_point', or 'guided_two_point'"
+            f"Query '{label}': unknown strategy '{strategy}', expected 'uniform', 'two_point', 'guided_two_point', or 'interval_window'"
         )
+
+    if strategy == "interval_window":
+        _validate_interval_window(label, q)
 
     if "query_attr_num" not in q:
         raise HonkConfigError(
@@ -173,6 +181,35 @@ def _validate_query_block(q: dict) -> None:
             raise HonkConfigError(
                 f"Query '{label}': unknown query_attrs: {unknown}"
             )
+
+
+def _validate_interval_window(label: str, q: dict) -> None:
+    """interval_window: two fixed range attributes and a selectivity band."""
+    from .schema import ALL_COLUMN_MAP, FilterType
+    window = q.get("window")
+    if (not isinstance(window, dict)
+            or set(window) != {"start_attr", "end_attr"}):
+        raise HonkConfigError(
+            f"Query '{label}': 'interval_window' needs 'window' with exactly "
+            f"'start_attr' and 'end_attr'"
+        )
+    for key in ("start_attr", "end_attr"):
+        col = ALL_COLUMN_MAP.get(window[key])
+        if col is None or col.filter_type != FilterType.RANGE:
+            raise HonkConfigError(
+                f"Query '{label}': window {key} '{window[key]}' is not a "
+                f"range column"
+            )
+    if q.get("query_attr_num") != 2:
+        raise HonkConfigError(
+            f"Query '{label}': 'interval_window' always has 2 predicates; "
+            f"set 'query_attr_num' to 2"
+        )
+    if q.get("target_selectivity_percent") is None:
+        raise HonkConfigError(
+            f"Query '{label}': 'interval_window' requires "
+            f"'target_selectivity_percent'"
+        )
 
 
 def _parse_phase(raw: dict) -> Phase:

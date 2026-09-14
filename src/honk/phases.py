@@ -20,6 +20,7 @@ from .dataset import DatasetCursor
 from .config import HonkConfigError
 from .pk import PKGenerator, pickup_ms_from_value, PICKUP_COL
 from .filters import GuidedTwoPointFilterGenerator, TwoPointFilterGenerator, UniformFilterGenerator, compute_most_selective_attr, compute_selectivity_percent
+from .interval_window import interval_window_generator
 from .writer import TSVWriter
 
 logger = logging.getLogger(__name__)
@@ -102,6 +103,9 @@ def _generate_read(
                 block.query_attr_num, block.query_attrs,
                 block.target_selectivity_percent,
             )
+        elif block.strategy == "interval_window":
+            return interval_window_generator(df, block.window).generate(
+                block.target_selectivity_percent, rng)
         else:
             raise ValueError(f"Unknown strategy: {block.strategy}")
 
