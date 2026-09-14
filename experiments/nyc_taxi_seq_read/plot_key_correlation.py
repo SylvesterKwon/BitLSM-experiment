@@ -31,7 +31,6 @@ Usage:
 
 import argparse
 import csv
-import math
 import os
 import statistics
 import struct
@@ -64,14 +63,21 @@ LEGEND_H = 0.20             # legend strip above the box
 TICKS_H = 0.15              # x tick labels under the box (math text is taller)
 XLABEL_H = 0.15             # x label under the ticks
 
-# (method key as in the result file names, legend label, color, marker).
-# Per-Block Filters and BitLSM keep nyc_taxi_seq_read/plot.py's colors;
-# BitLSM-Global's orange is its own convention (CLAUDE.md figure style).
+# (method key as in the result file names, legend label, color, marker,
+# linestyle). Per-Block Filters and BitLSM keep nyc_taxi_seq_read/plot.py's
+# colors; BitLSM-Global's orange is its own convention (CLAUDE.md figure
+# style). Per-Block Filters coincide with BitLSM over the whole axis, so they
+# are dashed with a thin plus marker and drawn last: a solid line with a
+# filled marker would simply cover the other. The dash here marks overlap, not
+# a variant of the same method as elsewhere in the paper.
 METHODS = [
-    ("embedded_bloom_bits10", "Per-Block Filters", "#1FA8A0", "P"),
-    ("bitlsm-global_rho0.001", "BitLSM-Global", "#E69F00", "D"),
-    ("bitlsm_rho0.001", "BitLSM", "#9B1B1B", "o"),
+    ("embedded_bloom_bits10", "Per-Block Filters", "#1FA8A0", "+",
+     (0, (2, 1.2))),
+    ("bitlsm-global_rho0.001", "BitLSM-Global", "#E69F00", "D", "-"),
+    ("bitlsm_rho0.001", "BitLSM", "#9B1B1B", "o", "-"),
 ]
+DRAW_ORDER = ["bitlsm-global_rho0.001", "bitlsm_rho0.001",
+              "embedded_bloom_bits10"]
 START_ATTR = "tpep_pickup_datetime"   # the window's lower bound, and the key
 
 # honk_player logs records_total as 0 for read workloads, so per-query
@@ -142,14 +148,20 @@ def load_points(result_dir):
 
 
 def binned_medians(points):
-    """[(bin centre, median latency s)] over the log-spaced selectivity bins."""
+    """[(median selectivity, median latency s)] over the log-spaced bins.
+
+    A point sits at the median selectivity of the queries in its bin, not at
+    the bin's centre, so the segments between points join where the queries
+    actually are; the bins only decide which queries are summarised together.
+    """
     edges = [SEL_MIN * (SEL_MAX / SEL_MIN) ** (i / SEL_BINS)
              for i in range(SEL_BINS + 1)]
     out = []
     for lo, hi in zip(edges, edges[1:]):
-        lat = [y for x, y in points if lo <= x < hi]
-        if len(lat) >= MIN_BIN_QUERIES:
-            out.append((math.sqrt(lo * hi), statistics.median(lat)))
+        members = [(x, y) for x, y in points if lo <= x < hi]
+        if len(members) >= MIN_BIN_QUERIES:
+            out.append((statistics.median(x for x, _ in members),
+                        statistics.median(y for _, y in members)))
     return out
 
 
@@ -160,18 +172,24 @@ def plot(points, global_bin_selectivity, out_path):
     fig_h = above + box_h + below
     fig, ax = plt.subplots(figsize=(FIG_W, fig_h))
 
-    for key, label, color, marker in METHODS:
+    style = {key: (label, color, marker, ls)
+             for key, label, color, marker, ls in METHODS}
+    for key in DRAW_ORDER:
         if key not in points:
             continue
+        label, color, marker, ls = style[key]
         xs, ys = zip(*binned_medians(points[key]))
-        ax.plot(xs, ys, marker=marker, markersize=2.5, linewidth=0.9,
-                color=color, label=label)
+        plus = marker == "+"
+        ax.plot(xs, ys, marker=marker, linestyle=ls, linewidth=0.9,
+                markersize=3.2 if plus else 2.5,
+                markeredgewidth=0.8 if plus else 0.5, color=color, label=label)
     # The fraction of rows one global bin holds, named in the caption.
     ax.axvline(global_bin_selectivity, color="#999999", linewidth=0.6,
                linestyle=":")
 
     ax.set_xscale("log")
     ax.set_yscale("log")
+    ax.set_xlim(SEL_MIN, SEL_MAX)   # the bands' range, so every decade is labelled
     # Selectivity reads as powers of ten (the paper's sigma notation);
     # latency as plain seconds.
     ax.xaxis.set_major_formatter(mticker.LogFormatterMathtext())
@@ -183,9 +201,12 @@ def plot(points, global_bin_selectivity, out_path):
     ax.set_box_aspect(PANEL_BOX_ASPECT)
     ax.grid(False)
 
-    handles, labels = ax.get_legend_handles_labels()
-    fig.legend(handles, labels, loc="upper center", ncol=len(labels),
-               frameon=False, handlelength=1.8, columnspacing=1.4)
+    # Legend in the paper's method order, independent of the draw order.
+    by_label = dict(zip(*reversed(ax.get_legend_handles_labels())))
+    labels = [label for _, label, _, _, _ in METHODS if label in by_label]
+    fig.legend([by_label[l] for l in labels], labels, loc="upper center",
+               ncol=len(labels), frameon=False, handlelength=2.0,
+               columnspacing=1.4)
     fig.subplots_adjust(left=LEFT, right=RIGHT, bottom=below / fig_h,
                         top=1 - above / fig_h)
     fig.savefig(out_path, dpi=150)
