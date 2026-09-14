@@ -13,9 +13,11 @@ prune at all.
   <output>/key_correlation_queries.csv  one row per (workload, method, query)
   <output>/key_correlation_summary.csv  one row per (k, group, method)
 
-Summary statistics follow the paper's conventions: latency is the MEDIAN of
-the per-query rows; candidates, candidate blocks and data read are MEANS per
-query. data_read_mb is disk_read_mb - idx_read_mb and still includes SABI
+Summary statistics follow the paper's conventions: latency is given as the
+MEDIAN of the per-query rows (the paper's usual statistic) and also as the
+MEAN, which the key-correlation figure plots because a global-bins query's
+cost is additive in the bins it touches; candidates, candidate blocks and
+data read are MEANS per query. data_read_mb is disk_read_mb - idx_read_mb and still includes SABI
 blocks loaded when an SST is first opened, so candidates and candidate blocks
 are the cleaner mechanism metrics.
 
@@ -63,7 +65,8 @@ QUERY_COLUMNS = [
 ]
 SUMMARY_COLUMNS = [
     "family", "selectivity", "k", "group", "method", "label", "queries",
-    "median_latency_ms", "mean_records_matched", "mean_data_read_mb",
+    "median_latency_ms", "mean_latency_ms", "mean_records_matched",
+    "mean_data_read_mb",
     "mean_candidates", "mean_candidate_blocks",
 ]
 
@@ -185,6 +188,8 @@ def summarize(rows):
             "queries": len(items),
             "median_latency_ms":
                 statistics.median(i["time_elapsed_ms"] for i in items),
+            "mean_latency_ms":
+                round(statistics.mean(i["time_elapsed_ms"] for i in items), 3),
             "mean_records_matched": mean_of(items, "records_matched"),
             "mean_data_read_mb": mean_of(items, "data_read_mb"),
             "mean_candidates": mean_of(items, "candidates"),
