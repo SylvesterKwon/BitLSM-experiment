@@ -29,12 +29,12 @@
   "pk_mode": "ulid",
   "phases": [
     {
-      "label": "read_point_sel2.15e-05",
+      "label": "read_window_sel4.64e-05",
       "type": "read_only",
       "num_queries": 100,
       "queries": [
         {
-          "label": "point_sel2.15e-05",
+          "label": "window_sel4.64e-05",
           "strategy": "interval_window",
           "query_attr_num": 2,
           "weight": 1,
@@ -43,8 +43,8 @@
             "end_attr": "tpep_dropoff_datetime"
           },
           "target_selectivity_percent": {
-            "lo": 0.0021113459962312448,
-            "hi": 0.0021975233838325203
+            "lo": 0.004548757056940526,
+            "hi": 0.004734420610285037
           }
         }
       ]

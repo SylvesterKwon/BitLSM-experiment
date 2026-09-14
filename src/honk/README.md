@@ -77,7 +77,7 @@ global bin's share of rows is the variable under test.
 
 The open side of each bound is written as a sentinel (1970 / 2100) inside an
 ordinary two-sided `range`, so the player needs no one-sided range support and
-BitLSM folds each pair into one interval. Configs: `workloads/read_point_sel*_r100.json`
+BitLSM folds each pair into one interval. Configs: `workloads/read_window_sel*_r100.json`
 (ten levels, 10^(-5+k/3), 100 queries each).
 
 ## `ingestion` flags

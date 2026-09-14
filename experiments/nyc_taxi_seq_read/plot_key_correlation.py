@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Plot the ULID key-correlation subsection: latency against query selectivity.
 
-One single-column panel over the read_point workloads: the window template
+One single-column panel over the read_window workloads: the window template
 (pickup >= x AND dropoff < y) generated at ten selectivity levels spaced
 evenly in log10 over [1e-5, 1e-2], every query pinned to its level within
 2 %. Each point is the MEAN latency of one level's queries for one method
@@ -19,11 +19,11 @@ every global pickup bin holds 1/bins of the rows (1/1821 at rho = 0.001, the
 attr_num/rho budget shared by the greedy over six attributes), and the text
 can name that level without the figure marking it.
 
-Input: the read_point result directory (key_correlation_queries.csv from
+Input: the read_window result directory (key_correlation_queries.csv from
 summarize_key_correlation.py).
 
 Usage:
-    python3 experiments/nyc_taxi_seq_read/plot_key_correlation.py <point_result_dir> \
+    python3 experiments/nyc_taxi_seq_read/plot_key_correlation.py <window_result_dir> \
         [-o <output_dir>]
 """
 
@@ -82,7 +82,7 @@ QUERIES_CSV = "key_correlation_queries.csv"
 
 
 def load_levels(result_dir):
-    """{method: {level selectivity: [latency s, ...]}} over the point queries.
+    """{method: {level selectivity: [latency s, ...]}} over the window queries.
 
     The level is the workload's nominal selectivity (its file name), which is
     what the queries were generated to hit; the measured selectivity of every
@@ -94,7 +94,7 @@ def load_levels(result_dir):
     levels = defaultdict(lambda: defaultdict(list))
     with open(path, newline="") as f:
         for r in csv.DictReader(f):
-            if r["family"] != "point":
+            if r["family"] != "window":
                 continue
             levels[r["method"]][float(r["selectivity"])].append(
                 float(r["time_elapsed_ms"]) / 1000.0)
@@ -165,7 +165,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Plot ULID window-query latency against window width")
     parser.add_argument("result_dir",
-                        help=f"read_point result directory ({QUERIES_CSV})")
+                        help=f"read_window result directory ({QUERIES_CSV})")
     parser.add_argument("--stat", choices=["mean", "median"], default="mean",
                         help="Per-level statistic (see level_stat)")
     parser.add_argument("-o", "--output-dir", default=None,

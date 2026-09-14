@@ -39,13 +39,12 @@ from collections import defaultdict
 
 # Two workload families share the naming: read_seq_sel{s}_k{c}_r{n} (the
 # generator's random attribute draws over a selectivity band) and
-# read_point_sel{s}_r{n} (the fixed pickup/dropoff window template pinned to
-# one selectivity level, s in scientific notation; always two predicates).
-# "window" is accepted for the retired band-wide window runs.
+# read_window_sel{s}_r{n} (the fixed pickup/dropoff window template at one
+# selectivity level, s in scientific notation; always two predicates).
 READ_PATTERN = re.compile(
-    r"^read_(seq|window|point)_sel([\d.e+-]+?)(?:_k(\d+))?_r(\d+)_(.+)_read_log\.csv$")
+    r"^read_(seq|window)_sel([\d.e+-]+?)(?:_k(\d+))?_r(\d+)_(.+)_read_log\.csv$")
 CANDIDATE_PATTERN = re.compile(
-    r"^read_(seq|window|point)_sel([\d.e+-]+?)(?:_k(\d+))?_r(\d+)_(.+)_candidates\.csv$")
+    r"^read_(seq|window)_sel([\d.e+-]+?)(?:_k(\d+))?_r(\d+)_(.+)_candidates\.csv$")
 WINDOW_PREDICATES = 2
 
 TIME_CORRELATED_ATTRS = {"tpep_pickup_datetime", "tpep_dropoff_datetime"}
