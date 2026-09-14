@@ -35,12 +35,11 @@ import statistics
 import sys
 from collections import defaultdict
 
-# Three workload families share the naming: read_seq_sel{s}_k{c}_r{n} (the
-# generator's random attribute draws over a selectivity band),
-# read_window_sel{s}_r{n} (the fixed pickup/dropoff window template over a
-# band) and read_point_sel{s}_r{n} (the same template pinned to one
-# selectivity level, s in scientific notation). The window families always
-# carry two predicates.
+# Two workload families share the naming: read_seq_sel{s}_k{c}_r{n} (the
+# generator's random attribute draws over a selectivity band) and
+# read_point_sel{s}_r{n} (the fixed pickup/dropoff window template pinned to
+# one selectivity level, s in scientific notation; always two predicates).
+# "window" is accepted for the retired band-wide window runs.
 READ_PATTERN = re.compile(
     r"^read_(seq|window|point)_sel([\d.e+-]+?)(?:_k(\d+))?_r(\d+)_(.+)_read_log\.csv$")
 CANDIDATE_PATTERN = re.compile(
