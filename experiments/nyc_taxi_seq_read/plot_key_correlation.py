@@ -4,8 +4,9 @@
 One single-column panel over the read_point workloads: the window template
 (pickup >= x AND dropoff < y) generated at ten selectivity levels spaced
 evenly in log10 over [1e-5, 1e-2], every query pinned to its level within
-2 %. Each point is the MEDIAN latency of one level's queries for one method,
-and the levels are joined by lines, as in the paper's other sweeps. The
+2 %. Each point is the MEAN latency of one level's queries for one method
+(see level_stat for why not the median), and the levels are joined by lines,
+as in the paper's other sweeps. The
 curve is the mechanism: BitLSM-Global sits on a floor while the query selects
 fewer rows than one global bin holds (it fetches the whole bin however narrow
 the window), BitLSM tracks the query because its per-SST bins are minutes
@@ -141,12 +142,22 @@ def load_levels(result_dir):
     return levels
 
 
-def level_medians(levels):
-    """[(level selectivity, median latency s)] in ascending selectivity."""
-    return [(s, statistics.median(lat)) for s, lat in sorted(levels.items())]
+def level_stat(levels, stat):
+    """[(level selectivity, statistic of latency s)] in ascending selectivity.
+
+    The mean, not the paper's usual median, is the statistic that makes this
+    figure read: a global-bins query costs the bins its window touches, an
+    integer whose expectation is 1 + sigma/sigma_bin for a randomly placed
+    window, so the mean is one bin's cost plus the window's -- a smooth
+    curve that is twice BitLSM at the dotted line. The median of that integer
+    jumps from one bin's cost to two where the straddling probability passes
+    one half (about half a bin, left of the line), which is true but needs a
+    paragraph to explain."""
+    agg = statistics.mean if stat == "mean" else statistics.median
+    return [(s, agg(lat)) for s, lat in sorted(levels.items())]
 
 
-def plot(levels, global_bin_selectivity, out_path):
+def plot(levels, global_bin_selectivity, stat, out_path):
     box_w = FIG_W * (RIGHT - LEFT)
     box_h = box_w * PANEL_BOX_ASPECT + 0.01   # a hair of slack, never less
     above, below = LEGEND_H, TICKS_H + XLABEL_H
@@ -159,7 +170,7 @@ def plot(levels, global_bin_selectivity, out_path):
         if key not in levels:
             continue
         label, color, marker, ls = style[key]
-        xs, ys = zip(*level_medians(levels[key]))
+        xs, ys = zip(*level_stat(levels[key], stat))
         plus = marker == "+"
         ax.plot(xs, ys, marker=marker, linestyle=ls, linewidth=0.9,
                 markersize=3.2 if plus else 2.5,
@@ -178,7 +189,7 @@ def plot(levels, global_bin_selectivity, out_path):
     ax.xaxis.set_minor_formatter(mticker.NullFormatter())
     ax.yaxis.set_minor_formatter(mticker.NullFormatter())
     ax.set_xlabel(r"Query selectivity $\sigma$")
-    ax.set_ylabel("Median query latency (s)")
+    ax.set_ylabel(f"{stat.capitalize()} query latency (s)")
     ax.set_box_aspect(PANEL_BOX_ASPECT)
     ax.grid(False)
 
@@ -207,6 +218,8 @@ def main():
                                 "tpep_dropoff_datetime,fare_amount,"
                                 "passenger_count",
                         help="Attribute order the policy was computed with")
+    parser.add_argument("--stat", choices=["mean", "median"], default="mean",
+                        help="Per-level statistic (see level_stat)")
     parser.add_argument("-o", "--output-dir", default=None,
                         help="Output directory (default: result_dir)")
     args = parser.parse_args()
@@ -218,7 +231,7 @@ def main():
 
     output_dir = args.output_dir or args.result_dir
     os.makedirs(output_dir, exist_ok=True)
-    plot(load_levels(args.result_dir), 1.0 / bins,
+    plot(load_levels(args.result_dir), 1.0 / bins, args.stat,
          os.path.join(output_dir, "key_correlation_latency.pdf"))
 
 
