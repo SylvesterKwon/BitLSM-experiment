@@ -49,13 +49,18 @@ METHOD_LABELS = {
     "si-lu_strategy_im": "Lazy (Intersection)",
     "si-ck_strategy_pf": "Composite (Post Filtering)",
     "si-ck_strategy_im": "Composite (Intersection)",
-    "embedded_bloom_bits10": "Bloom + Zone Map",
-    "sai_il0": "SAI (unlimited)",
-    "sai_il2": "SAI (limit=2)",
-    "bitlsm_rho0.03": r"BitLSM ($\rho$=0.03)",
-    "bitlsm_rho0.01": r"BitLSM ($\rho$=0.01)",
-    "bitlsm_rho0.003": r"BitLSM ($\rho$=0.003)",
-    "bitlsm_rho0.001": r"BitLSM ($\rho$=0.001)",
+    "embedded_bloom_bits10": "Per-Block Filters",
+    # Symmetric on the one thing that differs: how many predicates the index
+    # intersects. il=2 is what Cassandra ships, il=0 lifts the cap.
+    "sai_il0": "SAI (intersect all)",
+    "sai_il2": "SAI (intersect top-2)",
+    # rho is pinned in this figure's exp_set, so it is not a variable the
+    # reader is being asked to compare; it belongs to plot_rho_sensitivity.py,
+    # which sweeps it. Every arm here reads the same for that reason.
+    "bitlsm_rho0.03": "BitLSM",
+    "bitlsm_rho0.01": "BitLSM",
+    "bitlsm_rho0.003": "BitLSM",
+    "bitlsm_rho0.001": "BitLSM",
 }
 METHOD_COLORS = {
     "no-index": "#808080",

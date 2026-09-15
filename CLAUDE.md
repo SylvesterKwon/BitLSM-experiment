@@ -255,6 +255,10 @@ these across experiments:
   panels titled `c = 2`. The shipped default (Cassandra intersects its two
   most selective predicates) is solid and listed first; the variant we added
   to be generous to the baseline is dashed.
+- The `embedded` baseline is named Per-Block Filters. Naming its two
+  structures instead (`Bloom + Zone Map`) reads as two series in a legend that
+  draws one box for it, and its `bloom_bits` is a build parameter the figure
+  never varies, so it stays out of the label the same way BitLSM's rho does.
 - BitLSM-Global (the `bitlsm-global` ablation arm) is orange `#E69F00`, solid,
   with no hatch or dash. BitLSM's own red at the size of a single-column box
   swallows the usual same-hue hatch, so the ablation arm gets its own color
