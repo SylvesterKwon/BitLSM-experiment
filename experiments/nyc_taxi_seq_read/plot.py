@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Plot read query time distribution (boxplots) for nyc_taxi_seq_read experiment.
 
-Grid layout: rows = k (# query attributes), columns = selectivity.
-Each cell shows boxplots of per-query time_elapsed_ms across methods.
+Grid layout: rows = selectivity (fine -> coarse), columns = c (# query
+attributes). Each cell shows boxplots of per-query time_elapsed_ms across
+methods.
 
 Usage:
     python3 experiments/nyc_taxi_seq_read/plot.py <result_dir>
@@ -19,6 +20,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 plt.rcParams.update({"font.size": 6, "hatch.linewidth": 0.3})
+
+# Figure height (in), chosen so one panel's plot box comes out 0.702 as tall as
+# it is wide -- the shape every figure in this paper shares. With the grid
+# transposed to 3 rows x 4 columns the panels are wider and fewer, so the 4x3
+# figure's height no longer lands on that ratio; this value was measured back
+# from ax.get_position() rather than eyeballed. Re-measure if the row or column
+# count changes.
+FIG_HEIGHT_IN = 3.69
 
 METHOD_ORDER = [
     "no-index",
@@ -104,7 +113,9 @@ def load_result_dir(result_dir):
 
 
 def plot_grid(data, output_dir):
-    """Create a grid of boxplots: rows=k, cols=selectivity."""
+    """Create a grid of boxplots: rows=selectivity, cols=c."""
+    # Ascending selectivity puts the finest band in the top row, so the grid
+    # reads fine -> coarse downward the way the paper's text walks it.
     all_sels = sorted(set(sel for sel, _ in data))
     all_ks = sorted(set(k for _, k in data))
 
@@ -112,8 +123,8 @@ def plot_grid(data, output_dir):
         print("No data to plot.")
         return
 
-    nrows = len(all_ks)
-    ncols = len(all_sels)
+    nrows = len(all_sels)
+    ncols = len(all_ks)
 
     def sel_label(s):
         exp = int(round(math.log10(s)))
@@ -127,11 +138,11 @@ def plot_grid(data, output_dir):
                 all_methods.append(m)
     all_methods = [m for m in METHOD_ORDER if m in all_methods]
 
-    fig, axes = plt.subplots(nrows, ncols, figsize=(7, 7 * 3 / 4),
+    fig, axes = plt.subplots(nrows, ncols, figsize=(7, FIG_HEIGHT_IN),
                              squeeze=False)
 
-    for ri, k in enumerate(all_ks):
-        for ci, sel in enumerate(all_sels):
+    for ri, sel in enumerate(all_sels):
+        for ci, k in enumerate(all_ks):
             ax = axes[ri][ci]
             cell_data = data.get((sel, k), {})
 
@@ -145,9 +156,9 @@ def plot_grid(data, output_dir):
                 ax.set_xticks([])
                 ax.set_yticks([])
                 if ri == 0:
-                    ax.set_title(sel_label(sel))
+                    ax.set_title(f"c = {k}")
                 if ci == 0:
-                    ax.set_ylabel(f"c = {k}\nQuery Latency (s)")
+                    ax.set_ylabel(f"{sel_label(sel)}\nQuery Latency (s)")
                 continue
 
             # no-index as horizontal dashed line (mean)
@@ -186,9 +197,9 @@ def plot_grid(data, output_dir):
             ax.grid(False)
 
             if ri == 0:
-                ax.set_title(sel_label(sel))
+                ax.set_title(f"c = {k}")
             if ci == 0:
-                ax.set_ylabel(f"c = {k}\nQuery Latency (s)")
+                ax.set_ylabel(f"{sel_label(sel)}\nQuery Latency (s)")
 
     # Shared legend at top
     from matplotlib.patches import Patch
