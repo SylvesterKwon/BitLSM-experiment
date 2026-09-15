@@ -36,8 +36,8 @@ METHOD_ORDER = [
     "si-ck_strategy_pf",
     "si-ck_strategy_im",
     "embedded_bloom_bits10",
-    "sai_il0",
     "sai_il2",
+    "sai_il0",
     "bitlsm_rho0.03",
     "bitlsm_rho0.01",
     "bitlsm_rho0.003",
@@ -71,17 +71,23 @@ METHOD_COLORS = {
     "embedded_bloom_bits10": "#1FA8A0",
     "sai_il0": "#2F6FD0",
     "sai_il2": "#2F6FD0",
-    "bitlsm_rho0.03": "#F08C7C",
+    # #E04040 is BitLSM-the-method across the paper (myrocks plot.py,
+    # plot_perf.py, plot_query_strip.py). #9B1B1B is the rho family's fine end
+    # and the "Single + BitLSM" variant; it only reads as BitLSM in a figure
+    # that sweeps rho, which this one does not -- every arm here is labelled
+    # plain "BitLSM", so every arm takes the method colour.
+    "bitlsm_rho0.03": "#E04040",
     "bitlsm_rho0.01": "#E04040",
-    "bitlsm_rho0.003": "#9B1B1B",
-    "bitlsm_rho0.001": "#9B1B1B",
+    "bitlsm_rho0.003": "#E04040",
+    "bitlsm_rho0.001": "#E04040",
 }
 METHOD_HATCHES = {
     "si-ck_strategy_im": "xxxxxx",
     "si-lu_strategy_im": "xxxxxx",
-    # sai_il0 and sai_il2 share the blue hue; hatch the capped arm so the
-    # unlimited-intersection comparison stays distinguishable.
-    "sai_il2": "xxxxxx",
+    # sai_il0 and sai_il2 share the blue hue. The hatch goes on il=0, the arm
+    # we added to be generous to the baseline; il=2 is what Cassandra ships,
+    # so it keeps the plain blue and is drawn first.
+    "sai_il0": "xxxxxx",
 }
 
 # Pattern: read_seq_sel{sel}_k{k}_r{r}_{method}_read_log.csv
