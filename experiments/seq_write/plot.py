@@ -21,9 +21,7 @@ METHOD_ORDER = [
     "si-eager",
     "embedded",
     "sai",
-    "bitlsm_rho0.03",
-    "bitlsm_rho0.01",
-    "bitlsm_rho0.003",
+    "bitlsm_rho0.001",
 ]
 METHOD_LABELS = {
     "no-index": "No Index",
@@ -32,14 +30,10 @@ METHOD_LABELS = {
     "si-eager": "SI-Eager",
     "embedded": "Bloom + Zone Map",
     "sai": "SAI",
-    "bitlsm_rho0.03": r"BitLSM ($\rho$=0.03)",
-    "bitlsm_rho0.01": r"BitLSM ($\rho$=0.01)",
-    "bitlsm_rho0.003": r"BitLSM ($\rho$=0.003)",
+    "bitlsm_rho0.001": "BitLSM",
 }
 METHOD_COLORS = {
-    "bitlsm_rho0.03": "#F08C7C",
-    "bitlsm_rho0.01": "#E04040",
-    "bitlsm_rho0.003": "#9B1B1B",
+    "bitlsm_rho0.001": "#E04040",
     "si-lu": "#4CC850",
     "si-ck": "#9888B8",
     "embedded": "#1FA8A0",
@@ -65,6 +59,9 @@ def load_final_rows(csv_path: str):
     resumed (--start-from) or method-filtered sweep still lands right. Older
     CSVs have no such column and are read positionally, the way they were
     written. Absent runs become NaN and simply do not draw.
+    time_ms is the Put loop plus the post-ingest drain (drain_ms) when the CSV
+    records one, so methods that build their index in flush/compaction are
+    charged for it; older CSVs without drain_ms fall back to the Put loop.
     Returns {method: [(time_ms, records, db_size_bytes), ...]}.
     """
     data: dict[str, list[tuple[float, int, int]]] = {}
@@ -78,8 +75,9 @@ def load_final_rows(csv_path: str):
         if not db_bytes:
             continue
         method = row["method"].strip()
-        entry = (float(row["time_elapsed_ms"]), int(row["records_written"]),
-                 int(db_bytes))
+        drain = (row.get("drain_ms") or "").strip()
+        time_ms = float(row["time_elapsed_ms"]) + (float(drain) if drain else 0)
+        entry = (time_ms, int(row["records_written"]), int(db_bytes))
         if keyed:
             slot = _attr_slot(row.get("attr_count", "").strip())
             if slot is None:
@@ -199,7 +197,7 @@ def plot_write_time(data, output_dir):
                     va="bottom",
                 )
 
-    ax.set_ylabel("Write Time (seconds)")
+    ax.set_ylabel("Write Time incl. drain (seconds)")
 
     ax.set_xticks(x)
     ax.set_xticklabels(SCHEMA_TICK_LABELS)

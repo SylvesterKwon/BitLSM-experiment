@@ -49,7 +49,7 @@ DB_PARAMS = ["n", "schema", "rho"]
 
 MASTER_COLUMNS = [
     "method", "attr_count", "time_elapsed_ms", "records_written",
-    "db_size_bytes",
+    "db_size_bytes", "drain_ms",
 ]
 
 
@@ -111,6 +111,20 @@ def parse_checkpoints(output: str) -> list[tuple[int, int]]:
             n = int(parts[parts.index("created") + 1])
             checkpoints.append((total_ms, n))
     return checkpoints
+
+
+def parse_drain_ms(output: str):
+    """Parse 'DRAIN_MS:<ms>', the post-ingest wait for flush and the compactions
+    the ingest itself scheduled (no forced compaction).
+
+    time_elapsed_ms covers the Put loop only; methods that build their index in
+    flush/compaction pay much of that cost here, so it is recorded alongside.
+    Returns None when the binary printed no such line.
+    """
+    for line in output.splitlines():
+        if line.startswith("DRAIN_MS:"):
+            return int(line[len("DRAIN_MS:"):])
+    return None
 
 
 def method_label(name: str, combo: dict) -> str:
@@ -232,12 +246,13 @@ def run(config_path: str, dry_run: bool, method_filter: list, cooldown: int,
                         sys.exit(f"Run failed (exit {rc}): {' '.join(cmd)}")
 
                     checkpoints = parse_checkpoints(captured)
+                    drain_ms = parse_drain_ms(captured)
                     db_size = get_db_size_bytes(db_path)
                     label = method_label(name, combo)
 
                     if checkpoints:
                         total_ms = checkpoints[-1][0]
-                        print(f"  [result] total_time={total_ms}ms, db_size={db_size} bytes ({db_size / (1024**3):.2f} GiB)")
+                        print(f"  [result] total_time={total_ms}ms, drain={drain_ms}ms, db_size={db_size} bytes ({db_size / (1024**3):.2f} GiB)")
 
                     if clean_db_flag:
                         clean_db(db_path)
@@ -264,6 +279,7 @@ def run(config_path: str, dry_run: bool, method_filter: list, cooldown: int,
                             "time_elapsed_ms": checkpoints[-1][0],
                             "records_written": checkpoints[-1][1],
                             "db_size_bytes": db_size,
+                            "drain_ms": "" if drain_ms is None else drain_ms,
                         })
 
                     if hw_reset:
