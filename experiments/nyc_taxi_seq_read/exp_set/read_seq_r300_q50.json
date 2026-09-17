@@ -61,7 +61,7 @@
       }
     },
     {
-      "name": "sai",
+      "name": "embedded-postings",
       "query_limit": 50,
       "params": {
         "intersection_limit": [

@@ -14,7 +14,7 @@ std::unique_ptr<Binding> CreateBinding(const std::string& name) {
   if (name == "bitlsm") return std::make_unique<BitLSMBinding>();
   if (name == "bitlsm-global") return std::make_unique<BitLSMGlobalBinding>();
   if (name == "embedded") return std::make_unique<EmbeddedBinding>();
-  if (name == "sai") return std::make_unique<SAIBinding>();
+  if (name == "embedded-postings") return std::make_unique<SAIBinding>();
   if (name == "no-index") return std::make_unique<NoIndexBinding>();
   if (name == "si-ck") return std::make_unique<SICKBinding>();
   if (name == "si-lu") return std::make_unique<SILUBinding>();

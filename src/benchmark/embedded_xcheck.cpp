@@ -241,12 +241,12 @@ int main(int argc, char** argv) {
   std::vector<uint64_t> bitlsm = run_method("bitlsm", bitlsm_path);
   std::cout << "running embedded...\n";
   std::vector<uint64_t> embedded = run_method("embedded", embedded_path);
-  std::cout << "running sai...\n";
-  std::vector<uint64_t> sai = run_method("sai", sai_path);
+  std::cout << "running embedded-postings...\n";
+  std::vector<uint64_t> sai = run_method("embedded-postings", sai_path);
 
   // ---- Compare against ground truth ----
   bool ok = true;
-  std::cout << "\n  query | expected | bitlsm | embedded | sai\n";
+  std::cout << "\n  query | expected | bitlsm | embedded | embedded-postings\n";
   std::cout << "  --------------------------------------------------\n";
   for (size_t i = 0; i < queries.size(); ++i) {
     std::cout << "  " << queries[i].name << " | " << expected[i] << " | "

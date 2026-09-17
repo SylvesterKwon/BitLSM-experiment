@@ -49,8 +49,8 @@ METHOD_ORDER = [
     "si-ck_strategy_pf",
     "si-ck_strategy_im",
     "embedded_bloom_bits10",
-    "sai_il2",
-    "sai_il0",
+    "embedded-postings_il2",
+    "embedded-postings_il0",
     "bitlsm_rho0.03",
     "bitlsm_rho0.01",
     "bitlsm_rho0.003",
@@ -65,8 +65,8 @@ METHOD_LABELS = {
     "embedded_bloom_bits10": "Per-Block Filters",
     # Symmetric on the one thing that differs: how many predicates the index
     # intersects. il=2 is what Cassandra ships, il=0 lifts the cap.
-    "sai_il0": "SAI (intersect all)",
-    "sai_il2": "SAI (intersect top-2)",
+    "embedded-postings_il0": "Embedded Postings (intersect all)",
+    "embedded-postings_il2": "Embedded Postings (intersect top-2)",
     # rho is pinned in this figure's exp_set, so it is not a variable the
     # reader is being asked to compare; it belongs to plot_rho_sensitivity.py,
     # which sweeps it. Every arm here reads the same for that reason.
@@ -82,8 +82,8 @@ METHOD_COLORS = {
     "si-lu_strategy_im": "#4CC850",
     "si-lu_strategy_pf": "#4CC850",
     "embedded_bloom_bits10": "#1FA8A0",
-    "sai_il0": "#2F6FD0",
-    "sai_il2": "#2F6FD0",
+    "embedded-postings_il0": "#2F6FD0",
+    "embedded-postings_il2": "#2F6FD0",
     # #E04040 is BitLSM-the-method across the paper (myrocks plot.py,
     # plot_perf.py, plot_query_strip.py). #9B1B1B is the rho family's fine end
     # and the "Single + BitLSM" variant; it only reads as BitLSM in a figure
@@ -97,10 +97,10 @@ METHOD_COLORS = {
 METHOD_HATCHES = {
     "si-ck_strategy_im": "xxxxxx",
     "si-lu_strategy_im": "xxxxxx",
-    # sai_il0 and sai_il2 share the blue hue. The hatch goes on il=0, the arm
+    # embedded-postings_il0 and embedded-postings_il2 share the blue hue. The hatch goes on il=0, the arm
     # we added to be generous to the baseline; il=2 is what Cassandra ships,
     # so it keeps the plain blue and is drawn first.
-    "sai_il0": "xxxxxx",
+    "embedded-postings_il0": "xxxxxx",
 }
 
 # Pattern: read_seq_sel{sel}_k{k}_r{r}_{method}_read_log.csv
@@ -216,7 +216,7 @@ def plot_grid(data, output_dir):
                     patch.set_facecolor(color)
                     patch.set_hatch(hatch)
 
-            # Log scale: a single cell spans ~0.4s (SAI at high selectivity)
+            # Log scale: a single cell spans ~0.4s (Embedded Postings at high selectivity)
             # to ~250s (post-filtering at low selectivity). On a linear axis
             # the fast methods collapse onto the baseline and are unreadable.
             # (ticklabel_format is incompatible with a log axis.)

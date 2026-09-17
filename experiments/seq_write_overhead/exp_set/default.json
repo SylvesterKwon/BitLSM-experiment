@@ -12,7 +12,11 @@
     {
       "name": "bitlsm",
       "params": {
-        "rho": [0.03, 0.01, 0.003]
+        "rho": [
+          0.03,
+          0.01,
+          0.003
+        ]
       }
     },
     {
@@ -30,7 +34,7 @@
       }
     },
     {
-      "name": "sai",
+      "name": "embedded-postings",
       "params": {
         "intersection_limit": 2
       }
