@@ -35,7 +35,7 @@ METHOD_LABELS = {
     "no-index": "No Index",
     "si-lu": "Lazy",
     "si-ck": "Composite",
-    "embedded_bloom_bits10": "Bloom + Zone Map",
+    "embedded_bloom_bits10": "Per-Block Filters",
     "bitlsm_rho0.03": r"BitLSM ($\rho$=0.03)",
     "bitlsm_rho0.01": r"BitLSM ($\rho$=0.01)",
     "bitlsm_rho0.003": r"BitLSM ($\rho$=0.003)",

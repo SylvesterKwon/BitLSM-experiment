@@ -65,8 +65,8 @@ METHOD_LABELS = {
     "embedded_bloom_bits10": "Per-Block Filters",
     # Symmetric on the one thing that differs: how many predicates the index
     # intersects. il=2 is what Cassandra ships, il=0 lifts the cap.
-    "embedded-postings_il0": "Embedded Postings (intersect all)",
-    "embedded-postings_il2": "Embedded Postings (intersect top-2)",
+    "embedded-postings_il0": "Embedded Postings (Intersection)",
+    "embedded-postings_il2": "Embedded Postings (Top-2 Intersection)",
     # rho is pinned in this figure's exp_set, so it is not a variable the
     # reader is being asked to compare; it belongs to plot_rho_sensitivity.py,
     # which sweeps it. Every arm here reads the same for that reason.

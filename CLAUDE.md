@@ -250,12 +250,29 @@ these across experiments:
   (`plot_rho_sensitivity.py`).
 - When a baseline appears in two configurations, label both symmetrically by
   what differs, so the reader sees the single axis of variation at a glance:
-  `Embedded Postings (intersect top-2)` and `Embedded Postings (intersect
-  all)`, never `il=0` / `il=2`. Keep the verb -- a bare
-  `Embedded Postings (2 predicates)` reads as a query shape next to panels
-  titled `c = 2`. The shipped default (Cassandra intersects its two
+  `Embedded Postings (Top-2 Intersection)` and
+  `Embedded Postings (Intersection)`, never `il=0` / `il=2`. Both are proper
+  names, not one name and one description: intersect-all IS the standalone
+  family's Index Intersection -- every predicate intersected, then the records
+  fetched -- so it carries the same noun, the way Lazy and Composite do. The
+  capped arm keeps the noun and qualifies it. A bare
+  `Embedded Postings (2 predicates)` would read as a query shape next to
+  panels titled `c = 2`. The shipped default (Cassandra intersects its two
   most selective predicates) is solid and listed first; the variant we added
   to be generous to the baseline is dashed.
+- Configuration names capitalise every word, inside the parentheses too --
+  `Composite (Post Filtering)`, not `Composite (post filtering)`. A legend may
+  shorten a name by dropping part of it, and what is left keeps its case.
+  Parameter values stay as they are written in maths: `BitLSM (rho=0.2)`.
+- A hatch means the same thing in both families: no hatch is a strategy that
+  intersects some predicates and verifies the rest (Post Filtering, Top-2
+  Intersection), cross-hatch is one that intersects all of them
+  (Intersection). Strategy suffixes are a read-side distinction, so the write
+  and ingestion figures carry a bare `Embedded Postings`.
+- The legend reads No Index, Lazy (Post Filtering), Lazy (Intersection),
+  Composite (Post Filtering), Composite (Intersection), Per-Block Filters,
+  Embedded Postings (Top-2 Intersection), Embedded Postings (Intersection),
+  BitLSM, BitLSM-Global -- baselines first, ours last.
 - The `embedded` baseline is named Per-Block Filters. Naming its two
   structures instead (`Bloom + Zone Map`) reads as two series in a legend that
   draws one box for it, and its `bloom_bits` is a build parameter the figure

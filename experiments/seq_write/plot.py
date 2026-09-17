@@ -28,7 +28,7 @@ METHOD_LABELS = {
     "si-lu": "Lazy",
     "si-ck": "Composite",
     "si-eager": "SI-Eager",
-    "embedded": "Bloom + Zone Map",
+    "embedded": "Per-Block Filters",
     "embedded-postings": "Embedded Postings",
     "bitlsm_rho0.001": "BitLSM",
 }
