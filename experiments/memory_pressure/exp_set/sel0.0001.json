@@ -54,7 +54,7 @@
       ]
     },
     {
-      "name": "sai",
+      "name": "embedded-postings",
       "params": {
         "intersection_limit": [
           0,
@@ -69,7 +69,7 @@
       ]
     },
     {
-      "name": "sai",
+      "name": "embedded-postings",
       "params": {
         "intersection_limit": [
           0,

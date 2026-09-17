@@ -47,8 +47,8 @@
       }
     },
     {
-      "name": "sai",
-      "binary": "build/bin/sai",
+      "name": "embedded-postings",
+      "binary": "build/bin/embedded-postings",
       "params": {
         "intersection_limit": 2
       }

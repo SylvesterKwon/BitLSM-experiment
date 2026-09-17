@@ -1,0 +1,300 @@
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 113}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1715890671, "hi": 1715928211}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "tpep_pickup_datetime", "op": "range", "lo": 1714668833, "hi": 1714761842}, {"attr": "fare_amount", "op": "range", "lo": 49.9, "hi": 51.19}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "tpep_pickup_datetime", "op": "range", "lo": 1704552593, "hi": 1704556602}, {"attr": "fare_amount", "op": "range", "lo": 3.7, "hi": 5.1}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 43}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1763814785, "hi": 1763821582}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 138}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1705250142, "hi": 1705260418}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "tpep_pickup_datetime", "op": "range", "lo": 1762040531, "hi": 1762047825}, {"attr": "fare_amount", "op": "range", "lo": 5.8, "hi": 6.5}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 263}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1753453173, "hi": 1753464459}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 239}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1721072393, "hi": 1721116365}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "fare_amount", "op": "range", "lo": 32.5, "hi": 32.91}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1764078014, "hi": 1764431355}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "passenger_count", "op": "range", "lo": 1.0, "hi": 1.01}, {"attr": "fare_amount", "op": "range", "lo": 22.1, "hi": 22.26}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1762560384, "hi": 1762648812}, {"attr": "fare_amount", "op": "range", "lo": -11.69, "hi": -10.7}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 4}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1742673343, "hi": 1742686827}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 230}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1715614388, "hi": 1715621511}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 234}, {"attr": "fare_amount", "op": "range", "lo": 20.03, "hi": 20.04}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 186}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1714681773, "hi": 1714690365}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1705494393, "hi": 1705503757}, {"attr": "passenger_count", "op": "range", "lo": 3.0, "hi": 5.0}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 163}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1761867033, "hi": 1761898926}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 164}, {"attr": "fare_amount", "op": "range", "lo": 17.05, "hi": 17.08}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 90}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1743091001, "hi": 1743104954}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 88}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1715763353, "hi": 1715856871}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "fare_amount", "op": "range", "lo": 34.5, "hi": 35.12}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1730596825, "hi": 1730656341}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "tpep_pickup_datetime", "op": "range", "lo": 1757618290, "hi": 1757737571}, {"attr": "fare_amount", "op": "range", "lo": 8.37, "hi": 8.6}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 113}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1728319783, "hi": 1728337571}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 138}, {"attr": "fare_amount", "op": "range", "lo": 9.3, "hi": 9.31}], "most_selective_attr": "DOLocationID"}
+r	{"filters": [{"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1737988987, "hi": 1738095339}, {"attr": "fare_amount", "op": "range", "lo": 38.0, "hi": 38.5}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1757542067, "hi": 1757714136}, {"attr": "fare_amount", "op": "range", "lo": 15.43, "hi": 15.52}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "passenger_count", "op": "range", "lo": 1.0, "hi": 1.01}, {"attr": "fare_amount", "op": "range", "lo": 20.64, "hi": 20.78}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 161}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1717612077, "hi": 1717620108}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 138}, {"attr": "fare_amount", "op": "range", "lo": 11.4, "hi": 11.41}], "most_selective_attr": "DOLocationID"}
+r	{"filters": [{"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1758144524, "hi": 1758209323}, {"attr": "fare_amount", "op": "range", "lo": 22.6, "hi": 22.610000000000003}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 141}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1750299404, "hi": 1750323477}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 230}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1746181800, "hi": 1746189495}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 186}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1733423864, "hi": 1733435804}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "fare_amount", "op": "range", "lo": 13.17, "hi": 13.5}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1766193411, "hi": 1766231215}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "tpep_pickup_datetime", "op": "range", "lo": 1749267982, "hi": 1749335463}, {"attr": "fare_amount", "op": "range", "lo": 41.5, "hi": 42.2}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 41}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1743026880, "hi": 1743090332}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "tpep_pickup_datetime", "op": "range", "lo": 1762989218, "hi": 1763005144}, {"attr": "passenger_count", "op": "range", "lo": 2.0, "hi": 3.0}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "passenger_count", "op": "range", "lo": 0.0, "hi": 1.0}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1740040196, "hi": 1740058137}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1737283128, "hi": 1737295024}, {"attr": "passenger_count", "op": "range", "lo": 3.0, "hi": 4.0}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "passenger_count", "op": "range", "lo": 3.0, "hi": 4.0}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1755296615, "hi": 1755301009}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "tpep_pickup_datetime", "op": "range", "lo": 1748815079, "hi": 1748900314}, {"attr": "passenger_count", "op": "range", "lo": 0.0, "hi": 1.0}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1738833242, "hi": 1738876395}, {"attr": "fare_amount", "op": "range", "lo": 14.22, "hi": 14.68}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 132}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1734030032, "hi": 1734037402}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 211}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1766676223, "hi": 1766773214}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 70}, {"attr": "fare_amount", "op": "range", "lo": 14.9, "hi": 14.91}], "most_selective_attr": "PULocationID"}
+r	{"filters": [{"attr": "fare_amount", "op": "range", "lo": 13.8, "hi": 14.18}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1731308211, "hi": 1731426480}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 129}, {"attr": "fare_amount", "op": "range", "lo": 22.6, "hi": 23.3}], "most_selective_attr": "PULocationID"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 230}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1760197518, "hi": 1760199121}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 237}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1727044747, "hi": 1727079504}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "passenger_count", "op": "range", "lo": 4.0, "hi": 5.0}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1705425862, "hi": 1705439371}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 237}, {"attr": "fare_amount", "op": "range", "lo": 21.81, "hi": 21.85}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "passenger_count", "op": "range", "lo": 5.0, "hi": 5.01}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1733223631, "hi": 1733259464}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 186}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1742484111, "hi": 1742492592}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 138}, {"attr": "fare_amount", "op": "range", "lo": 12.8, "hi": 12.81}], "most_selective_attr": "DOLocationID"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 237}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1712083363, "hi": 1712085788}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 132}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1742566606, "hi": 1742575326}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "fare_amount", "op": "range", "lo": 11.4, "hi": 12.1}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1759967046, "hi": 1759984865}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 42}, {"attr": "fare_amount", "op": "range", "lo": 45.0, "hi": 45.7}], "most_selective_attr": "PULocationID"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 48}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1735550295, "hi": 1735557900}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 48}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1726882904, "hi": 1726908794}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 48}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1713355770, "hi": 1713362735}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1721067991, "hi": 1721113228}, {"attr": "fare_amount", "op": "range", "lo": 4.4, "hi": 5.1}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 239}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1746781590, "hi": 1746787372}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 90}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1704718630, "hi": 1704782172}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 151}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1725768476, "hi": 1725803738}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 230}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1741107303, "hi": 1741111490}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 255}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1737091832, "hi": 1737245172}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 42}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1736355887, "hi": 1736374820}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 65}, {"attr": "fare_amount", "op": "range", "lo": -8.41, "hi": -5.8}], "most_selective_attr": "DOLocationID"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 151}, {"attr": "fare_amount", "op": "range", "lo": 0.06, "hi": 0.18}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 259}, {"attr": "passenger_count", "op": "range", "lo": 2.0, "hi": 2.01}], "most_selective_attr": "DOLocationID"}
+r	{"filters": [{"attr": "fare_amount", "op": "range", "lo": 26.8, "hi": 27.5}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1738782271, "hi": 1738794898}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 230}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1753574919, "hi": 1753578072}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 237}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1757347637, "hi": 1757350082}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1714650915, "hi": 1714890045}, {"attr": "fare_amount", "op": "range", "lo": 11.66, "hi": 11.91}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1751546438, "hi": 1751672873}, {"attr": "fare_amount", "op": "range", "lo": 26.1, "hi": 26.110000000000003}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 226}, {"attr": "fare_amount", "op": "range", "lo": 15.44, "hi": 15.6}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 163}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1761862003, "hi": 1761885074}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 161}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1746998364, "hi": 1747026450}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "fare_amount", "op": "range", "lo": 8.6, "hi": 8.61}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1743208583, "hi": 1743240798}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 170}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1737540686, "hi": 1737547285}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 77}, {"attr": "passenger_count", "op": "range", "lo": 2.0, "hi": 2.01}], "most_selective_attr": "DOLocationID"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 68}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1711822886, "hi": 1711837285}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 170}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1715287297, "hi": 1715300913}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "tpep_pickup_datetime", "op": "range", "lo": 1733515250, "hi": 1733523639}, {"attr": "passenger_count", "op": "range", "lo": 3.0, "hi": 3.01}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 90}, {"attr": "fare_amount", "op": "range", "lo": 58.3, "hi": 58.309999999999995}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 43}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1723489372, "hi": 1723561839}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "fare_amount", "op": "range", "lo": 17.98, "hi": 18.4}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1747844536, "hi": 1747929183}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 141}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1715881136, "hi": 1715888884}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "fare_amount", "op": "range", "lo": 21.24, "hi": 21.39}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1764025422, "hi": 1764416510}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 145}, {"attr": "fare_amount", "op": "range", "lo": 52.7, "hi": 53.4}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 234}, {"attr": "fare_amount", "op": "range", "lo": 10.11, "hi": 10.15}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1729447587, "hi": 1729549209}, {"attr": "fare_amount", "op": "range", "lo": 101.0, "hi": 153.5}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 79}, {"attr": "fare_amount", "op": "range", "lo": 51.3, "hi": 51.309999999999995}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1725804125, "hi": 1725969520}, {"attr": "fare_amount", "op": "range", "lo": 35.2, "hi": 35.21}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 236}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1710092812, "hi": 1710106265}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 114}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1729782681, "hi": 1729793115}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 237}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1713608387, "hi": 1713615012}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 262}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1754328789, "hi": 1754343443}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 145}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1704539855, "hi": 1704714287}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "fare_amount", "op": "range", "lo": 43.6, "hi": 44.3}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1762691450, "hi": 1762716097}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1738937812, "hi": 1739191894}, {"attr": "fare_amount", "op": "range", "lo": 52.7, "hi": 53.4}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 263}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1731108666, "hi": 1731111513}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 24}, {"attr": "fare_amount", "op": "range", "lo": 44.3, "hi": 45.0}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 233}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1705086081, "hi": 1705097838}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 60}, {"attr": "fare_amount", "op": "range", "lo": 14.9, "hi": 15.6}], "most_selective_attr": "PULocationID"}
+r	{"filters": [{"attr": "fare_amount", "op": "range", "lo": 38.7, "hi": 42.9}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1732174773, "hi": 1732185074}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 132}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1731125785, "hi": 1731145598}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 113}, {"attr": "fare_amount", "op": "range", "lo": 49.2, "hi": 49.21}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 141}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1729258086, "hi": 1729260780}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 138}, {"attr": "fare_amount", "op": "range", "lo": 14.2, "hi": 14.209999999999999}], "most_selective_attr": "DOLocationID"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 195}, {"attr": "fare_amount", "op": "range", "lo": 14.9, "hi": 14.91}], "most_selective_attr": "DOLocationID"}
+r	{"filters": [{"attr": "tpep_pickup_datetime", "op": "range", "lo": 1722980066, "hi": 1723050596}, {"attr": "fare_amount", "op": "range", "lo": 27.5, "hi": 28.2}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 68}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1713533703, "hi": 1713542757}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "tpep_pickup_datetime", "op": "range", "lo": 1748362005, "hi": 1748512027}, {"attr": "passenger_count", "op": "range", "lo": 5.0, "hi": 6.0}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 232}, {"attr": "fare_amount", "op": "range", "lo": 42.2, "hi": 42.34}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 238}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1745482192, "hi": 1745501990}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 239}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1725810121, "hi": 1725817696}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "fare_amount", "op": "range", "lo": 27.5, "hi": 28.49}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1723024590, "hi": 1723038334}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 230}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1748130961, "hi": 1748143881}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "passenger_count", "op": "range", "lo": 1.0, "hi": 1.01}, {"attr": "fare_amount", "op": "range", "lo": 13.2, "hi": 13.5}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 163}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1748032889, "hi": 1748048224}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "tpep_pickup_datetime", "op": "range", "lo": 1762935724, "hi": 1762973617}, {"attr": "fare_amount", "op": "range", "lo": 28.2, "hi": 28.9}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1705169925, "hi": 1705175688}, {"attr": "fare_amount", "op": "range", "lo": 7.9, "hi": 7.91}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 142}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1759266618, "hi": 1759269033}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 230}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1728544830, "hi": 1728560276}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 262}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1733514397, "hi": 1733537011}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1745442206, "hi": 1745587425}, {"attr": "fare_amount", "op": "range", "lo": 19.12, "hi": 19.33}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "tpep_pickup_datetime", "op": "range", "lo": 1706631879, "hi": 1706793773}, {"attr": "fare_amount", "op": "range", "lo": 30.42, "hi": 31.0}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 170}, {"attr": "fare_amount", "op": "range", "lo": 0.69, "hi": 0.86}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 140}, {"attr": "fare_amount", "op": "range", "lo": 33.28, "hi": 33.5}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 239}, {"attr": "fare_amount", "op": "range", "lo": 28.15, "hi": 28.19}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 243}, {"attr": "fare_amount", "op": "range", "lo": 70.0, "hi": 83.2}], "most_selective_attr": "PULocationID"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 88}, {"attr": "fare_amount", "op": "range", "lo": 13.24, "hi": 13.37}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 244}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1709533418, "hi": 1709927757}], "most_selective_attr": "PULocationID"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 236}, {"attr": "fare_amount", "op": "range", "lo": 48.5, "hi": 48.51}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 138}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1751138153, "hi": 1751146473}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 239}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1747055654, "hi": 1747066002}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 95}, {"attr": "fare_amount", "op": "range", "lo": 5.8, "hi": 5.81}], "most_selective_attr": "DOLocationID"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 234}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1718150183, "hi": 1718185778}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "fare_amount", "op": "range", "lo": 28.9, "hi": 28.91}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1729991712, "hi": 1730131115}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "fare_amount", "op": "range", "lo": 11.4, "hi": 12.1}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1756203709, "hi": 1756211208}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 230}, {"attr": "fare_amount", "op": "range", "lo": 29.97, "hi": 30.0}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 164}, {"attr": "fare_amount", "op": "range", "lo": 61.8, "hi": 62.5}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 132}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1704538307, "hi": 1704541007}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 211}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1747759070, "hi": 1747766103}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 239}, {"attr": "fare_amount", "op": "range", "lo": 39.09, "hi": 39.28}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 214}, {"attr": "passenger_count", "op": "range", "lo": -1.0, "hi": 1.0}], "most_selective_attr": "DOLocationID"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 138}, {"attr": "fare_amount", "op": "range", "lo": 9.3, "hi": 9.31}], "most_selective_attr": "DOLocationID"}
+r	{"filters": [{"attr": "passenger_count", "op": "range", "lo": 3.0, "hi": 4.0}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1745445341, "hi": 1745485307}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "tpep_pickup_datetime", "op": "range", "lo": 1716061845, "hi": 1716067306}, {"attr": "fare_amount", "op": "range", "lo": 8.6, "hi": 8.61}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 234}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1758048432, "hi": 1758056158}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 152}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1737529167, "hi": 1737659326}], "most_selective_attr": "DOLocationID"}
+r	{"filters": [{"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1713573038, "hi": 1713626935}, {"attr": "fare_amount", "op": "range", "lo": 39.4, "hi": 40.23}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 75}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1740780726, "hi": 1740847218}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "tpep_pickup_datetime", "op": "range", "lo": 1726241961, "hi": 1726246909}, {"attr": "passenger_count", "op": "range", "lo": 4.0, "hi": 6.0}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 255}, {"attr": "fare_amount", "op": "range", "lo": 10.7, "hi": 10.709999999999999}], "most_selective_attr": "DOLocationID"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 264}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1751709749, "hi": 1751848447}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 170}, {"attr": "fare_amount", "op": "range", "lo": 24.9, "hi": 24.92}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 236}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1759677631, "hi": 1759684469}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1711021980, "hi": 1711029815}, {"attr": "passenger_count", "op": "range", "lo": -1.0, "hi": -0.99}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 238}, {"attr": "fare_amount", "op": "range", "lo": 19.32, "hi": 19.4}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 141}, {"attr": "fare_amount", "op": "range", "lo": 61.1, "hi": 61.8}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 237}, {"attr": "fare_amount", "op": "range", "lo": 25.17, "hi": 25.2}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 161}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1753568176, "hi": 1753575872}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1713251063, "hi": 1713371413}, {"attr": "fare_amount", "op": "range", "lo": 49.9, "hi": 52.0}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 79}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1732703847, "hi": 1732710181}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 114}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1740934707, "hi": 1740979415}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1764354646, "hi": 1764362058}, {"attr": "fare_amount", "op": "range", "lo": 17.7, "hi": 18.4}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1736805463, "hi": 1736854989}, {"attr": "fare_amount", "op": "range", "lo": 16.3, "hi": 16.310000000000002}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 237}, {"attr": "fare_amount", "op": "range", "lo": 15.38, "hi": 15.4}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 263}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1734718032, "hi": 1734719894}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "tpep_pickup_datetime", "op": "range", "lo": 1730408562, "hi": 1730457913}, {"attr": "fare_amount", "op": "range", "lo": 19.8, "hi": 19.810000000000002}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 100}, {"attr": "fare_amount", "op": "range", "lo": 14.01, "hi": 14.08}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 148}, {"attr": "fare_amount", "op": "range", "lo": 17.84, "hi": 17.91}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 164}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1752094501, "hi": 1752132235}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 249}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1717172999, "hi": 1717179139}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 48}, {"attr": "fare_amount", "op": "range", "lo": 14.38, "hi": 14.39}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 121}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1738260141, "hi": 1739667898}], "most_selective_attr": "DOLocationID"}
+r	{"filters": [{"attr": "passenger_count", "op": "range", "lo": 1.0, "hi": 1.01}, {"attr": "fare_amount", "op": "range", "lo": -1.0, "hi": -0.6}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 163}, {"attr": "fare_amount", "op": "range", "lo": 11.42, "hi": 11.49}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 237}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1710346597, "hi": 1710353551}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 50}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1756152711, "hi": 1756207682}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 142}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1757774496, "hi": 1757777499}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 130}, {"attr": "fare_amount", "op": "range", "lo": 10.0, "hi": 10.3}], "most_selective_attr": "PULocationID"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 211}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1764190840, "hi": 1764242748}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 230}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1729937016, "hi": 1729951007}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 142}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1740745263, "hi": 1740756356}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 231}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1704711956, "hi": 1704727021}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 113}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1709810720, "hi": 1709840775}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 230}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1745842105, "hi": 1745856193}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 230}, {"attr": "fare_amount", "op": "range", "lo": 15.41, "hi": 15.46}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 163}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1731735038, "hi": 1731759107}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 161}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1726932960, "hi": 1726936986}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 144}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1732108888, "hi": 1732142826}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 236}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1749181392, "hi": 1749194570}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 170}, {"attr": "fare_amount", "op": "range", "lo": 29.47, "hi": 29.5}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1712183077, "hi": 1712215995}, {"attr": "passenger_count", "op": "range", "lo": 0.0, "hi": 1.0}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 141}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1726147302, "hi": 1726163309}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 161}, {"attr": "fare_amount", "op": "range", "lo": 20.18, "hi": 20.19}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "fare_amount", "op": "range", "lo": 17.0, "hi": 17.7}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1765879144, "hi": 1765889265}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 230}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1705787099, "hi": 1705792232}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 163}, {"attr": "fare_amount", "op": "range", "lo": 10.88, "hi": 10.92}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 79}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1708800454, "hi": 1708806383}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 145}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1752517548, "hi": 1752671357}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 68}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1741366605, "hi": 1741377636}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 263}, {"attr": "fare_amount", "op": "range", "lo": -1.5, "hi": -1.49}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 237}, {"attr": "fare_amount", "op": "range", "lo": 51.3, "hi": 51.309999999999995}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 164}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1733694230, "hi": 1733697705}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 100}, {"attr": "fare_amount", "op": "range", "lo": 33.5, "hi": 33.58}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "tpep_pickup_datetime", "op": "range", "lo": 1749560518, "hi": 1749587562}, {"attr": "fare_amount", "op": "range", "lo": -349.0, "hi": -35.9}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 221}, {"attr": "passenger_count", "op": "range", "lo": -1.0, "hi": 1.0}], "most_selective_attr": "DOLocationID"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 164}, {"attr": "fare_amount", "op": "range", "lo": 32.9, "hi": 32.98}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 238}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1761439348, "hi": 1761464934}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "fare_amount", "op": "range", "lo": 18.4, "hi": 18.41}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1705446984, "hi": 1705501803}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 236}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1716125622, "hi": 1716131165}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 132}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1752838300, "hi": 1752846054}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "tpep_pickup_datetime", "op": "range", "lo": 1751197485, "hi": 1751226203}, {"attr": "fare_amount", "op": "range", "lo": 38.0, "hi": 40.1}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 48}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1754421172, "hi": 1754426720}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 162}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1754231920, "hi": 1754246107}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 132}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1748712193, "hi": 1748715877}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 229}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1718312213, "hi": 1718314908}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 142}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1719878252, "hi": 1719922529}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 265}, {"attr": "fare_amount", "op": "range", "lo": 12.1, "hi": 12.11}], "most_selective_attr": "DOLocationID"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 68}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1741764387, "hi": 1741774255}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 75}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1712460973, "hi": 1712509520}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 75}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1734801945, "hi": 1734880403}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 113}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1748518559, "hi": 1748542393}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 70}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1745176620, "hi": 1745229845}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 87}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1706448820, "hi": 1706511551}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 148}, {"attr": "fare_amount", "op": "range", "lo": 30.39, "hi": 30.51}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 137}, {"attr": "fare_amount", "op": "range", "lo": 2.9, "hi": 3.0}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 161}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1734703303, "hi": 1734709705}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "fare_amount", "op": "range", "lo": 24.07, "hi": 25.4}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1717623887, "hi": 1717656310}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1747178669, "hi": 1747235699}, {"attr": "fare_amount", "op": "range", "lo": 19.62, "hi": 19.8}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 230}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1726431929, "hi": 1726436005}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 163}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1754255555, "hi": 1754298266}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 43}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1734524932, "hi": 1734550716}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 166}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1763578815, "hi": 1763591671}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 177}, {"attr": "fare_amount", "op": "range", "lo": 11.4, "hi": 12.1}], "most_selective_attr": "DOLocationID"}
+r	{"filters": [{"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1707508818, "hi": 1707575675}, {"attr": "fare_amount", "op": "range", "lo": 26.8, "hi": 27.5}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 138}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1707990521, "hi": 1707998487}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 62}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1728654650, "hi": 1729307561}], "most_selective_attr": "DOLocationID"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 262}, {"attr": "fare_amount", "op": "range", "lo": 2.35, "hi": 2.68}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 146}, {"attr": "fare_amount", "op": "range", "lo": 11.4, "hi": 11.41}], "most_selective_attr": "DOLocationID"}
+r	{"filters": [{"attr": "tpep_pickup_datetime", "op": "range", "lo": 1735216039, "hi": 1735860613}, {"attr": "fare_amount", "op": "range", "lo": 21.75, "hi": 21.9}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "tpep_pickup_datetime", "op": "range", "lo": 1715480221, "hi": 1715512975}, {"attr": "passenger_count", "op": "range", "lo": 3.0, "hi": 4.0}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "fare_amount", "op": "range", "lo": -29.6, "hi": -25.4}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1723908561, "hi": 1724598272}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 193}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1714437496, "hi": 1715118853}], "most_selective_attr": "PULocationID"}
+r	{"filters": [{"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1738954855, "hi": 1738959459}, {"attr": "fare_amount", "op": "range", "lo": 11.4, "hi": 11.41}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 211}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1762239807, "hi": 1762279444}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "fare_amount", "op": "range", "lo": 53.6, "hi": 54.8}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1760534890, "hi": 1760600417}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "tpep_pickup_datetime", "op": "range", "lo": 1764437280, "hi": 1764534189}, {"attr": "passenger_count", "op": "range", "lo": 5.0, "hi": 5.01}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "tpep_pickup_datetime", "op": "range", "lo": 1745538725, "hi": 1745568578}, {"attr": "fare_amount", "op": "range", "lo": 13.5, "hi": 14.2}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1711930869, "hi": 1712680021}, {"attr": "fare_amount", "op": "range", "lo": 25.58, "hi": 25.67}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "fare_amount", "op": "range", "lo": 19.8, "hi": 19.95}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1761338888, "hi": 1761386212}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 7}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1766277766, "hi": 1766409678}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1761401352, "hi": 1761428458}, {"attr": "passenger_count", "op": "range", "lo": 5.0, "hi": 6.0}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 138}, {"attr": "fare_amount", "op": "range", "lo": 14.9, "hi": 14.91}], "most_selective_attr": "DOLocationID"}
+r	{"filters": [{"attr": "fare_amount", "op": "range", "lo": 18.2, "hi": 19.1}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1762773628, "hi": 1762789100}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 158}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1708785715, "hi": 1708812451}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 107}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1750095744, "hi": 1750110049}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 138}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1708538517, "hi": 1708552770}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "tpep_pickup_datetime", "op": "range", "lo": 1710498609, "hi": 1711442761}, {"attr": "fare_amount", "op": "range", "lo": 17.73, "hi": 17.8}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 142}, {"attr": "fare_amount", "op": "range", "lo": 90.0, "hi": 91.9}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 262}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1764176552, "hi": 1764205410}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "fare_amount", "op": "range", "lo": 37.3, "hi": 37.5}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1727606255, "hi": 1727727126}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 231}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1749061611, "hi": 1749078017}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 87}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1724777335, "hi": 1724795059}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 162}, {"attr": "fare_amount", "op": "range", "lo": 18.01, "hi": 18.04}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 164}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1735478996, "hi": 1735483750}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 233}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1727468766, "hi": 1727487385}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "passenger_count", "op": "range", "lo": 1.0, "hi": 1.01}, {"attr": "fare_amount", "op": "range", "lo": 10.5, "hi": 10.67}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 151}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1734262290, "hi": 1734334510}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 239}, {"attr": "fare_amount", "op": "range", "lo": 27.41, "hi": 27.45}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 238}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1716396660, "hi": 1716403954}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 162}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1742418304, "hi": 1742424712}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 229}, {"attr": "fare_amount", "op": "range", "lo": 34.73, "hi": 34.93}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 141}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1728403712, "hi": 1728418568}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 170}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1760119217, "hi": 1760126104}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 141}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1708011101, "hi": 1708015334}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 138}, {"attr": "fare_amount", "op": "range", "lo": 13.5, "hi": 13.51}], "most_selective_attr": "DOLocationID"}
+r	{"filters": [{"attr": "passenger_count", "op": "range", "lo": 3.0, "hi": 3.01}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1731602172, "hi": 1731612830}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 211}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1730403787, "hi": 1730474479}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 168}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1706183482, "hi": 1707006450}], "most_selective_attr": "DOLocationID"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 48}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1743961294, "hi": 1743968034}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 137}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1762715151, "hi": 1762772752}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "fare_amount", "op": "range", "lo": 8.78, "hi": 8.83}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1741474828, "hi": 1742836828}], "most_selective_attr": "fare_amount"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 237}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1735292271, "hi": 1735303865}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 34}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1739481726, "hi": 1741459412}], "most_selective_attr": "PULocationID"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 162}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1766254876, "hi": 1766263260}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "tpep_pickup_datetime", "op": "range", "lo": 1709637329, "hi": 1709657456}, {"attr": "fare_amount", "op": "range", "lo": 17.0, "hi": 17.01}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 229}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1756034279, "hi": 1756058561}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 256}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1734947530, "hi": 1735082539}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 170}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1758789912, "hi": 1758806312}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "DOLocationID", "op": "eq", "value": 33}, {"attr": "tpep_pickup_datetime", "op": "range", "lo": 1714321704, "hi": 1714431994}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 43}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1707668056, "hi": 1707728955}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "tpep_pickup_datetime", "op": "range", "lo": 1724890264, "hi": 1724932240}, {"attr": "fare_amount", "op": "range", "lo": 58.3, "hi": 66.7}], "most_selective_attr": "tpep_pickup_datetime"}
+r	{"filters": [{"attr": "PULocationID", "op": "eq", "value": 140}, {"attr": "tpep_dropoff_datetime", "op": "range", "lo": 1766696111, "hi": 1766741174}], "most_selective_attr": "tpep_dropoff_datetime"}
+r	{"filters": [{"attr": "tpep_pickup_datetime", "op": "range", "lo": 1708881857, "hi": 1708960632}, {"attr": "fare_amount", "op": "range", "lo": 33.8, "hi": 34.5}], "most_selective_attr": "tpep_pickup_datetime"}

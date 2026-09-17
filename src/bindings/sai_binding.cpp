@@ -14,7 +14,7 @@ namespace experiment {
 
 void SAIBinding::Open(int argc, char* argv[], const std::string& db_path,
                       const BitLSMOptions& opts) {
-  cxxopts::Options cxx("sai", "");
+  cxxopts::Options cxx("embedded-postings", "");
   cxx.allow_unrecognised_options();
   cxx.add_options()("intersection_limit",
                     "Max predicates joined by index intersection (<=0: all)",

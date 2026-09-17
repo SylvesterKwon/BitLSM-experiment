@@ -30,7 +30,7 @@ METHOD_LABELS = {
     "si-lu": "Lazy",
     "si-ck": "Composite",
     "si-eager": "SI-Eager",
-    "embedded_bloom_bits10": "Bloom + Zone Map",
+    "embedded_bloom_bits10": "Per-Block Filters",
     "bitlsm_rho0.03": r"BitLSM ($\rho$=0.03)",
     "bitlsm_rho0.01": r"BitLSM ($\rho$=0.01)",
     "bitlsm_rho0.003": r"BitLSM ($\rho$=0.003)",

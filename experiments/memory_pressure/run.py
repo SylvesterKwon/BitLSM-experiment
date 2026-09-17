@@ -9,13 +9,13 @@ EXP_BLOCK_CACHE_MB (a single process-wide LRU cache shared by all column
 families; see src/bindings/rocksdb_common_option.h). A budget of 0 means "no
 override" — RocksDB defaults, i.e. the standard config.
 
-This measures how each index (BitLSM SABI, SAI postings, embedded BF+ZM, si-*
+This measures how each index (BitLSM SABI, Embedded Postings, embedded BF+ZM, si-*
 native CFs, no-index) degrades as the total resident memory shrinks. It is a
 READ experiment; the DB must already exist (built by nyc_taxi_seq_write).
 
 Interpretation:
     Time (time_elapsed_ms in the read CSV) is the headline metric — it is
-    the only column that is directly comparable across every method. SAI's
+    the only column that is directly comparable across every method. Embedded Postings'
     disk_read_mb is inflated relative to its useful payload: on-demand
     interior-leaf reads are pinned as one coarse span per (attr, SST, query
     range), and that span interleaves the leaves' values|perm bytes between
@@ -23,9 +23,9 @@ Interpretation:
     coarse read carries dead bytes that were never requested. Byte columns
     (disk_read_mb, rchar_mb) are therefore not cross-method comparable; only
     time is. Per-table metadata directories (the small per-table index
-    roots BitLSM/SAI/embedded each keep resident to locate their on-demand
+    roots BitLSM/Embedded Postings/embedded each keep resident to locate their on-demand
     extents) live in the process heap outside EXP_BLOCK_CACHE_MB for ALL
-    three UDI methods alike — this is symmetric across bitlsm/sai/embedded,
+    three UDI methods alike — this is symmetric across bitlsm/embedded-postings/embedded,
     not a handicap specific to one of them. ALWAYS verify build/CMakeCache.txt
     says CMAKE_BUILD_TYPE=Release before measuring — a Debug build left in
     place silently inflates every number by roughly 3x with no other symptom.

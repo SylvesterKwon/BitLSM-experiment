@@ -21,13 +21,26 @@ import numpy as np
 
 plt.rcParams.update({"font.size": 6, "hatch.linewidth": 0.3})
 
+# Selectivity bands the figure draws, keyed by the upper edge each workload
+# filename carries -- so sel0.0001 is the band [1e-5, 1e-4). A result directory
+# is a superset: the sweep that produced this figure also measured [1e-3, 1e-2),
+# and that band stays in the directory and in the summary CSV. It is off the
+# figure because the three finer bands are the ones that straddle BitLSM's
+# crossover, where a predicate count buys or costs something; by [1e-3, 1e-2)
+# every method is doing bulk work and the panels stop separating. Restricting
+# here rather than at the call site keeps the row count -- and so the height
+# below -- a property of the script.
+FIGURE_BANDS = (1e-5, 1e-4, 1e-3)
+
 # Figure height (in), chosen so one panel's plot box comes out 0.702 as tall as
-# it is wide -- the shape every figure in this paper shares. With the grid
-# transposed to 3 rows x 4 columns the panels are wider and fewer, so the 4x3
-# figure's height no longer lands on that ratio; this value was measured back
-# from ax.get_position() rather than eyeballed. Re-measure if the row or column
-# count changes.
-FIG_HEIGHT_IN = 3.69
+# it is wide -- the shape every figure in this paper shares. tight_layout gives
+# the boxes whatever the furniture leaves, so this is not a function of the row
+# and column counts alone: moving FIGURE_BANDS one decade finer at the same 3x4
+# kept the box width and took the height from 0.918 to 0.891 (aspect 0.681),
+# because the rows' y ticks and sigma labels are not the same size. Re-measure
+# by reading ax.get_position() whenever FIGURE_BANDS or the grid shape moves --
+# the value is measured, never eyeballed.
+FIG_HEIGHT_IN = 3.77
 
 METHOD_ORDER = [
     "no-index",
@@ -36,8 +49,8 @@ METHOD_ORDER = [
     "si-ck_strategy_pf",
     "si-ck_strategy_im",
     "embedded_bloom_bits10",
-    "sai_il2",
-    "sai_il0",
+    "embedded-postings_il2",
+    "embedded-postings_il0",
     "bitlsm_rho0.03",
     "bitlsm_rho0.01",
     "bitlsm_rho0.003",
@@ -52,8 +65,8 @@ METHOD_LABELS = {
     "embedded_bloom_bits10": "Per-Block Filters",
     # Symmetric on the one thing that differs: how many predicates the index
     # intersects. il=2 is what Cassandra ships, il=0 lifts the cap.
-    "sai_il0": "SAI (intersect all)",
-    "sai_il2": "SAI (intersect top-2)",
+    "embedded-postings_il0": "Embedded Postings (Intersection)",
+    "embedded-postings_il2": "Embedded Postings (Top-2 Intersection)",
     # rho is pinned in this figure's exp_set, so it is not a variable the
     # reader is being asked to compare; it belongs to plot_rho_sensitivity.py,
     # which sweeps it. Every arm here reads the same for that reason.
@@ -69,8 +82,8 @@ METHOD_COLORS = {
     "si-lu_strategy_im": "#4CC850",
     "si-lu_strategy_pf": "#4CC850",
     "embedded_bloom_bits10": "#1FA8A0",
-    "sai_il0": "#2F6FD0",
-    "sai_il2": "#2F6FD0",
+    "embedded-postings_il0": "#2F6FD0",
+    "embedded-postings_il2": "#2F6FD0",
     # #E04040 is BitLSM-the-method across the paper (myrocks plot.py,
     # plot_perf.py, plot_query_strip.py). #9B1B1B is the rho family's fine end
     # and the "Single + BitLSM" variant; it only reads as BitLSM in a figure
@@ -84,10 +97,10 @@ METHOD_COLORS = {
 METHOD_HATCHES = {
     "si-ck_strategy_im": "xxxxxx",
     "si-lu_strategy_im": "xxxxxx",
-    # sai_il0 and sai_il2 share the blue hue. The hatch goes on il=0, the arm
+    # embedded-postings_il0 and embedded-postings_il2 share the blue hue. The hatch goes on il=0, the arm
     # we added to be generous to the baseline; il=2 is what Cassandra ships,
     # so it keeps the plain blue and is drawn first.
-    "sai_il0": "xxxxxx",
+    "embedded-postings_il0": "xxxxxx",
 }
 
 # Pattern: read_seq_sel{sel}_k{k}_r{r}_{method}_read_log.csv
@@ -97,11 +110,12 @@ FILE_PATTERN = re.compile(
 
 
 def load_result_dir(result_dir):
-    """Load all read CSVs from result_dir.
+    """Load the read CSVs from result_dir that FIGURE_BANDS covers.
 
     Returns {(sel, k): {method: [time_ms, ...]}}.
     """
     data = {}
+    skipped = set()
     for fname in os.listdir(result_dir):
         m = FILE_PATTERN.match(fname)
         if not m:
@@ -109,6 +123,10 @@ def load_result_dir(result_dir):
         sel = float(m.group(1))
         k = int(m.group(2))
         method = m.group(4)
+
+        if sel not in FIGURE_BANDS:
+            skipped.add(sel)
+            continue
 
         times = []
         path = os.path.join(result_dir, fname)
@@ -120,6 +138,11 @@ def load_result_dir(result_dir):
         key = (sel, k)
         data.setdefault(key, {})
         data[key][method] = times
+
+    for sel in sorted(skipped):
+        exp = int(round(math.log10(sel)))
+        print(f"Skipped band not on the figure: "
+              f"sigma in [1e{exp - 1}, 1e{exp})")
     return data
 
 
@@ -193,7 +216,7 @@ def plot_grid(data, output_dir):
                     patch.set_facecolor(color)
                     patch.set_hatch(hatch)
 
-            # Log scale: a single cell spans ~0.4s (SAI at high selectivity)
+            # Log scale: a single cell spans ~0.4s (Embedded Postings at high selectivity)
             # to ~250s (post-filtering at low selectivity). On a linear axis
             # the fast methods collapse onto the baseline and are unreadable.
             # (ticklabel_format is incompatible with a log axis.)
