@@ -21,13 +21,26 @@ import numpy as np
 
 plt.rcParams.update({"font.size": 6, "hatch.linewidth": 0.3})
 
+# Selectivity bands the figure draws, keyed by the upper edge each workload
+# filename carries -- so sel0.0001 is the band [1e-5, 1e-4). A result directory
+# is a superset: the sweep that produced this figure also measured [1e-3, 1e-2),
+# and that band stays in the directory and in the summary CSV. It is off the
+# figure because the three finer bands are the ones that straddle BitLSM's
+# crossover, where a predicate count buys or costs something; by [1e-3, 1e-2)
+# every method is doing bulk work and the panels stop separating. Restricting
+# here rather than at the call site keeps the row count -- and so the height
+# below -- a property of the script.
+FIGURE_BANDS = (1e-5, 1e-4, 1e-3)
+
 # Figure height (in), chosen so one panel's plot box comes out 0.702 as tall as
-# it is wide -- the shape every figure in this paper shares. With the grid
-# transposed to 3 rows x 4 columns the panels are wider and fewer, so the 4x3
-# figure's height no longer lands on that ratio; this value was measured back
-# from ax.get_position() rather than eyeballed. Re-measure if the row or column
-# count changes.
-FIG_HEIGHT_IN = 3.69
+# it is wide -- the shape every figure in this paper shares. tight_layout gives
+# the boxes whatever the furniture leaves, so this is not a function of the row
+# and column counts alone: moving FIGURE_BANDS one decade finer at the same 3x4
+# kept the box width and took the height from 0.918 to 0.891 (aspect 0.681),
+# because the rows' y ticks and sigma labels are not the same size. Re-measure
+# by reading ax.get_position() whenever FIGURE_BANDS or the grid shape moves --
+# the value is measured, never eyeballed.
+FIG_HEIGHT_IN = 3.77
 
 METHOD_ORDER = [
     "no-index",
@@ -97,11 +110,12 @@ FILE_PATTERN = re.compile(
 
 
 def load_result_dir(result_dir):
-    """Load all read CSVs from result_dir.
+    """Load the read CSVs from result_dir that FIGURE_BANDS covers.
 
     Returns {(sel, k): {method: [time_ms, ...]}}.
     """
     data = {}
+    skipped = set()
     for fname in os.listdir(result_dir):
         m = FILE_PATTERN.match(fname)
         if not m:
@@ -109,6 +123,10 @@ def load_result_dir(result_dir):
         sel = float(m.group(1))
         k = int(m.group(2))
         method = m.group(4)
+
+        if sel not in FIGURE_BANDS:
+            skipped.add(sel)
+            continue
 
         times = []
         path = os.path.join(result_dir, fname)
@@ -120,6 +138,11 @@ def load_result_dir(result_dir):
         key = (sel, k)
         data.setdefault(key, {})
         data[key][method] = times
+
+    for sel in sorted(skipped):
+        exp = int(round(math.log10(sel)))
+        print(f"Skipped band not on the figure: "
+              f"sigma in [1e{exp - 1}, 1e{exp})")
     return data
 
 
