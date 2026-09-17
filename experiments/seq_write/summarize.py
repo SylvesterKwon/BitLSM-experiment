@@ -22,7 +22,7 @@ import re
 import sys
 
 COLUMNS = ["method", "a", "time_elapsed_ms", "records_written",
-           "db_size_bytes"]
+           "db_size_bytes", "drain_ms"]
 
 SCHEMA_ATTRS = re.compile(r"_a(\d+)")
 
@@ -67,6 +67,7 @@ def collect(master_csv):
                 "time_elapsed_ms": r.get("time_elapsed_ms", ""),
                 "records_written": r.get("records_written", ""),
                 "db_size_bytes": r.get("db_size_bytes", "") or "",
+                "drain_ms": r.get("drain_ms", "") or "",
             }
             if out["db_size_bytes"]:
                 rows.append(out)
