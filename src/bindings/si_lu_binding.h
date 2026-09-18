@@ -2,6 +2,7 @@
 #include "binding.h"
 #include "si_benchmark_common.h"
 #include <memory>
+#include <optional>
 #include <rocksdb/slice.h>
 #include <rocksdb/statistics.h>
 #include <string>
@@ -12,6 +13,8 @@ namespace experiment {
 class SILUBinding : public Binding {
   benchmark::SIDBHandles db_;
   BitLSMOptions options_;
+  // Built once in Open(); see no_index_binding.h.
+  std::optional<bit_lsm::ValueLayout> layout_;
   benchmark::SIStrategy strategy_ = benchmark::SIStrategy::kIndexMerge;
   rocksdb::WriteOptions wo_;
   std::shared_ptr<rocksdb::Statistics> stats_;

@@ -270,6 +270,7 @@ void CheckGlobalCorrectness(const Schema& s, const std::vector<Row>& data,
   std::vector<const Row*> all;
   for (const Row& r : data) all.push_back(&r);
   auto policy = std::make_shared<BinPolicy>(PolicyOf(s, all));
+  const bit_lsm::ValueLayout layout(s.opts);
 
   std::mt19937_64 rng(7);
   uint64_t global_candidates = 0, local_candidates = 0, matches = 0;
@@ -305,7 +306,7 @@ void CheckGlobalCorrectness(const Schema& s, const std::vector<Row>& data,
       const auto l = experiment::ComputeSabiCandidates(lreader, sq);
       for (uint32_t row = 0; row < ssts[f].size(); ++row) {
         const Row& r = *ssts[f][row];
-        if (r.tombstone || !query.CheckCondition(r.value, s.opts)) continue;
+        if (r.tombstone || !query.CheckCondition(r.value, layout)) continue;
         ++matches;
         Check(!g.skipped && g.rows.contains(row),
               label + ": global bins missed a matching row");

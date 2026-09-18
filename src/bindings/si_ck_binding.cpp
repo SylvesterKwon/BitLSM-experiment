@@ -14,6 +14,7 @@ namespace experiment {
 void SICKBinding::Open(int argc, char* argv[], const string& db_path,
                         const BitLSMOptions& opts) {
   options_ = opts;
+  layout_.emplace(options_);
 
   cxxopts::Options cxx("si-ck", "");
   cxx.allow_unrecognised_options();
@@ -47,7 +48,7 @@ void SICKBinding::Put(const string& pk, const vector<Attr>& attrs,
                        const string& payload) {
   thread_local string serialized_value;
   thread_local string si_key_buf;
-  EncodeValue(options_, attrs, payload, serialized_value);
+  EncodeValue(*layout_, attrs, payload, serialized_value);
   Transaction* txn = db_.txn_db->BeginTransaction(wo_);
 
   for (uint32_t attr_idx = 0; attr_idx < options_.attr_num; ++attr_idx) {
