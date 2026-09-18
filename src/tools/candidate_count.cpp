@@ -131,6 +131,7 @@ int main(int argc, char* argv[]) {
   }
   bit_lsm::BitLSMOptions bitlsm_opts = honk::BuildTaxiBitLSMOptions(indexed);
   bitlsm_opts.rho = 0.001;  // builder-only; nothing is written here
+  const bit_lsm::ValueLayout layout(bitlsm_opts);
 
   std::vector<Query> queries;
   {
@@ -241,7 +242,7 @@ int main(int argc, char* argv[]) {
         q.candidate_blocks += CountBlocks(*reader, c.rows);
         if (!verify) continue;
         for (uint32_t row = 0; row < values.size(); ++row) {
-          if (!live[row] || !q.query.CheckCondition(values[row], bitlsm_opts))
+          if (!live[row] || !q.query.CheckCondition(values[row], layout))
             continue;
           ++q.matched;
           if (c.skipped || !c.rows.contains(row)) ++q.false_negatives;

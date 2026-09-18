@@ -1,6 +1,7 @@
 #pragma once
 #include "binding.h"
 #include <memory>
+#include <optional>
 #include <rocksdb/db.h>
 #include <rocksdb/options.h>
 #include <rocksdb/statistics.h>
@@ -13,6 +14,10 @@ class NoIndexBinding : public Binding {
   rocksdb::DB* db_ = nullptr;
   std::vector<rocksdb::ColumnFamilyHandle*> cf_handles_;
   BitLSMOptions options_;
+  // Built once in Open(). The row-level value API takes a cached layout
+  // because building one costs four vector allocations -- per record in Put(),
+  // per row in a scan's predicate check.
+  std::optional<bit_lsm::ValueLayout> layout_;
   rocksdb::WriteOptions wo_;
   std::shared_ptr<rocksdb::Statistics> stats_;
 

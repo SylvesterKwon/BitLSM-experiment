@@ -14,6 +14,7 @@ namespace experiment {
 void NoIndexBinding::Open(int argc, char* argv[], const std::string& db_path,
                            const BitLSMOptions& opts) {
   options_ = opts;
+  layout_.emplace(options_);
 
   cxxopts::Options cxx("no-index", "");
   cxx.allow_unrecognised_options();
@@ -59,7 +60,7 @@ void NoIndexBinding::Put(const std::string& pk,
                           const std::vector<Attr>& attrs,
                           const std::string& payload) {
   thread_local std::string serialized_value;
-  EncodeValue(options_, attrs, payload, serialized_value);
+  EncodeValue(*layout_, attrs, payload, serialized_value);
   db_->Put(wo_, pk, serialized_value);
 }
 
@@ -71,7 +72,7 @@ ScanResult NoIndexBinding::Scan(BitLSMQuery& query) {
   auto start = std::chrono::high_resolution_clock::now();
   for (it->SeekToFirst(); it->Valid(); it->Next()) {
     total++;
-    if (query.CheckCondition(it->value(), options_))
+    if (query.CheckCondition(it->value(), *layout_))
       matched++;
   }
   auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(

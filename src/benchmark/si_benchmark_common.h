@@ -251,6 +251,9 @@ inline ReadResult ScanByIndexMerge(
     SIQueryPlan& plan, const bit_lsm::BitLSMOptions& options, uint64_t n,
     std::function<std::vector<std::string>(const SILookup&)> GetPKList) {
   auto start = std::chrono::high_resolution_clock::now();
+  // One layout for the whole scan: CheckCondition takes a cached layout, and
+  // building one per candidate row costs four vector allocations.
+  const bit_lsm::ValueLayout layout(options);
 
   bool is_first = true;
   std::vector<std::string> merged;
@@ -291,7 +294,7 @@ inline ReadResult ScanByIndexMerge(
         if (statuses[i].ok()) {
           if (plan.post_filter_query.clause_groups.empty() ||
               plan.post_filter_query.CheckCondition(
-                  rocksdb::Slice(values[i].data(), values[i].size()), options))
+                  rocksdb::Slice(values[i].data(), values[i].size()), layout))
             matched++;
         }
       }
@@ -315,6 +318,8 @@ inline ReadResult ScanByPostFiltering(
     const bit_lsm::BitLSMOptions& options, uint64_t n,
     std::function<std::vector<std::string>(const SILookup&)> GetPKList) {
   auto start = std::chrono::high_resolution_clock::now();
+  // One layout for the whole scan; see ScanByIndexMerge.
+  const bit_lsm::ValueLayout layout(options);
 
   // Use first SI lookup only (caller may reorder clause_groups via
   // most_selective_attr hint so that the most selective attr lands here).
@@ -358,7 +363,7 @@ inline ReadResult ScanByPostFiltering(
         if (statuses[i].ok()) {
           if (filter_query.clause_groups.empty() ||
               filter_query.CheckCondition(
-                  rocksdb::Slice(values[i].data(), values[i].size()), options))
+                  rocksdb::Slice(values[i].data(), values[i].size()), layout))
             matched++;
         }
       }
@@ -383,10 +388,12 @@ ScanFullTable(rocksdb::TransactionDB* txn_db,
   rocksdb::ReadOptions ro;
   auto* it = txn_db->NewIterator(ro, cf_handles[0]);
   uint64_t matched = 0, total = 0;
+  // One layout for the whole scan; see ScanByIndexMerge.
+  const bit_lsm::ValueLayout layout(options);
   auto start = std::chrono::high_resolution_clock::now();
   for (it->SeekToFirst(); it->Valid(); it->Next()) {
     total++;
-    if (query.CheckCondition(it->value(), options))
+    if (query.CheckCondition(it->value(), layout))
       matched++;
   }
   auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
