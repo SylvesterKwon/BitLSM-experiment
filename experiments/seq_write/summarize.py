@@ -10,6 +10,14 @@ The attribute count is emitted as 'a', matching the schema names the sweep
 runs over (default_a16); master CSVs old enough to carry a schema stem instead
 of attr_count are read through the same column.
 
+time_elapsed_ms is the Put loop alone and drain_ms the post-ingest wait, so the
+ingest costs their sum; total_ms carries it, because a table built by hand from
+the two is a subtraction away from crediting a method for work it did in the
+background. The parts stay, since which of the two an index pays in is the
+difference between si-* and BitLSM. A run with no drain_ms (a killed run's last
+checkpoint, or a CSV from before the column) gets an empty total_ms rather than
+a total that quietly means the Put loop only.
+
 Usage:
     python3 experiments/seq_write/summarize.py <result_dir_or_master_csv>
     python3 experiments/seq_write/summarize.py <result_dir> -o out.csv
@@ -22,7 +30,7 @@ import re
 import sys
 
 COLUMNS = ["method", "a", "time_elapsed_ms", "records_written",
-           "db_size_bytes", "drain_ms"]
+           "db_size_bytes", "drain_ms", "total_ms"]
 
 SCHEMA_ATTRS = re.compile(r"_a(\d+)")
 
@@ -55,6 +63,18 @@ def attr_value(row):
     return m.group(1) if m else ""
 
 
+def total_ms(row):
+    """Put loop plus drain, the run's whole ingest cost.
+
+    Empty when either part is missing or unparseable, so a partial row never
+    reads as a complete total.
+    """
+    try:
+        return str(int(row["time_elapsed_ms"]) + int(row["drain_ms"]))
+    except (KeyError, TypeError, ValueError):
+        return ""
+
+
 def collect(master_csv):
     """Keep each run's final row, in the order the sweep produced them."""
     rows = []
@@ -69,6 +89,7 @@ def collect(master_csv):
                 "db_size_bytes": r.get("db_size_bytes", "") or "",
                 "drain_ms": r.get("drain_ms", "") or "",
             }
+            out["total_ms"] = total_ms(out)
             if out["db_size_bytes"]:
                 rows.append(out)
                 pending = None
