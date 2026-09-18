@@ -27,6 +27,7 @@ void SIEagerBinding::InsertSIValue(vector<Slice>* si_value,
 void SIEagerBinding::Open(int argc, char* argv[], const string& db_path,
                            const BitLSMOptions& opts) {
   options_ = opts;
+  layout_.emplace(options_);
 
   cxxopts::Options cxx("si-eager", "");
   cxx.allow_unrecognised_options();
@@ -52,7 +53,7 @@ void SIEagerBinding::Put(const string& pk, const vector<Attr>& attrs,
   thread_local vector<Slice> si_value_vec;
   thread_local string encoded_si_value;
   thread_local string existing_si_str;
-  EncodeValue(options_, attrs, payload, serialized_value);
+  EncodeValue(*layout_, attrs, payload, serialized_value);
   Transaction* txn = db_.txn_db->BeginTransaction(wo_);
 
   ReadOptions ro;

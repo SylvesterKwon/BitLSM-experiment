@@ -12,6 +12,7 @@ namespace experiment {
 void SILUBinding::Open(int argc, char* argv[], const string& db_path,
                         const BitLSMOptions& opts) {
   options_ = opts;
+  layout_.emplace(options_);
 
   cxxopts::Options cxx("si-lu", "");
   cxx.allow_unrecognised_options();
@@ -38,7 +39,7 @@ void SILUBinding::Put(const string& pk, const vector<Attr>& attrs,
   thread_local string serialized_value;
   thread_local vector<Slice> single_pk_vec(1);
   thread_local string encoded_si_value;
-  EncodeValue(options_, attrs, payload, serialized_value);
+  EncodeValue(*layout_, attrs, payload, serialized_value);
   Transaction* txn = db_.txn_db->BeginTransaction(wo_);
 
   for (uint32_t attr_idx = 0; attr_idx < options_.attr_num; ++attr_idx) {
