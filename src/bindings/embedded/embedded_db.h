@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "bit_lsm_option.h"
+#include "bit_lsm_utils.h"
 #include "bit_lsm_query.h"
 #include "embedded_iterator.h"
 
@@ -26,6 +27,9 @@ class EmbeddedDB {
   std::vector<rocksdb::ColumnFamilyHandle*> cf_handles_;
   rocksdb::Options rocksdb_options_;
   bit_lsm::BitLSMOptions bit_lsm_options_;
+  // Derived from the schema once: the row codec takes a cached
+  // layout, and building one per row costs four vector allocations.
+  bit_lsm::ValueLayout layout_{bit_lsm_options_};
   uint32_t bloom_bits_;
 
  public:

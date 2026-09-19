@@ -49,7 +49,7 @@ void EmbeddedMemTableIterator::FindNextValidEntry() {
     if (EmbeddedCodec::Evaluate(query_,
                                 std::string_view(iter_->value().data(),
                                                  iter_->value().size()),
-                                options_)) {
+                                layout_)) {
       valid_ = true;
       return;
     }

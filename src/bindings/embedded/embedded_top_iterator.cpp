@@ -266,7 +266,7 @@ void EmbeddedIterator::FetchNextBatch(uint32_t batch_size) {
       if (EmbeddedCodec::Evaluate(
               query_,
               std::string_view(pin_values[j].data(), pin_values[j].size()),
-              options_)) {
+              layout_)) {
         // 8-3. Move key/value to validated batch if valid entry
         batch_keys_.push_back(std::move(candidate_keys_[i]));
         // Optimization: Only call ToString() for valid values

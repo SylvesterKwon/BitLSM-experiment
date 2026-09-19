@@ -32,12 +32,13 @@ int main() {
   std::vector<double> conts;
 
   SAIIndexBuilder builder(opts);
+  const bit_lsm::ValueLayout layout(opts);
   std::string vbuf;
   for (uint32_t i = 0; i < N; ++i) {
     cats.push_back(vocab[gen() % 4]);
     conts.push_back(static_cast<double>(gen() % 10000) / 10.0);
     std::vector<Attr> attrs = {std::string(cats.back()), conts.back()};
-    SAICodec::Encode(opts, attrs, "payload", vbuf);
+    SAICodec::Encode(layout, attrs, "payload", vbuf);
     builder.OnKeyAdded(rocksdb::Slice("k"),
                        rocksdb::UserDefinedIndexBuilder::kValue,
                        rocksdb::Slice(vbuf));

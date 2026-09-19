@@ -19,7 +19,7 @@ void SAIIndexBuilder::OnKeyAdded(const Slice& /*key*/, ValueType type,
   if (type != ValueType::kValue) return;  // tombstones counted, not indexed
   std::string_view v(value.data(), value.size());
   for (uint32_t i = 0; i < options_.attr_num; ++i) {
-    auto a = SAICodec::DecodeAttr(options_, v, i);
+    auto a = SAICodec::DecodeAttr(layout_, v, i);
     if (options_.attr_specs[i].index_type == bit_lsm::IndexType::kEquality) {
       // Map insert allocates only on first sight of a term (dictionary build is
       // inherently allocating, same as Cassandra's SegmentTrieBuffer); the

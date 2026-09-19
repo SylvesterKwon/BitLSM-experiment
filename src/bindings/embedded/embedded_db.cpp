@@ -67,7 +67,7 @@ Status EmbeddedDB::Put(const string& pk, const vector<Attr>& attrs,
   //    Reuse the buffer across calls (thread_local for concurrent Put safety) so
   //    the hot path stays allocation-free, matching BitLSM::Put.
   thread_local std::string serialized_value_buf;
-  EmbeddedCodec::Encode(bit_lsm_options_, attrs, payload, serialized_value_buf);
+  EmbeddedCodec::Encode(layout_, attrs, payload, serialized_value_buf);
   return db_->Put(WriteOptions(), pk, serialized_value_buf);
 }
 

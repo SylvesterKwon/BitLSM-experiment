@@ -22,6 +22,7 @@
 #include "blob_source.h"
 #include "rocksdb/user_defined_index.h"
 #include "bit_lsm_option.h"
+#include "bit_lsm_utils.h"
 
 namespace rocksdb {
 class BlockBasedTable;
@@ -148,6 +149,9 @@ class EmbeddedIndexBuilder : public rocksdb::UserDefinedIndexBuilder {
   void FlushCurrentBlock(const BlockHandle& bh);
 
   bit_lsm::BitLSMOptions options_;
+  // Derived from the schema once: the row codec takes a cached
+  // layout, and building one per row costs four vector allocations.
+  bit_lsm::ValueLayout layout_{options_};
   uint32_t bloom_bits_;
   uint32_t entries_total_ = 0;
 

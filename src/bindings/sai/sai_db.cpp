@@ -53,7 +53,7 @@ Status SAIDB::Put(const string& pk, const vector<Attr>& attrs,
         "The number of attrs does not match with db configuration.");
   }
   thread_local std::string serialized_value_buf;
-  SAICodec::Encode(bit_lsm_options_, attrs, payload, serialized_value_buf);
+  SAICodec::Encode(layout_, attrs, payload, serialized_value_buf);
   return db_->Put(WriteOptions(), pk, serialized_value_buf);
 }
 

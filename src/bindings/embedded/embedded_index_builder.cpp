@@ -34,7 +34,7 @@ void EmbeddedIndexBuilder::OnKeyAdded(const Slice& /*key*/, ValueType type,
   std::string_view v(value.data(), value.size());
   uint32_t cont_ord = 0;
   for (uint32_t i = 0; i < options_.attr_num; ++i) {
-    auto a = EmbeddedCodec::DecodeAttr(options_, v, i);
+    auto a = EmbeddedCodec::DecodeAttr(layout_, v, i);
     if (options_.attr_specs[i].index_type == bit_lsm::IndexType::kEquality) {
       cat_bloom_[i].Add(std::get<std::string_view>(a));
     } else {

@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <queue>
 #include "bit_lsm_option.h"
+#include "bit_lsm_utils.h"
 #include "db/column_family.h"
 #include "db/db_impl/db_impl.h"
 #include "db/memtable.h"
@@ -67,6 +68,9 @@ class SAIMemTableIterator;
 class SAIMemTableIterator : public SAIInternalIterator {
  private:
   bit_lsm::BitLSMOptions options_;
+  // Derived from the schema once: the row codec takes a cached
+  // layout, and building one per row costs four vector allocations.
+  bit_lsm::ValueLayout layout_{options_};
   rocksdb::MemTable* mem_;
   bit_lsm::BitLSMQuery query_;
   rocksdb::Arena arena_;
@@ -93,6 +97,9 @@ class SAIMemTableIterator : public SAIInternalIterator {
 class SAITableIterator : public SAIInternalIterator {
  private:
   bit_lsm::BitLSMOptions options_;
+  // Derived from the schema once: the row codec takes a cached
+  // layout, and building one per row costs four vector allocations.
+  bit_lsm::ValueLayout layout_{options_};
   rocksdb::BlockBasedTable* bbt_;
   // Holds the SAI entry (and its parsed SAIIndexReader) for this iterator's
   // lifetime: a block cache pin when cache_index_and_filter_blocks is on
@@ -276,6 +283,9 @@ class SAIIterator : public SAIInternalIterator {
   rocksdb::SuperVersion* sv_;
   SAIMergingIterator* smi_;
   bit_lsm::BitLSMOptions options_;
+  // Derived from the schema once: the row codec takes a cached
+  // layout, and building one per row costs four vector allocations.
+  bit_lsm::ValueLayout layout_{options_};
   bit_lsm::BitLSMQuery query_;
   int intersection_limit_;
   SAIPlan plan_;
