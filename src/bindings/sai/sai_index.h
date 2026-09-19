@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 #include "bit_lsm_option.h"
+#include "bit_lsm_utils.h"
 #include "rocksdb/user_defined_index.h"
 #include "sai_cont_index.h"
 #include "sai_plan.h"
@@ -36,6 +37,9 @@ class SAIIndexBuilder : public rocksdb::UserDefinedIndexBuilder {
 
  private:
   bit_lsm::BitLSMOptions options_;
+  // Derived from the schema once: the row codec takes a cached
+  // layout, and building one per row costs four vector allocations.
+  bit_lsm::ValueLayout layout_{options_};
   uint32_t entries_total_ = 0;  // == next rowId; counts every entry (psum alignment)
   struct BlockEntry { uint32_t psum; uint64_t off; uint64_t size; };
   std::vector<BlockEntry> blocks_;

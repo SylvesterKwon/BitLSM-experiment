@@ -181,7 +181,7 @@ void SAITableIterator::LoadNextBlockScan() {
       if (SAICodec::Evaluate(
               query_,
               std::string_view(biter_->value().data(), biter_->value().size()),
-              options_)) {
+              layout_)) {
         PinnableSlice k;
         k.PinSelf(biter_->key());
         PinnableSlice v;

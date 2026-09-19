@@ -10,6 +10,7 @@
 #include <queue>
 
 #include "bit_lsm_option.h"
+#include "bit_lsm_utils.h"
 #include "db/column_family.h"
 #include "db/db_impl/db_impl.h"
 #include "db/memtable.h"
@@ -75,6 +76,9 @@ class EmbeddedMemTableIterator;
 class EmbeddedMemTableIterator : public EmbeddedInternalIterator {
  private:
   bit_lsm::BitLSMOptions options_;
+  // Derived from the schema once: the row codec takes a cached
+  // layout, and building one per row costs four vector allocations.
+  bit_lsm::ValueLayout layout_{options_};
   rocksdb::MemTable* mem_;
   bit_lsm::BitLSMQuery query_;
 
@@ -105,6 +109,9 @@ class EmbeddedTableIterator : public EmbeddedInternalIterator {
  private:
   // Table & query context
   bit_lsm::BitLSMOptions options_;
+  // Derived from the schema once: the row codec takes a cached
+  // layout, and building one per row costs four vector allocations.
+  bit_lsm::ValueLayout layout_{options_};
   rocksdb::BlockBasedTable* bbt_;
   // Holds the index entry (and its parsed EmbeddedIndexReader) for this
   // iterator's lifetime: a block cache pin when cache_index_and_filter_blocks
@@ -301,6 +308,9 @@ class EmbeddedIterator : public EmbeddedInternalIterator {
 
   EmbeddedMergingIterator* smi_;
   bit_lsm::BitLSMOptions options_;
+  // Derived from the schema once: the row codec takes a cached
+  // layout, and building one per row costs four vector allocations.
+  bit_lsm::ValueLayout layout_{options_};
   bit_lsm::BitLSMQuery query_;
 
   std::vector<std::string> batch_keys_;

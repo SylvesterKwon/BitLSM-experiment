@@ -247,7 +247,7 @@ void SAIIterator::FetchNextBatch(uint32_t batch_size) {
         if (SAICodec::Evaluate(query_,
                                std::string_view(candidate_values_[i].data(),
                                                 candidate_values_[i].size()),
-                               options_)) {
+                               layout_)) {
           batch_keys_.push_back(std::move(candidate_keys_[i]));
           batch_values_.push_back(std::move(candidate_values_[i]));
         }
@@ -272,7 +272,7 @@ void SAIIterator::FetchNextBatch(uint32_t batch_size) {
       if (SAICodec::Evaluate(
               query_,
               std::string_view(pin_values[j].data(), pin_values[j].size()),
-              options_)) {
+              layout_)) {
         // 7-3. Move key/value to validated batch if valid entry
         batch_keys_.push_back(std::move(candidate_keys_[i]));
         // Optimization: Only call ToString() for valid values

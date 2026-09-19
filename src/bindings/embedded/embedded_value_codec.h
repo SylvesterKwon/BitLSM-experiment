@@ -1,10 +1,22 @@
 #pragma once
-// Self-contained value layout + predicate evaluation for the Embedded baseline.
-// Mirrors the FORMAT semantics of BitLSM's EncodeValue/DecodeAttr but is an
-// independent implementation: it depends only on the harness API query/option
-// types, never on BitLSM's bit_lsm_utils.h or BitLSMQuery::CheckCondition.
+// Row codec + predicate evaluation for the Embedded baseline.
+//
+// The row format is shared with every other method (bit_lsm's EncodeValue /
+// DecodeAttr), and this class only forwards to it. It used to carry its own
+// copy, which was byte-identical to BitLSM's format when the baseline landed
+// and then drifted when BitLSM moved to the schema-derived v2 format: the old
+// format spends four bytes on an offset per attribute where v2 packs
+// fixed-width attributes into slots, so the same row came out 8 bytes larger at
+// one attribute and 72 bytes larger at thirty-two. That is a difference in how
+// a row is written, not in how it is indexed, and it landed on database size and
+// on scan bytes -- the very things this baseline is compared on. Sharing the
+// format removes it.
+//
+// What stays independent is what the baseline actually contributes: the
+// per-block Bloom filter and zone map (embedded_index*), the block-pruning read
+// stack, and the predicate evaluation below, which never calls
+// BitLSMQuery::CheckCondition.
 #include <cstdint>
-#include <cstring>
 #include <string>
 #include <string_view>
 #include <variant>
@@ -12,80 +24,32 @@
 
 #include "bit_lsm_option.h"  // bit_lsm::BitLSMOptions, IndexType  (harness API)
 #include "bit_lsm_query.h"   // bit_lsm::BitLSMQuery, QueryCondition, CompareOp
-
-// Matches the harness Attr (bit_lsm_utils.h) without depending on it: only the
-// double/string alternatives are exercised by the drivers, but the alias must
-// be type-identical to the global ::Attr to avoid a conflicting redeclaration.
-using Attr =
-    std::variant<std::monostate, int64_t, uint64_t, double, std::string>;
+#include "bit_lsm_utils.h"   // the shared row format: ValueLayout, Encode/Decode
 
 namespace experiment::embedded {
 
-// Layout: [u32 attr_cnt][u32 offset_0]...[u32 offset_{n-1}][u32 payload_offset]
-//         [attr data...][payload...]
-// Continuous attr = 8-byte double; categorical attr = bytes spanning
-// [offset_i, offset_{i+1}) (offset_n == payload_offset).
 class EmbeddedCodec {
  public:
-  static void Encode(const bit_lsm::BitLSMOptions& opts,
+  // The layout is derived from the schema once and reused: building one costs
+  // four vector allocations, and these run per row.
+  static void Encode(const bit_lsm::ValueLayout& layout,
                      const std::vector<Attr>& attrs, std::string_view payload,
                      std::string& out) {
-    uint32_t n = static_cast<uint32_t>(attrs.size());
-    uint32_t header = sizeof(uint32_t) * (1 + n + 1);
-    uint32_t data = 0;
-    for (uint32_t i = 0; i < n; ++i) {
-      if (opts.attr_specs[i].index_type == bit_lsm::IndexType::kRange)
-        data += sizeof(double);
-      else
-        data += static_cast<uint32_t>(std::get<std::string>(attrs[i]).size());
-    }
-    out.resize(header + data + payload.size());
-    char* base = out.data();
-    std::memcpy(base, &n, sizeof(uint32_t));
-    uint32_t off_pos = sizeof(uint32_t);
-    char* dp = base + header;
-    for (uint32_t i = 0; i < n; ++i) {
-      uint32_t cur = static_cast<uint32_t>(dp - base);
-      std::memcpy(base + off_pos, &cur, sizeof(uint32_t));
-      off_pos += sizeof(uint32_t);
-      if (opts.attr_specs[i].index_type == bit_lsm::IndexType::kRange) {
-        double v = std::get<double>(attrs[i]);
-        std::memcpy(dp, &v, sizeof(double));
-        dp += sizeof(double);
-      } else {
-        const std::string& s = std::get<std::string>(attrs[i]);
-        std::memcpy(dp, s.data(), s.size());
-        dp += s.size();
-      }
-    }
-    uint32_t poff = static_cast<uint32_t>(dp - base);
-    std::memcpy(base + off_pos, &poff, sizeof(uint32_t));
-    if (!payload.empty()) std::memcpy(dp, payload.data(), payload.size());
+    bit_lsm::EncodeValue(layout, attrs, payload, out);
   }
 
-  static std::variant<double, std::string_view> DecodeAttr(
-      const bit_lsm::BitLSMOptions& opts, std::string_view value,
-      uint32_t attr_idx) {
-    const char* base = value.data();
-    uint32_t off;
-    std::memcpy(&off, base + sizeof(uint32_t) * (1 + attr_idx), sizeof(uint32_t));
-    if (opts.attr_specs[attr_idx].index_type == bit_lsm::IndexType::kRange) {
-      double v;
-      std::memcpy(&v, base + off, sizeof(double));
-      return v;
-    }
-    uint32_t next;
-    std::memcpy(&next, base + sizeof(uint32_t) * (1 + attr_idx + 1),
-                sizeof(uint32_t));
-    return std::string_view(base + off, next - off);
+  static bit_lsm::AttrView DecodeAttr(const bit_lsm::ValueLayout& layout,
+                                      std::string_view value,
+                                      uint32_t attr_idx) {
+    return bit_lsm::DecodeAttr(layout, value, attr_idx);
   }
 
   static bool Evaluate(const bit_lsm::BitLSMQuery& q, std::string_view value,
-                       const bit_lsm::BitLSMOptions& opts) {
+                       const bit_lsm::ValueLayout& layout) {
     for (const auto& clause : q.clause_groups) {
       bool clause_ok = false;  // OR within clause
       for (const auto& c : clause) {
-        if (EvalOne(c, value, opts)) { clause_ok = true; break; }
+        if (EvalOne(c, value, layout)) { clause_ok = true; break; }
       }
       if (!clause_ok) return false;  // AND across clauses
     }
@@ -94,9 +58,12 @@ class EmbeddedCodec {
 
  private:
   static bool EvalOne(const bit_lsm::QueryCondition& c, std::string_view value,
-                      const bit_lsm::BitLSMOptions& opts) {
-    auto a = DecodeAttr(opts, value, c.attr_idx);
-    if (opts.attr_specs[c.attr_idx].index_type == bit_lsm::IndexType::kEquality) {
+                      const bit_lsm::ValueLayout& layout) {
+    auto a = DecodeAttr(layout, value, c.attr_idx);
+    // A NULL attribute matches no comparison; the shared format can carry one
+    // even though this experiment's schemas declare no nullable attribute.
+    if (std::holds_alternative<std::monostate>(a)) return false;
+    if (layout.specs[c.attr_idx].index_type == bit_lsm::IndexType::kEquality) {
       return c.op == bit_lsm::CompareOp::EQUAL &&
              std::get<std::string_view>(a) == std::get<std::string>(c.value);
     }
