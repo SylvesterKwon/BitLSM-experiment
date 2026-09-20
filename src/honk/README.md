@@ -13,6 +13,10 @@ PYTHONPATH=src python3 src/honk/honk_run.py run <config.json> \
 # Query-under-ingestion generation (6.2.2)
 PYTHONPATH=src python3 src/honk/honk_run.py ingestion \
     --output_dir <out_dir> --data_dir <parquet_dir> [options]
+
+# Uniform-overwrite update sequence (query-under-ingestion), from an existing write trace
+PYTHONPATH=src python3 src/honk/honk_run.py overwrite src/honk/workloads/overwrite_uniform_2024-2025_all_uuid_n20M.json \
+    --output_dir workloads
 ```
 
 Download the source parquet first: `python3 src/honk/download.py --year 2024-2025 -y`.
@@ -84,6 +88,15 @@ BitLSM folds each pair into one interval. Configs: `workloads/read_window_sel*_r
 
 Same `pk_mode` / `shuffle` are exposed as CLI flags:
 `--pk_mode {uuid,ulid}` (default `uuid`), `--shuffle` (store-true).
+
+## `overwrite` config
+
+Streams a write trace once (no parquet) and emits `u\t<pk>\t<json>` lines.
+Keys: `source_tsv` (the trace, relative to the current directory), `num_updates`,
+`seed`, `mode` (`overwrite`: target key uniform over all keys, values = one whole
+row uniform over all rows, both with replacement; `insert`: same rows under fresh
+UUIDs as `w` lines). Output is `<output_dir>/<config stem>.tsv` plus a one-line
+`.log` with the sha256. 20M updates take a few minutes and ~12 GB of RAM.
 
 ## Example variants
 

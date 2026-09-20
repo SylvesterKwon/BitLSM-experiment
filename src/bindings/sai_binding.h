@@ -27,6 +27,7 @@ class SAIBinding : public Binding {
   WriteStats GetWriteStats() override;
   IndexIoStats GetIndexIoStats() override;
   void WaitForQuiescence() override;
+  LsmStats SampleLsmStats() override;
   std::string Name() const override { return "embedded-postings"; }
   std::string ParamSuffix() const override {
     return "_il" + std::to_string(intersection_limit_) +

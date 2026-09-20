@@ -1,0 +1,68 @@
+"""Unit tests for plot_qps_vs_w.py (python3 -m unittest). Runs headless (Agg)."""
+
+import os
+import tempfile
+import unittest
+
+import matplotlib
+matplotlib.use("Agg")
+
+import fixture
+import plot_qps_vs_w as pq
+
+
+class FigureTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.a = os.path.join(self.tmp.name, "a")
+        self.b = os.path.join(self.tmp.name, "b")
+        fixture.make_result_dir(self.a)
+        fixture.make_result_dir(self.b, rising_method="bitlsm_rho0.001")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_one_panel_per_result_dir_on_its_own_linear_axis(self):
+        fig = pq.make_figure([self.a, self.b], titles=["c = 2", "c = 3"])
+        self.assertEqual(len(fig.axes), 2)
+        for ax in fig.axes:
+            self.assertEqual(ax.get_yscale(), "linear")
+            self.assertEqual(ax.get_ylim()[0], 0)
+        # Each panel is a different query set, so the y axes are independent.
+        self.assertFalse(fig.axes[0].get_shared_y_axes().joined(fig.axes[0], fig.axes[1]))
+        self.assertEqual([t.get_text() for t in fig.axes[0].get_xticklabels()], ["0", ""])
+        self.assertEqual([t.get_text() for t in fig.axes[1].get_xticklabels()], ["0", "", "200"])
+        self.assertEqual(fig.get_size_inches()[0], 3.333)
+
+    def test_titles_default_to_the_query_set(self):
+        # fixture writes read_seq_sel0.0001_k3_r300_* file names
+        self.assertEqual(pq.panel_title(self.a), "c = 3")
+
+    def test_rate_label_writes_values_out_and_uses_k_when_long(self):
+        self.assertEqual([pq.rate_label(w) for w in (0, 100, 1000, 16000, 128000)],
+                         ["0", "100", "1k", "16k", "128k"])
+
+    def test_series_carry_the_paper_colours_and_styles(self):
+        fig = pq.make_figure([self.a])
+        lines = {l.get_label(): l for l in fig.axes[0].get_lines()}
+        self.assertEqual(lines["BitLSM"].get_color(), "#E04040")
+        self.assertEqual(lines["Embedded Postings (Intersection)"].get_color(), "#2F6FD0")
+        self.assertEqual(lines["Embedded Postings (Intersection)"].get_linestyle(), "--")
+        self.assertEqual(lines["Embedded Postings (Top-2 Intersection)"].get_linestyle(), "-")
+
+    def test_legend_lists_baselines_first_and_is_drawn_once(self):
+        fig = pq.make_figure([self.a, self.b])
+        self.assertEqual(len(fig.legends), 1)
+        self.assertEqual([t.get_text() for t in fig.legends[0].get_texts()],
+                         ["Embedded Postings (Top-2 Intersection)",
+                          "Embedded Postings (Intersection)", "BitLSM"])
+        self.assertFalse(fig.legends[0].get_frame_on())
+
+    def test_no_runs_gives_no_figure(self):
+        empty = os.path.join(self.tmp.name, "empty")
+        os.makedirs(empty)
+        self.assertIsNone(pq.make_figure([empty]))
+
+
+if __name__ == "__main__":
+    unittest.main()

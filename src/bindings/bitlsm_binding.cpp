@@ -4,6 +4,7 @@
 #include <cxxopts.hpp>
 #include <iostream>
 #include "rocksdb_common_option.h"
+#include "lsm_stats.h"
 #include "sabi.h"
 #include <rocksdb/filter_policy.h>
 #include <rocksdb/options.h>
@@ -130,6 +131,10 @@ void BitLSMBinding::WaitForQuiescence() {
   wfco.flush = true;
   wfco.wait_for_purge = true;
   db_->GetInternalDB()->WaitForCompact(wfco);
+}
+
+LsmStats BitLSMBinding::SampleLsmStats() {
+  return db_ ? SampleLsmStatsFrom(db_->GetInternalDB()) : LsmStats{};
 }
 
 IndexIoStats BitLSMBinding::GetIndexIoStats() {

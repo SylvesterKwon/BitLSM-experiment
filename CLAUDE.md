@@ -38,6 +38,7 @@ src/
 │   └── result/                # CSV outputs (auto-created)
 └── honk_player/
     ├── honk_player.cpp        # real-world workload driver (→ build/bin/honk_player)
+    ├── qui_player.cpp         # query-under-ingestion driver (→ build/bin/qui_player)
     ├── honk_run.py            # honk_player sweep runner
     ├── taxi_schema.h          # NYC taxi column definitions
     ├── json_record_parser.h   # JSON → Attr/Query conversion
@@ -171,7 +172,7 @@ python3 experiments/<name>/run.py experiments/<name>/exp_set/<params>.json [opti
 | `seq_write` | Synthetic sequential write — time + DB size | benchmark binaries |
 | `nyc_taxi_seq_write` | NYC taxi sequential write | `honk_player` |
 | `nyc_taxi_seq_read` | NYC taxi sequential read (DB must exist) | `honk_player` |
-| `nyc_taxi_interleave` | NYC taxi read-under-ingestion | `honk_player` |
+| `queries_under_concurrent_updates` | NYC taxi query throughput under a concurrent update stream (DB must exist; per-run DB copy) | `qui_player` |
 | `memory_pressure` | NYC taxi read under a block-cache budget (DB must exist) | `honk_player` |
 
 ## Plotting

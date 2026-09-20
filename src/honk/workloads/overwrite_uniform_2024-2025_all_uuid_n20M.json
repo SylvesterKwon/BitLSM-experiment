@@ -1,0 +1,6 @@
+{
+  "source_tsv": "workloads/write_seq_2024-2025_all_uuid.tsv",
+  "num_updates": 20000000,
+  "seed": 42,
+  "mode": "overwrite"
+}

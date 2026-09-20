@@ -32,6 +32,7 @@ class BitLSMBinding : public Binding {
   WriteStats GetWriteStats() override;
   IndexIoStats GetIndexIoStats() override;
   void WaitForQuiescence() override;
+  LsmStats SampleLsmStats() override;
   std::string Name() const override { return "bitlsm"; }
   std::string ParamSuffix() const override;
 };
