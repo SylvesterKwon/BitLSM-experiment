@@ -3,6 +3,7 @@
 #include "sai_iterator.h"
 #include "blob_source.h"
 #include "rocksdb_common_option.h"
+#include "lsm_stats.h"
 #include <chrono>
 #include <cxxopts.hpp>
 #include <iostream>
@@ -114,6 +115,10 @@ void SAIBinding::WaitForQuiescence() {
   wfco.flush = true;
   wfco.wait_for_purge = true;
   db_->GetInternalDB()->WaitForCompact(wfco);
+}
+
+LsmStats SAIBinding::SampleLsmStats() {
+  return db_ ? SampleLsmStatsFrom(db_->GetInternalDB()) : LsmStats{};
 }
 
 IndexIoStats SAIBinding::GetIndexIoStats() {

@@ -2,6 +2,7 @@
 #include "benchmark_experiment.h"
 #include "blob_source.h"
 #include "rocksdb_common_option.h"
+#include "lsm_stats.h"
 #include <chrono>
 #include <cxxopts.hpp>
 #include <iostream>
@@ -114,6 +115,10 @@ void EmbeddedBinding::WaitForQuiescence() {
   wfco.flush = true;
   wfco.wait_for_purge = true;
   db_->GetInternalDB()->WaitForCompact(wfco);
+}
+
+LsmStats EmbeddedBinding::SampleLsmStats() {
+  return db_ ? SampleLsmStatsFrom(db_->GetInternalDB()) : LsmStats{};
 }
 
 IndexIoStats EmbeddedBinding::GetIndexIoStats() {

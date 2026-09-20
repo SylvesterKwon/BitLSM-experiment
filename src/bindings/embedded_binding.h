@@ -27,6 +27,7 @@ class EmbeddedBinding : public Binding {
   WriteStats GetWriteStats() override;
   IndexIoStats GetIndexIoStats() override;
   void WaitForQuiescence() override;
+  LsmStats SampleLsmStats() override;
   std::string Name() const override { return "embedded"; }
   std::string ParamSuffix() const override {
     return "_bloom_bits" + std::to_string(bloom_bits_) +

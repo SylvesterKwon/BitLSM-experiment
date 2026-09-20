@@ -17,6 +17,7 @@ from .phases import PKReservoir, execute_phases, _run_write_only, run_write_with
 from .pk import PKGenerator
 from .schema import ALL_COLUMNS
 from .writer import TSVWriter
+from . import overwrite
 
 logger = logging.getLogger("honk")
 
@@ -206,6 +207,15 @@ def cmd_ingestion(args: argparse.Namespace) -> None:
     )
 
 
+def cmd_overwrite(args: argparse.Namespace) -> None:
+    """Execute the 'overwrite' subcommand (query-under-ingestion update sequence)."""
+    os.makedirs(args.output_dir, exist_ok=True)
+    stem = os.path.splitext(os.path.basename(args.config))[0]
+    _setup_logging(os.path.join(args.output_dir, stem + ".cli.log"))
+    out = overwrite.write_updates(args.config, args.output_dir)
+    logger.info("Wrote %s", out)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="honk",
@@ -230,6 +240,12 @@ def main() -> None:
     ing_parser.add_argument("--pk_mode", choices=["uuid", "ulid"], default="uuid", help="Primary-key scheme (default: uuid)")
     ing_parser.add_argument("--shuffle", action="store_true", help="Seeded shuffle of dataset before consuming (random write order)")
 
+    ovw_parser = subparsers.add_parser(
+        "overwrite",
+        help="Generate a seeded uniform-overwrite update sequence from a write trace")
+    ovw_parser.add_argument("config", help="JSON with source_tsv, num_updates, seed, mode")
+    ovw_parser.add_argument("--output_dir", required=True, help="Output directory")
+
     args = parser.parse_args()
     if args.command is None:
         parser.print_help()
@@ -239,3 +255,5 @@ def main() -> None:
         cmd_run(args)
     elif args.command == "ingestion":
         cmd_ingestion(args)
+    elif args.command == "overwrite":
+        cmd_overwrite(args)

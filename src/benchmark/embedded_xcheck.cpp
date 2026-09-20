@@ -1,4 +1,4 @@
-// Correctness cross-check: BitLSM vs the embedded and SAI index baselines.
+// Correctness cross-check: BitLSM vs the embedded and Embedded Postings baselines (both intersection modes).
 //
 // Gate before any performance use. Both engines MUST return identical match
 // counts for identical queries on identical data. To avoid a vacuous pass
@@ -112,6 +112,7 @@ int main(int argc, char** argv) {
   std::string embedded_path =
       (argc > 2) ? argv[2] : "/tmp/xcheck_embedded";
   std::string sai_path = (argc > 3) ? argv[3] : "/tmp/xcheck_sai";
+  std::string sai_il0_path = (argc > 4) ? argv[4] : "/tmp/xcheck_sai_il0";
 
   // ---- Schema / options ----
   BitLSMOptions opts;
@@ -140,8 +141,10 @@ int main(int argc, char** argv) {
 
   for (uint64_t i = 0; i < N; ++i) {
     Record r;
-    // ~1% duplicate PKs: reuse an earlier pk with DIFFERENT attrs.
-    if (!seen_pks.empty() && dup_roll(gen) < 0.01) {
+    // ~10% duplicate PKs: reuse an earlier pk with DIFFERENT attrs. The
+    // query-under-ingestion experiment overwrites existing keys with another
+    // record's values, so the gate does too.
+    if (!seen_pks.empty() && dup_roll(gen) < 0.10) {
       std::uniform_int_distribution<size_t> pick(0, seen_pks.size() - 1);
       r.pk = seen_pks[pick(gen)];
     } else {
@@ -184,6 +187,17 @@ int main(int argc, char** argv) {
                      MakeQuery({{0, CompareOp::EQUAL, std::string("zzz")}})});
   queries.push_back({"Q6 attr1>=0 (all)",
                      MakeQuery({{1, CompareOp::GREATER_EQUAL, 0.0}})});
+  // Three attributes: with intersection_limit 2 the postings baseline
+  // intersects two and post-filters the third, with 0 it intersects all.
+  queries.push_back({"Q7 attr0=='c3' AND attr1 in [200,600) AND attr2=='x42'",
+                     MakeQuery({{0, CompareOp::EQUAL, std::string("c3")},
+                                {1, CompareOp::GREATER_EQUAL, 200.0},
+                                {1, CompareOp::LESS, 600.0},
+                                {2, CompareOp::EQUAL, std::string("x42")}})});
+  queries.push_back({"Q8 attr0=='c5' AND attr1>=900 AND attr2=='x7'",
+                     MakeQuery({{0, CompareOp::EQUAL, std::string("c5")},
+                                {1, CompareOp::GREATER_EQUAL, 900.0},
+                                {2, CompareOp::EQUAL, std::string("x7")}})});
 
   // ---- Ground truth (independent) ----
   std::vector<uint64_t> expected(queries.size());
@@ -205,11 +219,12 @@ int main(int argc, char** argv) {
   }
 
   // ---- Run each engine through the two-phase write-then-read ----
-  auto run_method = [&](const std::string& method,
-                        const std::string& path) -> std::vector<uint64_t> {
+  auto run_method = [&](const std::string& method, const std::string& path,
+                        std::vector<std::string> extra) -> std::vector<uint64_t> {
     // Write phase.
     std::vector<std::string> wargv_s = {method, "--exp_type", "write_seq",
                                         "--rho", "0.1", "--bloom_bits", "100"};
+    wargv_s.insert(wargv_s.end(), extra.begin(), extra.end());
     std::vector<char*> wargv;
     for (auto& s : wargv_s) wargv.push_back(const_cast<char*>(s.c_str()));
 
@@ -238,41 +253,39 @@ int main(int argc, char** argv) {
   };
 
   std::cout << "running bitlsm...\n";
-  std::vector<uint64_t> bitlsm = run_method("bitlsm", bitlsm_path);
+  std::vector<uint64_t> bitlsm = run_method("bitlsm", bitlsm_path, {});
   std::cout << "running embedded...\n";
-  std::vector<uint64_t> embedded = run_method("embedded", embedded_path);
-  std::cout << "running embedded-postings...\n";
-  std::vector<uint64_t> sai = run_method("embedded-postings", sai_path);
+  std::vector<uint64_t> embedded = run_method("embedded", embedded_path, {});
+  std::cout << "running embedded-postings (top-2)...\n";
+  std::vector<uint64_t> sai = run_method("embedded-postings", sai_path, {});
+  std::cout << "running embedded-postings (intersect all)...\n";
+  std::vector<uint64_t> sai_il0 =
+      run_method("embedded-postings", sai_il0_path, {"--intersection_limit", "0"});
 
   // ---- Compare against ground truth ----
   bool ok = true;
-  std::cout << "\n  query | expected | bitlsm | embedded | embedded-postings\n";
-  std::cout << "  --------------------------------------------------\n";
+  std::cout << "\n  query | expected | bitlsm | embedded | postings il2 | postings il0\n";
+  std::cout << "  ---------------------------------------------------------------\n";
   for (size_t i = 0; i < queries.size(); ++i) {
     std::cout << "  " << queries[i].name << " | " << expected[i] << " | "
-              << bitlsm[i] << " | " << embedded[i] << " | " << sai[i] << "\n";
+              << bitlsm[i] << " | " << embedded[i] << " | " << sai[i] << " | "
+              << sai_il0[i] << "\n";
   }
   std::cout << "\n";
 
-  for (size_t i = 0; i < queries.size(); ++i) {
-    if (embedded[i] != expected[i]) {
-      std::cout << "FAIL: " << queries[i].name
-                << " embedded=" << embedded[i]
-                << " expected=" << expected[i] << "\n";
-      ok = false;
+  auto check = [&](const char* label, const std::vector<uint64_t>& got) {
+    for (size_t i = 0; i < queries.size(); ++i) {
+      if (got[i] != expected[i]) {
+        std::cout << "FAIL: " << queries[i].name << " " << label << "="
+                  << got[i] << " expected=" << expected[i] << "\n";
+        ok = false;
+      }
     }
-    if (sai[i] != expected[i]) {
-      std::cout << "FAIL: " << queries[i].name << " sai=" << sai[i]
-                << " expected=" << expected[i] << "\n";
-      ok = false;
-    }
-    if (bitlsm[i] != expected[i]) {
-      std::cout << "FAIL: " << queries[i].name
-                << " bitlsm=" << bitlsm[i]
-                << " expected=" << expected[i] << "\n";
-      ok = false;
-    }
-  }
+  };
+  check("bitlsm", bitlsm);
+  check("embedded", embedded);
+  check("postings_il2", sai);
+  check("postings_il0", sai_il0);
 
   if (!ok) return 1;
 

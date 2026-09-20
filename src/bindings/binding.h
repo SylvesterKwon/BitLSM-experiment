@@ -43,6 +43,31 @@ struct IndexIoStats {
   uint64_t cache_misses = 0;
 };
 
+// One sample of the LSM's background state, read from RocksDB properties on
+// the default column family. No Statistics object is involved, so a binding's
+// options stay identical to the query-performance configuration. Counters are
+// absolute (cumulative since Open); a driver deltas them across samples.
+struct LsmStats {
+  bool ok = false;  // false: the binding has no RocksDB instance to sample
+  uint64_t running_flushes = 0;
+  uint64_t running_compactions = 0;
+  uint64_t flush_pending = 0;            // rocksdb.mem-table-flush-pending (0/1)
+  uint64_t compaction_pending = 0;       // rocksdb.compaction-pending (0/1)
+  uint64_t pending_compaction_bytes = 0; // rocksdb.estimate-pending-compaction-bytes
+  uint64_t l0_files = 0;
+  uint64_t memtable_bytes = 0;           // rocksdb.cur-size-all-mem-tables
+  uint64_t immutable_memtables = 0;
+  uint64_t write_stopped = 0;            // rocksdb.is-write-stopped (0/1)
+  uint64_t delayed_write_rate = 0;       // rocksdb.actual-delayed-write-rate, B/s, 0 = none
+  uint64_t stall_stops = 0;              // cf-write-stall-stats total stops
+  uint64_t stall_delays = 0;             // cf-write-stall-stats total delays
+  uint64_t flush_bytes = 0;              // cfstats compaction.L0.WriteGB -> bytes
+  uint64_t compact_read_bytes = 0;       // cfstats compaction.Sum.ReadGB -> bytes
+  uint64_t compact_write_bytes = 0;      // cfstats compaction.Sum.WriteGB -> bytes (includes flush)
+  uint64_t flush_count = 0;              // cfstats compaction.L0.CompCount (flushes + intra-L0)
+  uint64_t compaction_count = 0;         // cfstats compaction.Sum.CompCount
+};
+
 class Binding {
  public:
   virtual ~Binding() = default;
@@ -77,6 +102,10 @@ class Binding {
   // the ingest itself produced. Write experiments call this before Close()
   // so that measured wall time / CPU / DB size cover the full induced work.
   virtual void WaitForQuiescence() {}
+
+  // Background-state sample for drivers that measure under ingestion. Default
+  // covers bindings without a RocksDB instance of their own: ok=false.
+  virtual LsmStats SampleLsmStats() { return {}; }
 };
 
 std::unique_ptr<Binding> CreateBinding(const std::string& name);
