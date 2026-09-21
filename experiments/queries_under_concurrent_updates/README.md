@@ -3,7 +3,7 @@
 Query throughput while one thread overwrites existing records at a fixed rate
 W, in the style of Luo & Carey (VLDB 2020). Driver: `build/bin/qui_player`
 (`src/honk_player/qui_player.cpp`); `run.py` sweeps W and ends with the tidy
-CSVs (`summarize.py`, which also runs on its own); `plot_qps_vs_w.py` draws the
+CSVs (`summarize.py`, which also runs on its own); `plot_latency_vs_w.py` draws the
 figure.
 
 ## Setup
@@ -55,7 +55,7 @@ the copy of a failed run).
 The paper figure comes from the two result directories:
 
 ```bash
-python3 experiments/queries_under_concurrent_updates/plot_qps_vs_w.py results/<c2_dir> results/<c3_dir>
+python3 experiments/queries_under_concurrent_updates/plot_latency_vs_w.py results/<c2_dir> results/<c3_dir>
 ```
 
 ## Outputs
@@ -70,7 +70,7 @@ python3 experiments/queries_under_concurrent_updates/plot_qps_vs_w.py results/<c
 | `queries_under_concurrent_updates_windows.csv` | method × W × window | QPS, median latency, backlog, stalls |
 | `queries_under_concurrent_updates_windows_all.csv`, `queries_under_concurrent_updates_summary_all.csv` | as above, plus `c` | written when `summarize.py` is given several result directories |
 | `queries_under_concurrent_updates_summary.csv` | method × W | QPS, no-load QPS and ratio, actual update rate, overloaded |
-| `queries_under_concurrent_updates_qps_vs_w.pdf` | — | throughput against W, one panel per query set |
+| `queries_under_concurrent_updates_latency_vs_w.pdf` | — | mean query latency against W, one panel per query set |
 
 A run counts as overloaded when the writer falls behind: actual rate below
 0.95·W, backlog at the end above W, or backlog rising over the last three

@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Query throughput against the update rate, one panel per query set.
+"""Mean query latency against the update rate, one panel per query set.
 
 The paper figure for this experiment: x = the swept update rates (categorical,
-so the measurement points are evenly spaced), y = queries completed per second
-over the 30 min run, one line per method, one panel per predicate count.
+so the measurement points are evenly spaced), y = the arithmetic mean of the
+per-query latencies over the 30 min run, one line per method, one panel per
+predicate count. The mean, not the median the query-performance section uses:
+the update stream lengthens the tail, and the mean is what the closed-loop
+worker's throughput inverts to.
 
 Unlike the other figures here the panels do NOT share a y axis: each panel is a
 different query set, so there is nothing to compare across them, and a shared
@@ -15,8 +18,8 @@ Reads the runs through summarize.collect(), so the figure and runs.csv are one
 computation.
 
 Usage:
-    python3 experiments/queries_under_concurrent_updates/plot_qps_vs_w.py <result_dir> [<result_dir> ...]
-    python3 experiments/queries_under_concurrent_updates/plot_qps_vs_w.py <dir> <dir> -o <out.png>
+    python3 experiments/queries_under_concurrent_updates/plot_latency_vs_w.py <result_dir> [<result_dir> ...]
+    python3 experiments/queries_under_concurrent_updates/plot_latency_vs_w.py <dir> <dir> -o <out.png>
 """
 
 import argparse
@@ -53,9 +56,9 @@ SERIES = [("embedded-postings_il2", "Embedded Postings (Top-2 Intersection)", "#
 # furniture it carries (legend and titles above, tick labels and the shared x
 # label below), as in memory_pressure/plot.py.
 FIG_W = 3.333          # one paper column
-LEFT, RIGHT, WSPACE = 0.115, 0.965, 0.42
-TICKS_H, XLABEL_H = 0.14, 0.11
-TITLES_H, LEGEND_H = 0.13, 0.30
+LEFT, RIGHT, WSPACE = 0.17, 0.965, 0.26
+TICKS_H, XLABEL_H = 0.14, 0.17
+TITLES_H, LEGEND_H = 0.13, 0.38
 
 
 def panel_title(result_dir):
@@ -97,7 +100,7 @@ def make_figure(result_dirs, titles=None):
         xs = list(range(len(rates)))
         for key, label, colour, style in SERIES:
             # A method may be absent from a sweep, or from one of its rates.
-            pts = [(i, float(runs[(key, w)]["qps_total"]))
+            pts = [(i, float(runs[(key, w)]["mean_latency_ms"]) / 1000)
                    for i, w in enumerate(rates) if (key, w) in runs]
             if not pts:
                 continue
@@ -113,7 +116,7 @@ def make_figure(result_dirs, titles=None):
         ax.grid(False)
         ax.set_box_aspect(PANEL_BOX_ASPECT)
 
-    fig.supylabel("Throughput (queries/s)", fontsize=6, x=0.012)
+    fig.supylabel("Mean query latency (s)", fontsize=6, x=0.012)
     fig.supxlabel("Update rate (updates/s)", fontsize=6, y=0.015)
 
     handles, labels = [], []
@@ -126,8 +129,7 @@ def make_figure(result_dirs, titles=None):
     # Embedded Postings arms stacked in the first column and ours in the second.
     order = [labels.index(l) for _, l, _, _ in SERIES if l in labels]
     fig.legend([handles[i] for i in order], [labels[i] for i in order], loc="upper center",
-               frameon=False, fontsize=5, ncol=2, handlelength=3.2, columnspacing=0.8,
-               labelspacing=0.3, borderpad=0.0, bbox_to_anchor=(0.5, 1.0))
+               frameon=False, fontsize=6, ncol=2, bbox_to_anchor=(0.5, 1.0))
     fig.subplots_adjust(left=LEFT, right=RIGHT, wspace=WSPACE,
                         bottom=below / fig_h, top=1.0 - above / fig_h)
     return fig
@@ -135,10 +137,10 @@ def make_figure(result_dirs, titles=None):
 
 def main():
     ap = argparse.ArgumentParser(
-        description="Plot query throughput against the update rate, one panel per result directory")
+        description="Plot mean query latency against the update rate, one panel per result directory")
     ap.add_argument("result_dirs", nargs="+")
     ap.add_argument("-o", "--output", default=None,
-                    help="Output file (default: <last result_dir>/queries_under_concurrent_updates_qps_vs_w.pdf)")
+                    help="Output file (default: <last result_dir>/queries_under_concurrent_updates_latency_vs_w.pdf)")
     ap.add_argument("--titles", default=None,
                     help="Comma-separated panel titles (default: c = N from the query set)")
     args = ap.parse_args()
@@ -149,7 +151,7 @@ def main():
     if fig is None:
         print("No runs found.")
         return
-    out = args.output or os.path.join(args.result_dirs[-1], "queries_under_concurrent_updates_qps_vs_w.pdf")
+    out = args.output or os.path.join(args.result_dirs[-1], "queries_under_concurrent_updates_latency_vs_w.pdf")
     fig.savefig(out, dpi=150)
     print(f"Saved: {out}")
 

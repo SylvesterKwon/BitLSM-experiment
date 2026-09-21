@@ -11,9 +11,10 @@ queries_under_concurrent_updates_windows.csv  one row per (method, W, window): w
 queries_under_concurrent_updates_summary.csv  one row per (method, W): totals, the no-load QPS of the same
              method (its W = 0 run) and the ratio, the overload verdict.
 
-plot_qps_vs_w.py imports collect() from here, so the table and the figure are
-one computation. Statistics follow the paper's conventions: latency is the median
-of the per-query rows, byte volumes are totals over the window/run (writer-side
+plot_latency_vs_w.py imports collect() from here, so the table and the figure are
+one computation. Both the mean and the median of the per-query latencies are carried: the
+figure plots the mean, the query-performance section reports medians. Byte
+volumes are totals over the window/run (writer-side
 flush/compaction volume, unlike the per-query index-read bytes of the read
 experiments).
 
@@ -53,7 +54,8 @@ WINDOW_COLUMNS = [
 ]
 RUN_COLUMNS = [
     "method", "rate", "target_rate", "actual_rate", "qps_total", "qps_noload",
-    "qps_ratio", "overloaded", "failed", "queries_completed", "median_latency_ms",
+    "qps_ratio", "overloaded", "failed", "queries_completed",
+    "mean_latency_ms", "median_latency_ms",
     "updates_scheduled", "updates_issued", "unissued", "backlog_at_end",
     "in_flight_at_end", "drain_ms", "wrapped", "stall_delays", "stall_stops",
     "flush_gb", "compact_write_gb", "matched_drift", "settle_ms", "preload_ms",
@@ -196,6 +198,7 @@ def run_summary(run, windows):
         "overloaded": bool(overloaded),
         "failed": bool(t.get("failed", False)),
         "queries_completed": t["queries_completed_in_window"],
+        "mean_latency_ms": round(float(np.mean(lat)) / 1000, 3) if lat else "",
         "median_latency_ms": round(float(np.median(lat)) / 1000, 3) if lat else "",
         "updates_scheduled": t["updates_scheduled"] if loaded else "",
         "updates_issued": t["updates_issued"] if loaded else "",

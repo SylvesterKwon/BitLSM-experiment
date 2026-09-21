@@ -1,4 +1,4 @@
-"""Unit tests for plot_qps_vs_w.py (python3 -m unittest). Runs headless (Agg)."""
+"""Unit tests for plot_latency_vs_w.py (python3 -m unittest). Runs headless (Agg)."""
 
 import os
 import tempfile
@@ -8,7 +8,7 @@ import matplotlib
 matplotlib.use("Agg")
 
 import fixture
-import plot_qps_vs_w as pq
+import plot_latency_vs_w as pq
 
 
 class FigureTest(unittest.TestCase):
