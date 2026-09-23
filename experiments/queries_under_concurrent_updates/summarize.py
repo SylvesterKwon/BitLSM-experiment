@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Reduce a queries_under_concurrent_updates result directory to two tidy CSVs.
 
-Several directories at once: each gets its own CSVs, and the last one also
-gets queries_under_concurrent_updates_windows_all.csv / queries_under_concurrent_updates_summary_all.csv, the same rows with a
-leading `c` column.
+Several directories at once produce one combined table instead, written next
+to the last of them: queries_under_concurrent_updates_windows_all.csv /
+queries_under_concurrent_updates_summary_all.csv, the same rows with a
+leading `c` column saying which query set each came from.
 
 queries_under_concurrent_updates_windows.csv  one row per (method, W, window): what the figure plots -- QPS,
              median latency, the writer's issued count and backlog, the LSM
@@ -296,9 +297,12 @@ def main():
         description="Reduce queries_under_concurrent_updates result directories to tidy CSVs")
     ap.add_argument("result_dirs", nargs="+")
     args = ap.parse_args()
+    # One directory keeps its own CSVs; several produce the combined table
+    # only, so a multi-sweep deliverable is a single pair of files.
+    combining = len(args.result_dirs) > 1
     collected = []
     for result_dir in args.result_dirs:
-        runs, windows = summarize_dir(result_dir)
+        runs, windows = summarize_dir(result_dir, write=not combining)
         if runs:
             collected.append((query_set(result_dir), runs, windows))
     if not collected:
@@ -309,8 +313,9 @@ def main():
         print(f"Saved: {rpath}  ({sum(len(r) for _, r, _ in collected)} runs)")
 
 
-def summarize_dir(result_dir):
-    """Write one directory's CSVs and print its runs. Returns (runs, windows)."""
+def summarize_dir(result_dir, write=True):
+    """Print one directory's runs, writing its CSVs unless the caller is
+    combining several directories into one table. Returns (runs, windows)."""
     runs, windows = collect(result_dir)
     if not runs:
         print(f"No *_meta.json found in {result_dir}.")
@@ -323,9 +328,10 @@ def summarize_dir(result_dir):
         if n_success != len(runs):
             print(f"[warn] sweep_runs.jsonl has {n_success} successful runs but "
                   f"{len(runs)} were summarized", file=sys.stderr)
-    wpath, rpath = write_csvs(result_dir, runs, windows)
-    print(f"Saved: {wpath}  ({sum(len(v) for v in windows.values())} windows)")
-    print(f"Saved: {rpath}  ({len(runs)} runs)")
+    if write:
+        wpath, rpath = write_csvs(result_dir, runs, windows)
+        print(f"Saved: {wpath}  ({sum(len(v) for v in windows.values())} windows)")
+        print(f"Saved: {rpath}  ({len(runs)} runs)")
     for k in sorted(runs, key=lambda k: (k[1], k[0])):
         r = runs[k]
         flag = "  OVERLOADED" if r["overloaded"] else ""
