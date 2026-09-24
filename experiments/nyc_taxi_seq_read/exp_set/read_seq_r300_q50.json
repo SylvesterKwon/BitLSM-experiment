@@ -54,6 +54,14 @@
       }
     },
     {
+      "name": "lazy-bitmaps",
+      "params": {
+        "rho": [
+          0.001
+        ]
+      }
+    },
+    {
       "name": "embedded",
       "query_limit": 50,
       "params": {

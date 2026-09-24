@@ -18,6 +18,17 @@
       "params": {
         "intersection_limit": 2
       }
+    },
+    {
+      "name": "lazy-bitmaps",
+      "params": {
+        "rho": [
+          0.001
+        ],
+        "bin_policy": [
+          "/scratch/honk/bin_policy/write_seq_2024-2025_all_uuid_rho0.001.bin"
+        ]
+      }
     }
   ]
 }

@@ -40,6 +40,14 @@
           0
         ]
       }
+    },
+    {
+      "name": "lazy-bitmaps",
+      "params": {
+        "rho": [
+          0.001
+        ]
+      }
     }
   ]
 }

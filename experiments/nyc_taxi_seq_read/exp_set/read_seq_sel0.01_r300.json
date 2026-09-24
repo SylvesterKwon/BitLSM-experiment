@@ -43,6 +43,14 @@
       }
     },
     {
+      "name": "lazy-bitmaps",
+      "params": {
+        "rho": [
+          0.001
+        ]
+      }
+    },
+    {
       "name": "embedded",
       "params": {
         "bloom_bits": 10

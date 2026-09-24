@@ -2,6 +2,7 @@
 #include "bitlsm_binding.h"
 #include "bitlsm_global_binding.h"
 #include "embedded_binding.h"
+#include "lazy_bitmaps_binding.h"
 #include "no_index_binding.h"
 #include "sai_binding.h"
 #include "si_ck_binding.h"
@@ -15,6 +16,7 @@ std::unique_ptr<Binding> CreateBinding(const std::string& name) {
   if (name == "bitlsm-global") return std::make_unique<BitLSMGlobalBinding>();
   if (name == "embedded") return std::make_unique<EmbeddedBinding>();
   if (name == "embedded-postings") return std::make_unique<SAIBinding>();
+  if (name == "lazy-bitmaps") return std::make_unique<LazyBitmapsBinding>();
   if (name == "no-index") return std::make_unique<NoIndexBinding>();
   if (name == "si-ck") return std::make_unique<SICKBinding>();
   if (name == "si-lu") return std::make_unique<SILUBinding>();

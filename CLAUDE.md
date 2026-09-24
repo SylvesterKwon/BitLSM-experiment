@@ -28,7 +28,9 @@ src/
 │   ├── no_index_binding.*     # No-Index (plain RocksDB) binding
 │   ├── si_ck_binding.*        # SI-CK (concatenated key) binding
 │   ├── si_lu_binding.*        # SI-LU (list union + merge operator) binding
-│   └── si_eager_binding.*     # SI-Eager (eager sorted insert) binding
+│   ├── si_eager_binding.*     # SI-Eager (eager sorted insert) binding
+│   ├── lazy_bitmaps_binding.* # Lazy Bitmaps binding
+│   └── lazy_bitmaps/          # its encodings, OR merge operator, binner (+ test/)
 ├── benchmark/
 │   ├── benchmark_experiment.h # BenchmarkExperiment class (uses Binding)
 │   ├── si_benchmark_common.h  # shared SI utilities (TransactionDB, scan helpers)
@@ -58,6 +60,7 @@ src/
 | si-ck | `SICKBinding` | `build/bin/si-ck` | Secondary index — concatenated key |
 | si-lu | `SILUBinding` | `build/bin/si-lu` | Secondary index — list union (merge operator) |
 | si-eager | `SIEagerBinding` | `build/bin/si-eager` | Secondary index — eager sorted insert |
+| lazy-bitmaps | `LazyBitmapsBinding` | `build/bin/lazy-bitmaps` | Lazy Updates with Roaring-bitmap postings in a separate CF (`lazy_bitmaps`), a rowid → PK map CF, global oracle bins at BitLSM's rho (`--bin_policy` for taxi, `--schema` for synthetic; the policy is saved as a sidecar in the DB dir, so reads need no flag). Gates: `build/bin/lazy_bitmaps_test_{keys,merge,binner,db}` |
 
 Each `methods/<method>.cpp` is a one-liner main:
 ```cpp
