@@ -17,6 +17,7 @@ SCHEMA_TICK_LABELS = ["a=1", "a=2", "a=4", "a=8", "a=16", "a=32"]
 METHOD_ORDER = [
     "no-index",
     "si-lu",
+    "lazy-bitmaps_rho0.001",
     "si-ck",
     "si-eager",
     "embedded",
@@ -26,6 +27,7 @@ METHOD_ORDER = [
 METHOD_LABELS = {
     "no-index": "No Index",
     "si-lu": "Lazy",
+    "lazy-bitmaps_rho0.001": "Lazy Bitmaps",
     "si-ck": "Composite",
     "si-eager": "SI-Eager",
     "embedded": "Per-Block Filters",
@@ -35,6 +37,7 @@ METHOD_LABELS = {
 METHOD_COLORS = {
     "bitlsm_rho0.001": "#E04040",
     "si-lu": "#4CC850",
+    "lazy-bitmaps_rho0.001": "#1F6E2E",
     "si-ck": "#9888B8",
     "embedded": "#1FA8A0",
     "embedded-postings": "#3060C0",

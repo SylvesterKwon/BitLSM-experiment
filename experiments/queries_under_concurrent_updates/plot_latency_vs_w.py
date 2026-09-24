@@ -50,6 +50,7 @@ plt.rcParams.update({
 # the same plan) it is the shipped top-2 default and draws as that series.
 SERIES = [("embedded-postings_il2", "Embedded Postings (Top-2 Intersection)", "#2F6FD0", "-"),
           ("embedded-postings_il0", "Embedded Postings (Intersection)", "#2F6FD0", "--"),
+          ("lazy-bitmaps_rho0.001", "Lazy Bitmaps", "#1F6E2E", "-"),
           ("bitlsm_rho0.001", "BitLSM", "#E04040", "-")]
 
 # Row geometry: pin the panel box and give the figure the box plus the

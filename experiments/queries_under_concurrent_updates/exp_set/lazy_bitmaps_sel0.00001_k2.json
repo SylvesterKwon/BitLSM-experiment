@@ -1,0 +1,36 @@
+{
+  "db_path_base": "/scratch/qui",
+  "pk_mode": "uuid",
+  "run_db_base": "/scratch/qui/runs",
+  "query_workload": "workloads/read_seq/read_seq_sel0.00001_k2_r300.tsv",
+  "update_workload": "workloads/overwrite_uniform_2024-2025_all_uuid_n20M.tsv",
+  "update_rates": [
+    0,
+    1000,
+    2000,
+    4000,
+    8000,
+    16000,
+    32000,
+    64000,
+    128000
+  ],
+  "duration_s": 1800,
+  "window_s": 60,
+  "sample_interval_s": 1,
+  "seed": 42,
+  "common_params": {
+    "indexed_attrs": "PULocationID,DOLocationID,tpep_pickup_datetime,tpep_dropoff_datetime,fare_amount,passenger_count",
+    "scan_prefetch_depth": 32
+  },
+  "methods": [
+    {
+      "name": "lazy-bitmaps",
+      "params": {
+        "rho": [
+          0.001
+        ]
+      }
+    }
+  ]
+}

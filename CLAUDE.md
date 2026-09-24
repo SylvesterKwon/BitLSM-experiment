@@ -28,7 +28,9 @@ src/
 │   ├── no_index_binding.*     # No-Index (plain RocksDB) binding
 │   ├── si_ck_binding.*        # SI-CK (concatenated key) binding
 │   ├── si_lu_binding.*        # SI-LU (list union + merge operator) binding
-│   └── si_eager_binding.*     # SI-Eager (eager sorted insert) binding
+│   ├── si_eager_binding.*     # SI-Eager (eager sorted insert) binding
+│   ├── lazy_bitmaps_binding.* # Lazy Bitmaps binding
+│   └── lazy_bitmaps/          # its encodings, OR merge operator, binner (+ test/)
 ├── benchmark/
 │   ├── benchmark_experiment.h # BenchmarkExperiment class (uses Binding)
 │   ├── si_benchmark_common.h  # shared SI utilities (TransactionDB, scan helpers)
@@ -58,6 +60,7 @@ src/
 | si-ck | `SICKBinding` | `build/bin/si-ck` | Secondary index — concatenated key |
 | si-lu | `SILUBinding` | `build/bin/si-lu` | Secondary index — list union (merge operator) |
 | si-eager | `SIEagerBinding` | `build/bin/si-eager` | Secondary index — eager sorted insert |
+| lazy-bitmaps | `LazyBitmapsBinding` | `build/bin/lazy-bitmaps` | Lazy Updates with Roaring-bitmap postings in a separate CF (`lazy_bitmaps`), a rowid → PK map CF, global oracle bins at BitLSM's rho (`--bin_policy` for taxi, `--schema` for synthetic; the policy is saved as a sidecar in the DB dir, so reads need no flag). Gates: `build/bin/lazy_bitmaps_test_{keys,merge,binner,db}` |
 
 Each `methods/<method>.cpp` is a one-liner main:
 ```cpp
@@ -271,9 +274,10 @@ these across experiments:
   (Intersection). Strategy suffixes are a read-side distinction, so the write
   and ingestion figures carry a bare `Embedded Postings`.
 - The legend reads No Index, Lazy (Post Filtering), Lazy (Intersection),
-  Composite (Post Filtering), Composite (Intersection), Per-Block Filters,
-  Embedded Postings (Top-2 Intersection), Embedded Postings (Intersection),
-  BitLSM, BitLSM-Global -- baselines first, ours last.
+  Lazy Bitmaps, Composite (Post Filtering), Composite (Intersection),
+  Per-Block Filters, Embedded Postings (Top-2 Intersection), Embedded
+  Postings (Intersection), BitLSM, BitLSM-Global -- baselines first, ours
+  last.
 - The `embedded` baseline is named Per-Block Filters. Naming its two
   structures instead (`Bloom + Zone Map`) reads as two series in a legend that
   draws one box for it, and its `bloom_bits` is a build parameter the figure
@@ -289,6 +293,8 @@ these across experiments:
   swallows the usual same-hue hatch, so the ablation arm gets its own color
   instead. The methods read Per-Block Filters, BitLSM-Global, BitLSM, in that
   order.
+- Lazy Bitmaps is dark green `#1F6E2E`: the Lazy family's hue, darker so it
+  reads next to Lazy Updates' `#4CC850`.
 - Do not hedge a re-implemented baseline in the legend (`SAI-like`,
   `Cassandra-like`). The text says once that it is a best-effort
   implementation; repeating it per figure invites the "how unlike?" question
