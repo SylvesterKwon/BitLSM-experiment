@@ -77,7 +77,7 @@ set(COMMON_LINK_LIBS
 )
 
 # EXPERIMENT BINDINGS (정적 라이브러리)
-file(GLOB BINDING_SOURCES "src/bindings/*.cpp" "src/bindings/embedded/*.cpp" "src/bindings/sai/*.cpp" "src/bindings/global_bins/*.cpp")
+file(GLOB BINDING_SOURCES "src/bindings/*.cpp" "src/bindings/embedded/*.cpp" "src/bindings/sai/*.cpp" "src/bindings/global_bins/*.cpp" "src/bindings/lazy_bitmaps/*.cpp")
 add_library(experiment_bindings STATIC ${BINDING_SOURCES})
 
 # Path to the patched RocksDB vendored inside BitLSM. Referenced DIRECTLY so this
@@ -90,6 +90,7 @@ target_include_directories(experiment_bindings PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/bindings/embedded
     ${CMAKE_CURRENT_SOURCE_DIR}/src/bindings/sai
     ${CMAKE_CURRENT_SOURCE_DIR}/src/bindings/global_bins
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/bindings/lazy_bitmaps
     ${CMAKE_CURRENT_SOURCE_DIR}/src/benchmark
     ${EMBEDDED_ROCKSDB_DIR}
     ${EMBEDDED_ROCKSDB_DIR}/include
@@ -153,4 +154,21 @@ foreach(TEST_SRC ${SAI_TEST_SOURCES})
     target_compile_options(${TEST_NAME} PRIVATE -fno-rtti -UNDEBUG)
     target_link_libraries(${TEST_NAME} PRIVATE ${COMMON_LINK_LIBS} experiment_bindings)
     message(STATUS "SAI test executable added: ${TEST_NAME}")
+endforeach()
+
+# Lazy Bitmaps unit-test executables (assert-based standalone mains)
+file(GLOB LAZY_BITMAPS_TEST_SOURCES "src/bindings/lazy_bitmaps/test/*.cpp")
+foreach(TEST_SRC ${LAZY_BITMAPS_TEST_SOURCES})
+    get_filename_component(TEST_NAME ${TEST_SRC} NAME_WE)
+    add_executable(${TEST_NAME} ${TEST_SRC})
+    target_include_directories(${TEST_NAME} PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/bindings
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/bindings/lazy_bitmaps
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/benchmark
+        ${EMBEDDED_ROCKSDB_DIR}
+        ${EMBEDDED_ROCKSDB_DIR}/include
+    )
+    target_compile_options(${TEST_NAME} PRIVATE -fno-rtti -UNDEBUG)
+    target_link_libraries(${TEST_NAME} PRIVATE ${COMMON_LINK_LIBS} experiment_bindings)
+    message(STATUS "Lazy Bitmaps test executable added: ${TEST_NAME}")
 endforeach()
