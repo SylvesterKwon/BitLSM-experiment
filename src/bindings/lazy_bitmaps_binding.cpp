@@ -187,8 +187,157 @@ void LazyBitmapsBinding::Put(const std::string& pk,
   delete txn;
 }
 
-ScanResult LazyBitmapsBinding::Scan(BitLSMQuery& /*query*/) {
-  return {0, 0};  // Task 5
+namespace {
+
+// Thread-local RocksDB counters, on at the default perf level, so per-phase
+// deltas give the index bytes without a Statistics object.
+struct PerfSnapshot {
+  uint64_t reads, bytes, hits;
+  static PerfSnapshot Now() {
+    const rocksdb::PerfContext* pc = rocksdb::get_perf_context();
+    return {pc->block_read_count, pc->block_read_byte,
+            pc->block_cache_hit_count};
+  }
+  PerfSnapshot operator-(const PerfSnapshot& o) const {
+    return {reads - o.reads, bytes - o.bytes, hits - o.hits};
+  }
+};
+
+constexpr size_t kMultiGetBatch = 1000000;  // as ScanByIndexMerge
+
+}  // namespace
+
+ScanResult LazyBitmapsBinding::Scan(BitLSMQuery& query) {
+  auto plan = benchmark::MapQueryToSILookups(query, options_);
+  if (plan.si_lookups.empty()) {
+    auto r = benchmark::ScanFullTable(db_, cf_, query, options_, 0);
+    last_scan_ = {r.records_matched, r.records_matched, r.records_matched};
+    return {r.time_elapsed_ms, r.records_matched};
+  }
+  const auto start = std::chrono::high_resolution_clock::now();
+  const PerfSnapshot p0 = PerfSnapshot::Now();
+  lazy_bitmaps::tl_operands_folded = 0;
+
+  // One snapshot for the three column families, so the reads cannot drift
+  // apart under a concurrent writer.
+  const rocksdb::Snapshot* snap = db_->GetSnapshot();
+  rocksdb::ReadOptions ro;
+  ro.snapshot = snap;
+
+  // 1. AND over the predicates of the OR over each predicate's bins. Get and
+  // the iterator return the fully folded bitmap; that fold is part of the
+  // query and is never cached across queries.
+  roaring::Roaring q;
+  bool first = true;
+  std::string key, upper;
+  for (const auto& lookup : plan.si_lookups) {
+    roaring::Roaring b;
+    if (lookup.type == benchmark::SILookupType::kPointLookup) {
+      for (const auto& value : lookup.sk_values) {
+        lazy_bitmaps::EqualityKey(lookup.attr_idx, value, &key);
+        rocksdb::PinnableSlice bytes;
+        rocksdb::Status s = db_->Get(ro, cf_[kBitmaps], key, &bytes);
+        if (s.ok())
+          b |= lazy_bitmaps::ReadBitmap(bytes.ToStringView());
+        else if (!s.IsNotFound())
+          Fail("bitmap Get: " + s.ToString());
+      }
+    } else {
+      const uint32_t lo =
+          lookup.lower_bound
+              ? binner_->Bin(lookup.attr_idx, *lookup.lower_bound)
+              : 0;
+      const uint32_t hi =
+          lookup.upper_bound
+              ? binner_->Bin(lookup.attr_idx, *lookup.upper_bound)
+              : binner_->Bins(lookup.attr_idx) - 1;
+      lazy_bitmaps::RangeBinKey(lookup.attr_idx, lo, &key);
+      lazy_bitmaps::RangeBinKey(lookup.attr_idx, hi + 1, &upper);
+      rocksdb::ReadOptions span = ro;
+      const rocksdb::Slice upper_slice(upper);
+      span.iterate_upper_bound = &upper_slice;
+      std::unique_ptr<rocksdb::Iterator> it(
+          db_->NewIterator(span, cf_[kBitmaps]));
+      for (it->Seek(key); it->Valid(); it->Next())
+        b |= lazy_bitmaps::ReadBitmap(it->value().ToStringView());
+      if (!it->status().ok()) Fail("bitmap span: " + it->status().ToString());
+    }
+    if (first) {
+      q = std::move(b);
+      first = false;
+    } else {
+      q &= b;
+    }
+    if (q.isEmpty()) break;
+  }
+  const uint64_t n_q = q.cardinality();
+  const PerfSnapshot p1 = PerfSnapshot::Now();
+
+  // 2. rowid -> PK, then dedup on PK: the rowids of an updated PK collapse
+  // here, so the primary is fetched once per PK.
+  std::vector<std::string> pks;
+  pks.reserve(n_q);
+  {
+    std::vector<uint32_t> rowids(n_q);
+    q.toUint32Array(rowids.data());
+    const size_t batch = std::min(kMultiGetBatch, rowids.size());
+    std::vector<std::string> key_storage(batch);
+    std::vector<rocksdb::Slice> keys(batch);
+    for (size_t off = 0; off < rowids.size(); off += kMultiGetBatch) {
+      const size_t n = std::min(kMultiGetBatch, rowids.size() - off);
+      for (size_t i = 0; i < n; ++i) {
+        lazy_bitmaps::RowidKey(rowids[off + i], &key_storage[i]);
+        keys[i] = rocksdb::Slice(key_storage[i]);
+      }
+      std::vector<rocksdb::PinnableSlice> values(n);
+      std::vector<rocksdb::Status> statuses(n);
+      db_->MultiGet(ro, cf_[kRowidMap], n, keys.data(), values.data(),
+                    statuses.data());
+      for (size_t i = 0; i < n; ++i)
+        if (statuses[i].ok()) pks.push_back(values[i].ToString());
+    }
+  }
+  std::sort(pks.begin(), pks.end());
+  pks.erase(std::unique(pks.begin(), pks.end()), pks.end());
+  const uint64_t n_pk = pks.size();
+  const PerfSnapshot p2 = PerfSnapshot::Now();
+
+  // 3. The latest record of every PK, checked against the whole CNF: bin
+  // false positives and stale rowids fall out here, deleted PKs are NotFound.
+  uint64_t matched = 0;
+  {
+    std::vector<rocksdb::Slice> keys(std::min(kMultiGetBatch, pks.size()));
+    for (size_t off = 0; off < pks.size(); off += kMultiGetBatch) {
+      const size_t n = std::min(kMultiGetBatch, pks.size() - off);
+      for (size_t i = 0; i < n; ++i) keys[i] = rocksdb::Slice(pks[off + i]);
+      std::vector<rocksdb::PinnableSlice> values(n);
+      std::vector<rocksdb::Status> statuses(n);
+      db_->MultiGet(ro, cf_[kPrimary], n, keys.data(), values.data(),
+                    statuses.data());
+      for (size_t i = 0; i < n; ++i)
+        if (statuses[i].ok() &&
+            query.CheckCondition(
+                rocksdb::Slice(values[i].data(), values[i].size()), *layout_))
+          ++matched;
+    }
+  }
+  db_->ReleaseSnapshot(snap);
+
+  const auto elapsed =
+      std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::high_resolution_clock::now() - start)
+          .count();
+  const PerfSnapshot bitmaps = p1 - p0, rowid_map = p2 - p1, index = p2 - p0;
+  idx_reads_ += index.reads;
+  idx_bytes_ += index.bytes;
+  idx_hits_ += index.hits;
+  last_scan_ = {n_q, n_pk, matched};
+  std::cout << "scan (lazy-bitmaps) done: " << matched << " matched, |Q|="
+            << n_q << " |PKs|=" << n_pk << ", " << elapsed
+            << "ms, operands_folded=" << lazy_bitmaps::tl_operands_folded
+            << ", bitmaps_read_kb=" << bitmaps.bytes / 1024
+            << " rowid_map_read_kb=" << rowid_map.bytes / 1024 << "\n";
+  return {static_cast<uint64_t>(elapsed), matched};
 }
 
 WriteStats LazyBitmapsBinding::GetWriteStats() {
