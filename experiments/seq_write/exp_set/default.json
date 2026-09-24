@@ -35,6 +35,15 @@
       "params": {}
     },
     {
+      "name": "lazy-bitmaps",
+      "binary": "build/bin/lazy-bitmaps",
+      "params": {
+        "rho": [
+          0.001
+        ]
+      }
+    },
+    {
       "name": "si-ck",
       "binary": "build/bin/si-ck",
       "params": {}
