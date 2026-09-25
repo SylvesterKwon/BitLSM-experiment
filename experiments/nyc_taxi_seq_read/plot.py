@@ -41,6 +41,10 @@ FIGURE_BANDS = (1e-5, 1e-4, 1e-3)
 # by reading ax.get_position() whenever FIGURE_BANDS or the grid shape moves --
 # the value is measured, never eyeballed.
 FIG_HEIGHT_IN = 3.77
+# Ten arms need three legend rows (five columns of two overflow the width).
+# The extra row is added above the panel area, so the panel boxes keep the
+# measured size and only the legend band grows.
+LEGEND_EXTRA_IN = 0.13
 
 METHOD_ORDER = [
     "no-index",
@@ -48,6 +52,7 @@ METHOD_ORDER = [
     "si-lu_strategy_im",
     "si-ck_strategy_pf",
     "si-ck_strategy_im",
+    "lazy-bitmaps_rho0.001",
     "embedded_bloom_bits10",
     "embedded-postings_il2",
     "embedded-postings_il0",
@@ -62,6 +67,7 @@ METHOD_LABELS = {
     "si-lu_strategy_im": "Lazy (Intersection)",
     "si-ck_strategy_pf": "Composite (Post Filtering)",
     "si-ck_strategy_im": "Composite (Intersection)",
+    "lazy-bitmaps_rho0.001": "Lazy Bitmaps",
     "embedded_bloom_bits10": "Per-Block Filters",
     # Symmetric on the one thing that differs: how many predicates the index
     # intersects. il=2 is what Cassandra ships, il=0 lifts the cap.
@@ -79,6 +85,7 @@ METHOD_COLORS = {
     "no-index": "#808080",
     "si-ck_strategy_im": "#9888B8",
     "si-ck_strategy_pf": "#9888B8",
+    "lazy-bitmaps_rho0.001": "#C0409A",
     "si-lu_strategy_im": "#4CC850",
     "si-lu_strategy_pf": "#4CC850",
     "embedded_bloom_bits10": "#1FA8A0",
@@ -172,7 +179,8 @@ def plot_grid(data, output_dir):
                 all_methods.append(m)
     all_methods = [m for m in METHOD_ORDER if m in all_methods]
 
-    fig, axes = plt.subplots(nrows, ncols, figsize=(7, FIG_HEIGHT_IN),
+    fig, axes = plt.subplots(nrows, ncols,
+                             figsize=(7, FIG_HEIGHT_IN + LEGEND_EXTRA_IN),
                              squeeze=False)
 
     for ri, sel in enumerate(all_sels):
@@ -251,10 +259,12 @@ def plot_grid(data, output_dir):
                       hatch=METHOD_HATCHES.get(m, ""),
                       edgecolor="black", linewidth=0.5,
                       label=METHOD_LABELS.get(m, m)))
-    legend_ncol = math.ceil(len(all_methods) / 2)
-    fig.tight_layout(rect=[0, 0, 1, 0.93])
+    legend_ncol = math.ceil(len(all_methods) / 3)
+    total_in = FIG_HEIGHT_IN + LEGEND_EXTRA_IN
+    fig.tight_layout(rect=[0, 0, 1, 0.93 * FIG_HEIGHT_IN / total_in])
     fig.legend(handles=legend_handles, loc="center",
-               bbox_to_anchor=(0.5, 0.958),
+               bbox_to_anchor=(0.5, (0.958 * FIG_HEIGHT_IN
+                                     + LEGEND_EXTRA_IN / 2) / total_in),
                ncol=legend_ncol, frameon=False)
 
     out_path = os.path.join(output_dir, "read_query_time_distribution.pdf")

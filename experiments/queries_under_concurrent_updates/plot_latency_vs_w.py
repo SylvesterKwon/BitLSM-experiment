@@ -48,7 +48,8 @@ plt.rcParams.update({
 # Baselines first, ours last. Where a sweep has only one Embedded Postings arm
 # (c = 2, where top-2 of two predicates keeps both and the two strategies are
 # the same plan) it is the shipped top-2 default and draws as that series.
-SERIES = [("embedded-postings_il2", "Embedded Postings (Top-2 Intersection)", "#2F6FD0", "-"),
+SERIES = [("lazy-bitmaps_rho0.001", "Lazy Bitmaps", "#C0409A", "-"),
+          ("embedded-postings_il2", "Embedded Postings (Top-2 Intersection)", "#2F6FD0", "-"),
           ("embedded-postings_il0", "Embedded Postings (Intersection)", "#2F6FD0", "--"),
           ("bitlsm_rho0.001", "BitLSM", "#E04040", "-")]
 

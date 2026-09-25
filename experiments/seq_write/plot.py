@@ -18,6 +18,7 @@ METHOD_ORDER = [
     "no-index",
     "si-lu",
     "si-ck",
+    "lazy-bitmaps_rho0.001",
     "si-eager",
     "embedded",
     "embedded-postings",
@@ -27,6 +28,7 @@ METHOD_LABELS = {
     "no-index": "No Index",
     "si-lu": "Lazy",
     "si-ck": "Composite",
+    "lazy-bitmaps_rho0.001": "Lazy Bitmaps",
     "si-eager": "SI-Eager",
     "embedded": "Per-Block Filters",
     "embedded-postings": "Embedded Postings",
@@ -36,6 +38,7 @@ METHOD_COLORS = {
     "bitlsm_rho0.001": "#E04040",
     "si-lu": "#4CC850",
     "si-ck": "#9888B8",
+    "lazy-bitmaps_rho0.001": "#C0409A",
     "embedded": "#1FA8A0",
     "embedded-postings": "#3060C0",
 }

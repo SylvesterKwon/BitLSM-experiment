@@ -274,9 +274,10 @@ these across experiments:
   (Intersection). Strategy suffixes are a read-side distinction, so the write
   and ingestion figures carry a bare `Embedded Postings`.
 - The legend reads No Index, Lazy (Post Filtering), Lazy (Intersection),
-  Composite (Post Filtering), Composite (Intersection), Per-Block Filters,
-  Embedded Postings (Top-2 Intersection), Embedded Postings (Intersection),
-  BitLSM, BitLSM-Global -- baselines first, ours last.
+  Composite (Post Filtering), Composite (Intersection), Lazy Bitmaps,
+  Per-Block Filters, Embedded Postings (Top-2 Intersection), Embedded
+  Postings (Intersection), BitLSM, BitLSM-Global -- baselines first, ours
+  last. Lazy Bitmaps closes the standalone family.
 - The `embedded` baseline is named Per-Block Filters. Naming its two
   structures instead (`Bloom + Zone Map`) reads as two series in a legend that
   draws one box for it, and its `bloom_bits` is a build parameter the figure
@@ -292,6 +293,9 @@ these across experiments:
   swallows the usual same-hue hatch, so the ablation arm gets its own color
   instead. The methods read Per-Block Filters, BitLSM-Global, BitLSM, in that
   order.
+- Lazy Bitmaps is magenta `#C0409A`, solid, no hatch: it has a single
+  strategy (every predicate intersected), so there is no second arm for a
+  hatch to separate.
 - Do not hedge a re-implemented baseline in the legend (`SAI-like`,
   `Cassandra-like`). The text says once that it is a best-effort
   implementation; repeating it per figure invites the "how unlike?" question
