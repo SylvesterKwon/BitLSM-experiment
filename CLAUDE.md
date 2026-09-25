@@ -188,7 +188,9 @@ python3 experiments/<name>/run.py experiments/<name>/exp_set/<params>.json [opti
 Figures are sized and styled for a two-column paper, not for a screen. Match
 these across experiments:
 
-- `plt.rcParams.update({"font.size": 6})`.
+- `plt.rcParams.update({"font.size": 6})`. One exception: the
+  `nyc_taxi_seq_read` legend is 5 pt, because its ten arms fit the 7 in
+  width in two rows only at that size; the panels stay at 6.
 - Width 7 in for a figure spanning both columns, 3.333 in for a single-column
   one.
 - One panel's plot box is 0.702 as tall as it is wide -- measured from

@@ -41,10 +41,9 @@ FIGURE_BANDS = (1e-5, 1e-4, 1e-3)
 # by reading ax.get_position() whenever FIGURE_BANDS or the grid shape moves --
 # the value is measured, never eyeballed.
 FIG_HEIGHT_IN = 3.77
-# Ten arms need three legend rows (five columns of two overflow the width).
-# The extra row is added above the panel area, so the panel boxes keep the
-# measured size and only the legend band grows.
-LEGEND_EXTRA_IN = 0.13
+# Ten arms in two legend rows fit the 7 in width at 5 pt with the columns
+# packed tighter than the defaults; at 6 pt they overflow.
+LEGEND_FONT_PT = 5
 
 METHOD_ORDER = [
     "no-index",
@@ -179,8 +178,7 @@ def plot_grid(data, output_dir):
                 all_methods.append(m)
     all_methods = [m for m in METHOD_ORDER if m in all_methods]
 
-    fig, axes = plt.subplots(nrows, ncols,
-                             figsize=(7, FIG_HEIGHT_IN + LEGEND_EXTRA_IN),
+    fig, axes = plt.subplots(nrows, ncols, figsize=(7, FIG_HEIGHT_IN),
                              squeeze=False)
 
     for ri, sel in enumerate(all_sels):
@@ -259,13 +257,12 @@ def plot_grid(data, output_dir):
                       hatch=METHOD_HATCHES.get(m, ""),
                       edgecolor="black", linewidth=0.5,
                       label=METHOD_LABELS.get(m, m)))
-    legend_ncol = math.ceil(len(all_methods) / 3)
-    total_in = FIG_HEIGHT_IN + LEGEND_EXTRA_IN
-    fig.tight_layout(rect=[0, 0, 1, 0.93 * FIG_HEIGHT_IN / total_in])
+    legend_ncol = math.ceil(len(all_methods) / 2)
+    fig.tight_layout(rect=[0, 0, 1, 0.93])
     fig.legend(handles=legend_handles, loc="center",
-               bbox_to_anchor=(0.5, (0.958 * FIG_HEIGHT_IN
-                                     + LEGEND_EXTRA_IN / 2) / total_in),
-               ncol=legend_ncol, frameon=False)
+               bbox_to_anchor=(0.5, 0.958),
+               ncol=legend_ncol, frameon=False, fontsize=LEGEND_FONT_PT,
+               columnspacing=1.2, handlelength=1.6, handletextpad=0.6)
 
     out_path = os.path.join(output_dir, "read_query_time_distribution.pdf")
     fig.savefig(out_path, dpi=150)
