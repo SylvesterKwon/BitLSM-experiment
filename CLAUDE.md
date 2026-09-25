@@ -188,9 +188,7 @@ python3 experiments/<name>/run.py experiments/<name>/exp_set/<params>.json [opti
 Figures are sized and styled for a two-column paper, not for a screen. Match
 these across experiments:
 
-- `plt.rcParams.update({"font.size": 6})`. One exception: the
-  `nyc_taxi_seq_read` legend is 5 pt, because its ten arms fit the 7 in
-  width in two rows only at that size; the panels stay at 6.
+- `plt.rcParams.update({"font.size": 6})`.
 - Width 7 in for a figure spanning both columns, 3.333 in for a single-column
   one.
 - One panel's plot box is 0.702 as tall as it is wide -- measured from
@@ -223,6 +221,11 @@ these across experiments:
   width 0.3, minor size 1. Set it once through `rcParams` when a script draws
   several figures, or per-axis as in `seq_write_wa/plot.py`.
 - Legends carry `frameon=False`; save with `dpi=150`.
+- A two-row legend stacks the two arms of one method in one column (the
+  shipped or post-filtering arm on top, intersect-all below) and leaves the
+  slot under a single-arm method empty when a pair follows it, so the pairs
+  stay aligned and the legend still reads in the convention order column by
+  column (`LEGEND_PAIRS` in `nyc_taxi_seq_read/plot.py`).
 - Latency is the MEDIAN of the per-query rows, matching the boxplot centre
   lines in `nyc_taxi_seq_read`, so a configuration measured in both sections
   reads the same in both. Byte volumes are averages (see below): they are a
