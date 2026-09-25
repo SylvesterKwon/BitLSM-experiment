@@ -34,7 +34,7 @@ import numpy as np
 
 META_PATTERN = re.compile(
     r"^(?P<stem>.+)_(?P<method>bitlsm_rho[\d.]+|embedded-postings_il\d+|"
-    r"embedded_bloom_bits\d+)_w(?P<rate>[\d.]+)_meta\.json$")
+    r"embedded_bloom_bits\d+|lazy-bitmaps_rho[\d.]+)_w(?P<rate>[\d.]+)_meta\.json$")
 
 # Written once per sweep by run.py's write_sweep_meta(); not a run file, so
 # collect() must not treat it as an unrecognized run.

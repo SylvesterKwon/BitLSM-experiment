@@ -239,6 +239,12 @@ class CollectSkipsTest(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
+    def test_lazy_bitmaps_run_files_are_recognized(self):
+        m = summarize.META_PATTERN.match(
+            "read_seq_sel0.00001_k2_r300_lazy-bitmaps_rho0.001_w1000_meta.json")
+        self.assertEqual((m.group("method"), m.group("rate")),
+                         ("lazy-bitmaps_rho0.001", "1000"))
+
     def test_unrecognized_meta_file_is_skipped_and_reported(self):
         fixture.write_run(self.tmp.name, "bitlsm_rho0.001", 0)
         stray = os.path.join(self.tmp.name, "foo_no-index_w0_meta.json")
