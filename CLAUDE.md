@@ -221,11 +221,10 @@ these across experiments:
   width 0.3, minor size 1. Set it once through `rcParams` when a script draws
   several figures, or per-axis as in `seq_write_wa/plot.py`.
 - Legends carry `frameon=False`; save with `dpi=150`.
-- A two-row legend stacks the two arms of one method in one column (the
-  shipped or post-filtering arm on top, intersect-all below) and leaves the
-  slot under a single-arm method empty when a pair follows it, so the pairs
-  stay aligned and the legend still reads in the convention order column by
-  column (`LEGEND_PAIRS` in `nyc_taxi_seq_read/plot.py`).
+- One exception to that order: the `nyc_taxi_seq_read` legend lists No
+  Index last. Its dashed reference line is not a box, and with it out of
+  the first slot the two arms of each method stack in one column of the
+  two-row legend.
 - Latency is the MEDIAN of the per-query rows, matching the boxplot centre
   lines in `nyc_taxi_seq_read`, so a configuration measured in both sections
   reads the same in both. Byte volumes are averages (see below): they are a

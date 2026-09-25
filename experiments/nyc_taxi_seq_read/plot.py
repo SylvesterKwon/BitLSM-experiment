@@ -41,16 +41,9 @@ FIGURE_BANDS = (1e-5, 1e-4, 1e-3)
 # by reading ax.get_position() whenever FIGURE_BANDS or the grid shape moves --
 # the value is measured, never eyeballed.
 FIG_HEIGHT_IN = 3.77
-# The two arms of one method share a legend column (top: the shipped or
-# post-filtering arm, bottom: intersect-all). A single-arm method that
-# precedes a pair gets an empty slot under it, so the pairs stay aligned and
-# the legend still reads in METHOD_ORDER column by column.
-LEGEND_PAIRS = {
-    "si-lu_strategy_pf": "si-lu_strategy_im",
-    "si-ck_strategy_pf": "si-ck_strategy_im",
-    "embedded-postings_il2": "embedded-postings_il0",
-}
-LEGEND_FONT_PT = 6
+# The legend lists No Index last: its dashed reference line is not a box,
+# and with it out of the first slot the two arms of each method stack in
+# one column of the two-row legend.
 
 METHOD_ORDER = [
     "no-index",
@@ -251,38 +244,26 @@ def plot_grid(data, output_dir):
     # Shared legend at top
     from matplotlib.patches import Patch
     from matplotlib.lines import Line2D
-    def handle(m):
-        if m is None:
-            return Patch(alpha=0, label="")
+    legend_methods = ([m for m in all_methods if m != "no-index"] +
+                      [m for m in all_methods if m == "no-index"])
+    legend_handles = []
+    for m in legend_methods:
         if m == "no-index":
-            return Line2D([0], [0], color=METHOD_COLORS["no-index"],
-                          linestyle="--", linewidth=0.8,
-                          label=METHOD_LABELS.get(m, m))
-        return Patch(facecolor=METHOD_COLORS.get(m, "#CCCCCC"),
-                     hatch=METHOD_HATCHES.get(m, ""),
-                     edgecolor="black", linewidth=0.5,
-                     label=METHOD_LABELS.get(m, m))
-    pair_starts = set(LEGEND_PAIRS)
-    columns = []
-    i = 0
-    while i < len(all_methods):
-        m = all_methods[i]
-        nxt = all_methods[i + 1] if i + 1 < len(all_methods) else None
-        if LEGEND_PAIRS.get(m) == nxt or (nxt is not None and
-                                          m not in pair_starts and
-                                          nxt not in pair_starts):
-            columns.append((m, nxt))
-            i += 2
+            legend_handles.append(
+                Line2D([0], [0], color=METHOD_COLORS["no-index"],
+                       linestyle="--", linewidth=0.8,
+                       label=METHOD_LABELS.get(m, m)))
         else:
-            columns.append((m, None))
-            i += 1
-    legend_handles = [handle(m) for col in columns for m in col]
-    legend_ncol = len(columns)
+            legend_handles.append(
+                Patch(facecolor=METHOD_COLORS.get(m, "#CCCCCC"),
+                      hatch=METHOD_HATCHES.get(m, ""),
+                      edgecolor="black", linewidth=0.5,
+                      label=METHOD_LABELS.get(m, m)))
+    legend_ncol = math.ceil(len(legend_methods) / 2)
     fig.tight_layout(rect=[0, 0, 1, 0.93])
     fig.legend(handles=legend_handles, loc="center",
                bbox_to_anchor=(0.5, 0.958),
-               ncol=legend_ncol, frameon=False, fontsize=LEGEND_FONT_PT,
-               columnspacing=1.2, handlelength=1.6, handletextpad=0.6)
+               ncol=legend_ncol, frameon=False)
 
     out_path = os.path.join(output_dir, "read_query_time_distribution.pdf")
     fig.savefig(out_path, dpi=150)
