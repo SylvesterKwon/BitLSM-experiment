@@ -58,6 +58,16 @@ class CheckpointTest(unittest.TestCase):
             self.assertFalse(os.path.exists(os.path.join(self.run_db, n)), n)
         self.assertEqual(run.inventory(self.base), before)
 
+    def test_lazy_bitmaps_policy_sidecar_is_copied(self):
+        _write(os.path.join(self.base, "lazy_bitmaps.policy"), b"GBINPOL1")
+        counts = run.checkpoint_db(self.base, self.run_db)
+        self.assertEqual(counts["copied"], 6)
+        dst = os.path.join(self.run_db, "lazy_bitmaps.policy")
+        self.assertNotEqual(os.stat(os.path.join(self.base, "lazy_bitmaps.policy")).st_ino,
+                            os.stat(dst).st_ino)
+        with open(dst, "rb") as f:
+            self.assertEqual(f.read(), b"GBINPOL1")
+
     def test_inventory_lists_every_file_with_size(self):
         inv = run.inventory(self.base)
         self.assertEqual([n for n, _ in inv], sorted(self.files))

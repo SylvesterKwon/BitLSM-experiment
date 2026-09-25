@@ -80,11 +80,14 @@ def abs_path(p: str) -> str:
 # ---------------------------------------------------------------------------
 
 def classify(name: str):
-    """'link' for immutable SSTs, 'copy' for the metadata RocksDB rewrites,
+    """'link' for immutable SSTs, 'copy' for the metadata RocksDB rewrites
+    and for the lazy-bitmaps bin-policy sidecar the binding reads at open,
     'skip' for per-open files, None for anything this runner does not know
     (an unknown file means an assumption about the base DB is wrong)."""
     if name.endswith(".sst"):
         return "link"
+    if name == "lazy_bitmaps.policy":
+        return "copy"
     if (name in ("CURRENT", "IDENTITY") or name.startswith(("MANIFEST-", "OPTIONS-"))
             or name.endswith(".log")):
         return "copy"
