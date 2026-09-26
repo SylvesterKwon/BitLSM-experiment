@@ -216,8 +216,9 @@ these across experiments:
   vertical distance between two lines is their ratio, which is what these
   figures are about. With the budget axis already log, a log y also
   straightens the `y = budget` reference line in the RSS figure.
-- `queries_under_concurrent_updates` keeps linear, per-panel latency axes.
-  A panel whose arms leave a gap wider than 3x (c = 2: Lazy Bitmaps at
+- `queries_under_concurrent_updates` keeps linear, per-panel latency axes on
+  square panels (its own exception to the 0.702 box: the broken c = 2 panel
+  splits its box in two). A panel whose arms leave a gap wider than 3x (c = 2: Lazy Bitmaps at
   300-700 ms over the rest at 30-80 ms) is drawn on a broken y axis, so
   the arms below keep their resolution; the break is marked on both halves
   and the caption says so. A run whose writer could not sustain W
