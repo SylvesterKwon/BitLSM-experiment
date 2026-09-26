@@ -61,9 +61,19 @@ FIG_W = 3.333          # one paper column
 LEFT, RIGHT, WSPACE = 0.17, 0.965, 0.26
 TICKS_H, XLABEL_H = 0.14, 0.17
 TITLES_H = 0.13
-# The legend is one column, one row per series drawn, so its band grows with
-# the series count and the panel box below it stays put.
+# Two legend columns; the band grows with the row count so the panel box
+# below it stays put.
+LEGEND_NCOL = 2
 LEGEND_ROW_H, LEGEND_PAD = 0.105, 0.17
+# Legend-only shortening (CLAUDE.md allows dropping part of a name): the
+# full Top-2 label does not fit two columns in one paper column.
+LEGEND_LABELS = {"Embedded Postings (Top-2 Intersection)": "Embedded Postings (Top-2)"}
+# A panel whose arms leave a gap wider than this ratio between the slowest
+# arm below and the fastest arm above is drawn on a broken y axis, so the
+# arms below keep their resolution. The break is marked on both axes.
+BREAK_RATIO = 3.0
+BREAK_HEIGHTS = (1.0, 1.2)  # upper : lower share of the panel box
+BREAK_GAP = 0.10            # vertical gap between the two halves
 
 
 def panel_title(result_dir):
@@ -98,67 +108,100 @@ def make_figure(result_dirs, titles=None):
     box_h = box_w * PANEL_BOX_ASPECT + 0.01
     n_series = sum(1 for key, _, _, _ in SERIES
                    if any(k == key for _, runs in panels for (k, _) in runs))
-    legend_h = LEGEND_PAD + LEGEND_ROW_H * n_series
+    legend_h = LEGEND_PAD + LEGEND_ROW_H * math.ceil(n_series / LEGEND_NCOL)
     above, below = legend_h + TITLES_H, TICKS_H + XLABEL_H
     fig_h = box_h + above + below
 
-    fig, axes = plt.subplots(1, ncols, figsize=(FIG_W, fig_h), squeeze=False,
-                             sharey=True)
-    ys = []
-    for ax, (title, runs) in zip(axes[0], panels):
+    fig = plt.figure(figsize=(FIG_W, fig_h))
+    grid = fig.add_gridspec(1, ncols, left=LEFT, right=RIGHT, wspace=WSPACE,
+                            bottom=below / fig_h, top=1.0 - above / fig_h)
+    for slot, (title, runs) in zip(grid, panels):
         rates = sorted({w for (_, w) in runs})
-        xs = list(range(len(rates)))
+        series = []  # (points, colour, style, label) per arm present
         for key, label, colour, style in SERIES:
             # A method may be absent from a sweep, or from one of its rates.
             pts = [(i, float(runs[(key, w)]["mean_latency_ms"]),
                     str(runs[(key, w)].get("overloaded")) == "True")
                    for i, w in enumerate(rates) if (key, w) in runs]
-            if not pts:
-                continue
-            ys += [y for _, y, _ in pts]
-            ax.plot([i for i, _, _ in pts], [y for _, y, _ in pts], marker="o",
-                    markersize=2, linewidth=0.9, color=colour, linestyle=style, label=label)
-            # A run whose writer could not sustain W is drawn hollow: its
-            # x is the target rate, not the rate the method actually saw.
-            over = [(i, y) for i, y, o in pts if o]
-            if over:
-                ax.plot([i for i, _ in over], [y for _, y in over], linestyle="none",
-                        marker="o", markersize=2.6, markerfacecolor="white",
-                        markeredgecolor=colour, markeredgewidth=0.7)
-        ax.set_xticks(xs)
-        # Every rate gets a tick; labelling every other one keeps them apart.
-        ax.set_xticklabels([rate_label(w) if i % 2 == 0 else "" for i, w in enumerate(rates)])
-        ax.set_xlim(-0.35, len(rates) - 0.65)
-        ax.set_title(title)
-        ax.grid(False)
-        ax.set_box_aspect(PANEL_BOX_ASPECT)
-    # One log axis for every panel: the arms sit an order of magnitude apart,
-    # so the vertical distance between two lines is their ratio, and a shared
-    # range keeps c = 2 and c = 3 comparable. Only decades are labelled.
-    lo = 10 ** math.floor(math.log10(min(ys)))
-    hi = 10 ** math.ceil(math.log10(max(ys)))
-    for ax in axes[0]:
-        ax.set_yscale("log")
-        ax.set_ylim(lo, hi)
-        ax.yaxis.set_major_locator(mt.LogLocator(base=10, numticks=10))
-        ax.yaxis.set_major_formatter(mt.FuncFormatter(lambda v, _: f"{v:g}"))
-        ax.yaxis.set_minor_formatter(mt.NullFormatter())
+            if pts:
+                series.append((pts, colour, style, label))
+        gap = _gap(series)
+        if gap is None:
+            axes = [fig.add_subplot(slot)]
+            axes[0].set_ylim(0, max(y for pts, *_ in series for _, y, _ in pts) * 1.08)
+        else:
+            lower_max, upper_min = gap
+            sub = slot.subgridspec(2, 1, height_ratios=BREAK_HEIGHTS, hspace=BREAK_GAP)
+            upper = fig.add_subplot(sub[0])
+            lower = fig.add_subplot(sub[1], sharex=upper)
+            axes = [upper, lower]
+            upper.set_ylim(upper_min / 1.15,
+                           max(y for pts, *_ in series for _, y, _ in pts) * 1.08)
+            lower.set_ylim(0, lower_max * 1.15)
+            _mark_break(upper, lower)
+        for ax in axes:
+            for pts, colour, style, label in series:
+                ax.plot([i for i, _, _ in pts], [y for _, y, _ in pts], marker="o",
+                        markersize=2, linewidth=0.9, color=colour, linestyle=style, label=label)
+                # A run whose writer could not sustain W is drawn hollow: its
+                # x is the target rate, not the rate the method actually saw.
+                over = [(i, y) for i, y, o in pts if o]
+                if over:
+                    ax.plot([i for i, _ in over], [y for _, y in over], linestyle="none",
+                            marker="o", markersize=2.6, markerfacecolor="white",
+                            markeredgecolor=colour, markeredgewidth=0.7)
+            ax.set_xticks(list(range(len(rates))))
+            # Every rate gets a tick; labelling every other one keeps them apart.
+            ax.set_xticklabels([rate_label(w) if i % 2 == 0 else "" for i, w in enumerate(rates)])
+            ax.set_xlim(-0.35, len(rates) - 0.65)
+            ax.yaxis.set_major_locator(mt.MaxNLocator(nbins=4, steps=[1, 2, 2.5, 5, 10]))
+            ax.yaxis.set_major_formatter(mt.FuncFormatter(lambda v, _: f"{v:g}"))
+            ax.grid(False)
+        axes[0].set_title(title)
 
     fig.supylabel("Mean query latency (ms)", fontsize=6, x=0.012)
     fig.supxlabel("Update rate (updates/s)", fontsize=6, y=0.015)
 
     handles, labels = [], []
-    for ax in axes[0]:
+    for ax in fig.axes:
         for h, l in zip(*ax.get_legend_handles_labels()):
             if l not in labels:
                 handles.append(h)
                 labels.append(l)
     order = [labels.index(l) for _, l, _, _ in SERIES if l in labels]
-    fig.legend([handles[i] for i in order], [labels[i] for i in order], loc="upper center",
-               frameon=False, fontsize=6, ncol=1, bbox_to_anchor=(0.5, 1.0))
-    fig.subplots_adjust(left=LEFT, right=RIGHT, wspace=WSPACE,
-                        bottom=below / fig_h, top=1.0 - above / fig_h)
+    fig.legend([handles[i] for i in order], [LEGEND_LABELS.get(labels[i], labels[i]) for i in order],
+               loc="upper center", frameon=False, fontsize=6, ncol=LEGEND_NCOL,
+               bbox_to_anchor=(0.5, 1.0), columnspacing=1.0, handlelength=1.5,
+               handletextpad=0.5)
     return fig
+
+
+def _gap(series):
+    """(lower_max, upper_min) of the widest gap between the arms' latency
+    ranges when it exceeds BREAK_RATIO, else None. Arms are ordered by their
+    lowest latency; a gap is measured from the slowest point below it to the
+    fastest point above it."""
+    ranges = sorted((min(y for _, y, _ in pts), max(y for _, y, _ in pts)) for pts, *_ in series)
+    best = None
+    lower_max = ranges[0][1]
+    for lo, hi in ranges[1:]:
+        if lo > lower_max * BREAK_RATIO and (best is None or lo / lower_max > best[1] / best[0]):
+            best = (lower_max, lo)
+        lower_max = max(lower_max, hi)
+    return best
+
+
+def _mark_break(upper, lower):
+    """Hide the spines that face the gap, keep x labels on the lower half and
+    draw the diagonal break marks on both halves."""
+    upper.spines["bottom"].set_visible(False)
+    lower.spines["top"].set_visible(False)
+    upper.tick_params(axis="x", which="both", bottom=False, labelbottom=False)
+    d = 0.015
+    for ax, y0 in ((upper, 0.0), (lower, 1.0)):
+        kw = dict(transform=ax.transAxes, color="k", clip_on=False, linewidth=0.5)
+        ax.plot((-d, d), (y0 - 2 * d, y0 + 2 * d), **kw)
+        ax.plot((1 - d, 1 + d), (y0 - 2 * d, y0 + 2 * d), **kw)
 
 
 def main():

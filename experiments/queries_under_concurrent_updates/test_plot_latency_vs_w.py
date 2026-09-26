@@ -23,19 +23,33 @@ class FigureTest(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def test_panels_share_one_log_axis_with_decade_ticks(self):
+    def test_one_panel_per_result_dir_on_its_own_linear_axis(self):
         fig = pq.make_figure([self.a, self.b], titles=["c = 2", "c = 3"])
         self.assertEqual(len(fig.axes), 2)
         for ax in fig.axes:
-            self.assertEqual(ax.get_yscale(), "log")
-            lo, hi = ax.get_ylim()
-            self.assertEqual((lo, hi), (10 ** round(math.log10(lo)), 10 ** round(math.log10(hi))))
-            shown = [t for t in ax.get_yticks() if lo <= t <= hi]
-            self.assertTrue(all(abs(math.log10(t) - round(math.log10(t))) < 1e-9 for t in shown))
-        self.assertTrue(fig.axes[0].get_shared_y_axes().joined(fig.axes[0], fig.axes[1]))
+            self.assertEqual(ax.get_yscale(), "linear")
+            self.assertEqual(ax.get_ylim()[0], 0)
+        # Each panel is a different query set, so the y axes are independent.
+        self.assertFalse(fig.axes[0].get_shared_y_axes().joined(fig.axes[0], fig.axes[1]))
         self.assertEqual([t.get_text() for t in fig.axes[0].get_xticklabels()], ["0", ""])
         self.assertEqual([t.get_text() for t in fig.axes[1].get_xticklabels()], ["0", "", "200"])
         self.assertEqual(fig.get_size_inches()[0], 3.333)
+
+    def test_panel_with_a_wide_gap_gets_a_broken_axis(self):
+        gap = os.path.join(self.tmp.name, "gap")
+        os.makedirs(gap)
+        for m in fixture.METHODS:
+            slow = 4000 if m == "bitlsm_rho0.001" else 400  # ten times the others
+            fixture.write_run(gap, m, 0, latency_us=slow)
+            fixture.write_run(gap, m, 100, latency_us=slow)
+        fig = pq.make_figure([gap])
+        upper, lower = fig.axes
+        self.assertEqual(lower.get_ylim()[0], 0)
+        self.assertGreater(upper.get_ylim()[0], lower.get_ylim()[1])
+        self.assertTrue(lower.get_ylim()[1] >= 0.4 and upper.get_ylim()[0] <= 4.0)
+        self.assertFalse(upper.spines["bottom"].get_visible())
+        self.assertFalse(lower.spines["top"].get_visible())
+        self.assertEqual(upper.get_title(), "c = 3")
 
     def test_latency_is_plotted_in_milliseconds(self):
         import summarize
@@ -75,7 +89,7 @@ class FigureTest(unittest.TestCase):
         fig = pq.make_figure([self.a, self.b])
         self.assertEqual(len(fig.legends), 1)
         self.assertEqual([t.get_text() for t in fig.legends[0].get_texts()],
-                         ["Embedded Postings (Top-2 Intersection)",
+                         ["Embedded Postings (Top-2)",
                           "Embedded Postings (Intersection)", "BitLSM"])
         self.assertFalse(fig.legends[0].get_frame_on())
 

@@ -33,7 +33,7 @@ def _lsm_row(t_ms):
 
 
 def write_run(root, method, rate, actual_rate=None, tail_backlog=(0, 0, 0),
-              matched_last_pass=100):
+              matched_last_pass=100, latency_us=400):
     """One run's four files. `tail_backlog` is the writer's backlog at the end
     of each of the three windows; `actual_rate` defaults to `rate`."""
     prefix = os.path.join(root, f"read_seq_sel0.0001_k3_r300_{method}_w{rate:g}")
@@ -47,7 +47,7 @@ def write_run(root, method, rate, actual_rate=None, tail_backlog=(0, 0, 0),
             end_ms = i * 500 + 400
             in_window = 1 if end_ms <= DURATION_S * 1000 else 0
             matched = matched_last_pass if p >= last_pass else 100
-            f.write(f"{i},{p},{qid},3,\"a,b,c\",{end_ms - 1},{end_ms},400,"
+            f.write(f"{i},{p},{qid},3,\"a,b,c\",{end_ms - 1},{end_ms},{latency_us},"
                     f"{matched},{in_window}\n")
 
     with open(prefix + "_lsm_log.csv", "w") as f:
