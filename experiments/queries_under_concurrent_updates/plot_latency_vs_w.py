@@ -67,9 +67,12 @@ TITLES_H = 0.13
 # below it stays put.
 LEGEND_NCOL = 2
 LEGEND_ROW_H, LEGEND_PAD = 0.105, 0.17
-# Legend-only shortening (CLAUDE.md allows dropping part of a name): the
-# full Top-2 label does not fit two columns in one paper column.
-LEGEND_LABELS = {"Embedded Postings (Top-2 Intersection)": "Embedded Postings (Top-2)"}
+# Legend order, column-major: the two Embedded Postings arms share the first
+# column so both full names fit one paper column (a space exception to the
+# family order); Lazy Bitmaps and ours take the second, ours last.
+LEGEND_ORDER = ("embedded-postings_il2", "embedded-postings_il0",
+                "lazy-bitmaps_rho0.001", "bitlsm_rho0.001")
+LEGEND_HANDLE_LEN = 3.0  # long enough for the dashed arm to read as dashed
 # A panel whose arms leave a gap wider than this ratio between the slowest
 # arm below and the fastest arm above is drawn on a broken y axis, so the
 # arms below keep their resolution. The break is marked on both axes.
@@ -170,11 +173,12 @@ def make_figure(result_dirs, titles=None):
             if l not in labels:
                 handles.append(h)
                 labels.append(l)
-    order = [labels.index(l) for _, l, _, _ in SERIES if l in labels]
-    fig.legend([handles[i] for i in order], [LEGEND_LABELS.get(labels[i], labels[i]) for i in order],
+    label_of = {key: label for key, label, _, _ in SERIES}
+    order = [labels.index(label_of[k]) for k in LEGEND_ORDER if label_of[k] in labels]
+    fig.legend([handles[i] for i in order], [labels[i] for i in order],
                loc="upper center", frameon=False, fontsize=6, ncol=LEGEND_NCOL,
-               bbox_to_anchor=(0.5, 1.0), columnspacing=1.0, handlelength=1.5,
-               handletextpad=0.5)
+               bbox_to_anchor=(0.5, 1.0), columnspacing=1.0,
+               handlelength=LEGEND_HANDLE_LEN, handletextpad=0.5)
     return fig
 
 

@@ -89,7 +89,7 @@ class FigureTest(unittest.TestCase):
         fig = pq.make_figure([self.a, self.b])
         self.assertEqual(len(fig.legends), 1)
         self.assertEqual([t.get_text() for t in fig.legends[0].get_texts()],
-                         ["Embedded Postings (Top-2)",
+                         ["Embedded Postings (Top-2 Intersection)",
                           "Embedded Postings (Intersection)", "BitLSM"])
         self.assertFalse(fig.legends[0].get_frame_on())
 

@@ -223,8 +223,11 @@ these across experiments:
   the arms below keep their resolution; the break is marked on both halves
   and the caption says so. A run whose writer could not sustain W
   (`overloaded` in the summary) is drawn as a hollow marker: its x is the
-  target rate, not the rate the method saw. Its legend has two columns,
-  which is why it shortens the Top-2 arm to `Embedded Postings (Top-2)`.
+  target rate, not the rate the method saw. Its legend has two columns and,
+  for space, puts the two Embedded Postings arms in the first column and
+  Lazy Bitmaps above BitLSM in the second (a per-figure exception to the
+  family order; ours stays last), with a longer handle so the dashed arm
+  reads as dashed.
 - No gridlines: `ax.grid(False)`.
 - Ticks point inward, short and hairline-thin: `direction="in"`, major size 2,
   width 0.3, minor size 1. Set it once through `rcParams` when a script draws
