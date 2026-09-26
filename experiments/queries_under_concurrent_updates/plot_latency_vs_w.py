@@ -72,7 +72,7 @@ LEGEND_ROW_H, LEGEND_PAD = 0.105, 0.17
 # family order); Lazy Bitmaps and ours take the second, ours last.
 LEGEND_ORDER = ("embedded-postings_il2", "embedded-postings_il0",
                 "lazy-bitmaps_rho0.001", "bitlsm_rho0.001")
-LEGEND_HANDLE_LEN = 3.0  # long enough for the dashed arm to read as dashed
+LEGEND_HANDLE_LEN = 2.2  # just long enough for the dashed arm to read as dashed
 # A panel whose arms leave a gap wider than this ratio between the slowest
 # arm below and the fastest arm above is drawn on a broken y axis, so the
 # arms below keep their resolution. The break is marked on both axes.
