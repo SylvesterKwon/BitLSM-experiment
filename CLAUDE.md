@@ -216,10 +216,11 @@ these across experiments:
   vertical distance between two lines is their ratio, which is what these
   figures are about. With the budget axis already log, a log y also
   straightens the `y = budget` reference line in the RSS figure.
-- `queries_under_concurrent_updates` plots latency on a log axis, since its
-  arms sit an order of magnitude apart, with ticks written out in ms. A run
-  whose writer could not sustain W (`overloaded` in the summary) is drawn as
-  a hollow marker: its x is the target rate, not the rate the method saw.
+- `queries_under_concurrent_updates` plots latency on one log axis shared
+  by its panels, since its arms sit an order of magnitude apart; only the
+  decades are labelled (10, 100, 1000 ms). A run whose writer could not
+  sustain W (`overloaded` in the summary) is drawn as a hollow marker: its
+  x is the target rate, not the rate the method saw.
 - No gridlines: `ax.grid(False)`.
 - Ticks point inward, short and hairline-thin: `direction="in"`, major size 2,
   width 0.3, minor size 1. Set it once through `rcParams` when a script draws

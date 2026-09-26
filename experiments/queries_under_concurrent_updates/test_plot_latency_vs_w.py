@@ -1,5 +1,6 @@
 """Unit tests for plot_latency_vs_w.py (python3 -m unittest). Runs headless (Agg)."""
 
+import math
 import os
 import tempfile
 import unittest
@@ -22,14 +23,16 @@ class FigureTest(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def test_one_panel_per_result_dir_on_its_own_log_axis(self):
+    def test_panels_share_one_log_axis_with_decade_ticks(self):
         fig = pq.make_figure([self.a, self.b], titles=["c = 2", "c = 3"])
         self.assertEqual(len(fig.axes), 2)
         for ax in fig.axes:
             self.assertEqual(ax.get_yscale(), "log")
-            self.assertTrue(all(t in pq.LATENCY_TICKS_MS for t in ax.get_yticks()))
-        # Each panel is a different query set, so the y axes are independent.
-        self.assertFalse(fig.axes[0].get_shared_y_axes().joined(fig.axes[0], fig.axes[1]))
+            lo, hi = ax.get_ylim()
+            self.assertEqual((lo, hi), (10 ** round(math.log10(lo)), 10 ** round(math.log10(hi))))
+            shown = [t for t in ax.get_yticks() if lo <= t <= hi]
+            self.assertTrue(all(abs(math.log10(t) - round(math.log10(t))) < 1e-9 for t in shown))
+        self.assertTrue(fig.axes[0].get_shared_y_axes().joined(fig.axes[0], fig.axes[1]))
         self.assertEqual([t.get_text() for t in fig.axes[0].get_xticklabels()], ["0", ""])
         self.assertEqual([t.get_text() for t in fig.axes[1].get_xticklabels()], ["0", "", "200"])
         self.assertEqual(fig.get_size_inches()[0], 3.333)

@@ -23,6 +23,7 @@ Usage:
 """
 
 import argparse
+import math
 import os
 import sys
 
@@ -59,7 +60,6 @@ SERIES = [("lazy-bitmaps_rho0.001", "Lazy Bitmaps", "#C0409A", "-"),
 FIG_W = 3.333          # one paper column
 LEFT, RIGHT, WSPACE = 0.17, 0.965, 0.26
 TICKS_H, XLABEL_H = 0.14, 0.17
-LATENCY_TICKS_MS = (1, 2, 3, 5, 10, 20, 30, 50, 100, 200, 300, 500, 1000, 2000, 3000, 5000)
 TITLES_H = 0.13
 # The legend is one column, one row per series drawn, so its band grows with
 # the series count and the panel box below it stays put.
@@ -102,11 +102,12 @@ def make_figure(result_dirs, titles=None):
     above, below = legend_h + TITLES_H, TICKS_H + XLABEL_H
     fig_h = box_h + above + below
 
-    fig, axes = plt.subplots(1, ncols, figsize=(FIG_W, fig_h), squeeze=False)
+    fig, axes = plt.subplots(1, ncols, figsize=(FIG_W, fig_h), squeeze=False,
+                             sharey=True)
+    ys = []
     for ax, (title, runs) in zip(axes[0], panels):
         rates = sorted({w for (_, w) in runs})
         xs = list(range(len(rates)))
-        ys = []
         for key, label, colour, style in SERIES:
             # A method may be absent from a sweep, or from one of its rates.
             pts = [(i, float(runs[(key, w)]["mean_latency_ms"]),
@@ -124,22 +125,24 @@ def make_figure(result_dirs, titles=None):
                 ax.plot([i for i, _ in over], [y for _, y in over], linestyle="none",
                         marker="o", markersize=2.6, markerfacecolor="white",
                         markeredgecolor=colour, markeredgewidth=0.7)
-        # Log axis: the arms sit an order of magnitude apart, and the vertical
-        # distance between two lines is then their ratio. Ticks are written
-        # out in ms at the values that fall inside the panel's range.
-        ax.set_yscale("log")
-        lo, hi = min(ys) / 1.15, max(ys) * 1.15
-        ax.set_ylim(lo, hi)
-        ax.set_yticks([t for t in LATENCY_TICKS_MS if lo <= t <= hi])
-        ax.set_yticks([], minor=True)
         ax.set_xticks(xs)
         # Every rate gets a tick; labelling every other one keeps them apart.
         ax.set_xticklabels([rate_label(w) if i % 2 == 0 else "" for i, w in enumerate(rates)])
         ax.set_xlim(-0.35, len(rates) - 0.65)
-        ax.yaxis.set_major_formatter(mt.FuncFormatter(lambda v, _: f"{v:g}"))
         ax.set_title(title)
         ax.grid(False)
         ax.set_box_aspect(PANEL_BOX_ASPECT)
+    # One log axis for every panel: the arms sit an order of magnitude apart,
+    # so the vertical distance between two lines is their ratio, and a shared
+    # range keeps c = 2 and c = 3 comparable. Only decades are labelled.
+    lo = 10 ** math.floor(math.log10(min(ys)))
+    hi = 10 ** math.ceil(math.log10(max(ys)))
+    for ax in axes[0]:
+        ax.set_yscale("log")
+        ax.set_ylim(lo, hi)
+        ax.yaxis.set_major_locator(mt.LogLocator(base=10, numticks=10))
+        ax.yaxis.set_major_formatter(mt.FuncFormatter(lambda v, _: f"{v:g}"))
+        ax.yaxis.set_minor_formatter(mt.NullFormatter())
 
     fig.supylabel("Mean query latency (ms)", fontsize=6, x=0.012)
     fig.supxlabel("Update rate (updates/s)", fontsize=6, y=0.015)
