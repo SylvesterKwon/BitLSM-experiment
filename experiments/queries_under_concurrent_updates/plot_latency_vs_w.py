@@ -11,8 +11,12 @@ worker's throughput inverts to.
 Unlike the other figures here the panels do NOT share a y axis: each panel is a
 different query set, so there is nothing to compare across them, and a shared
 axis would only squeeze the slower methods of the wider-spread panel. The axes
-are linear and start at zero, which keeps "how much throughput does ingestion
-cost" readable; ratios between methods are reported in the text instead.
+are linear, in milliseconds and start at zero, which keeps "how much does
+ingestion cost a query" readable; ratios between methods are reported in the
+text. A panel whose arms leave a gap wider than BREAK_RATIO (c = 2: Lazy
+Bitmaps at 300-700 ms over the rest at 30-80 ms) is drawn on a broken y axis,
+so the arms below keep their resolution. A run whose writer could not sustain
+its update rate (`overloaded` in the summary) is drawn as a hollow marker.
 
 Reads the runs through summarize.collect(), so the figure and runs.csv are one
 computation.
@@ -99,18 +103,16 @@ def make_figure(result_dirs, titles=None):
     panels = []
     for i, d in enumerate(result_dirs):
         runs, _ = summarize.collect(d)
-        if not runs:
-            continue
-        title = titles[i] if titles else panel_title(d)
-        panels.append((title, runs))
+        if runs:
+            panels.append((titles[i] if titles else panel_title(d), runs))
     if not panels:
         return None
 
     ncols = len(panels)
     box_w = FIG_W * (RIGHT - LEFT) / (ncols + (ncols - 1) * WSPACE)
     box_h = box_w * PANEL_BOX_ASPECT + 0.01
-    n_series = sum(1 for key, _, _, _ in SERIES
-                   if any(k == key for _, runs in panels for (k, _) in runs))
+    present = {k for _, runs in panels for (k, _) in runs}
+    n_series = sum(1 for key, *_ in SERIES if key in present)
     legend_h = LEGEND_PAD + LEGEND_ROW_H * math.ceil(n_series / LEGEND_NCOL)
     above, below = legend_h + TITLES_H, TICKS_H + XLABEL_H
     fig_h = box_h + above + below
@@ -119,73 +121,74 @@ def make_figure(result_dirs, titles=None):
     grid = fig.add_gridspec(1, ncols, left=LEFT, right=RIGHT, wspace=WSPACE,
                             bottom=below / fig_h, top=1.0 - above / fig_h)
     for slot, (title, runs) in zip(grid, panels):
-        rates = sorted({w for (_, w) in runs})
-        series = []  # (points, colour, style, label) per arm present
-        for key, label, colour, style in SERIES:
-            # A method may be absent from a sweep, or from one of its rates.
-            pts = [(i, float(runs[(key, w)]["mean_latency_ms"]),
-                    str(runs[(key, w)].get("overloaded")) == "True")
-                   for i, w in enumerate(rates) if (key, w) in runs]
-            if pts:
-                series.append((pts, colour, style, label))
-        gap = _gap(series)
-        if gap is None:
-            axes = [fig.add_subplot(slot)]
-            axes[0].set_ylim(0, max(y for pts, *_ in series for _, y, _ in pts) * 1.08)
-        else:
-            lower_max, upper_min = gap
-            sub = slot.subgridspec(2, 1, height_ratios=BREAK_HEIGHTS, hspace=BREAK_GAP)
-            upper = fig.add_subplot(sub[0])
-            lower = fig.add_subplot(sub[1], sharex=upper)
-            axes = [upper, lower]
-            upper.set_ylim(upper_min / 1.15,
-                           max(y for pts, *_ in series for _, y, _ in pts) * 1.08)
-            lower.set_ylim(0, lower_max * 1.15)
-            _mark_break(upper, lower)
-        for ax in axes:
-            for pts, colour, style, label in series:
-                ax.plot([i for i, _, _ in pts], [y for _, y, _ in pts], marker="o",
-                        markersize=2, linewidth=0.9, color=colour, linestyle=style, label=label)
-                # A run whose writer could not sustain W is drawn hollow: its
-                # x is the target rate, not the rate the method actually saw.
-                over = [(i, y) for i, y, o in pts if o]
-                if over:
-                    ax.plot([i for i, _ in over], [y for _, y in over], linestyle="none",
-                            marker="o", markersize=2.6, markerfacecolor="white",
-                            markeredgecolor=colour, markeredgewidth=0.7)
-            ax.set_xticks(list(range(len(rates))))
-            # Every rate gets a tick; labelling every other one keeps them apart.
-            ax.set_xticklabels([rate_label(w) if i % 2 == 0 else "" for i, w in enumerate(rates)])
-            ax.set_xlim(-0.35, len(rates) - 0.65)
-            ax.yaxis.set_major_locator(mt.MaxNLocator(nbins=4, steps=[1, 2, 2.5, 5, 10]))
-            ax.yaxis.set_major_formatter(mt.FuncFormatter(lambda v, _: f"{v:g}"))
-            ax.grid(False)
-        axes[0].set_title(title)
-
+        _draw_panel(fig, slot, title, runs)
     fig.supylabel("Mean query latency (ms)", fontsize=6, x=0.012)
     fig.supxlabel("Update rate (updates/s)", fontsize=6, y=0.015)
-
-    handles, labels = [], []
-    for ax in fig.axes:
-        for h, l in zip(*ax.get_legend_handles_labels()):
-            if l not in labels:
-                handles.append(h)
-                labels.append(l)
-    label_of = {key: label for key, label, _, _ in SERIES}
-    order = [labels.index(label_of[k]) for k in LEGEND_ORDER if label_of[k] in labels]
-    fig.legend([handles[i] for i in order], [labels[i] for i in order],
-               loc="upper center", frameon=False, fontsize=6, ncol=LEGEND_NCOL,
-               bbox_to_anchor=(0.5, 1.0), columnspacing=1.0,
-               handlelength=LEGEND_HANDLE_LEN, handletextpad=0.5)
+    _legend(fig)
     return fig
 
 
-def _gap(series):
+def _arms(runs):
+    """[(points, colour, style, label)] for every SERIES arm the sweep holds;
+    a point is (rate index, mean latency in ms, overloaded)."""
+    rates = sorted({w for (_, w) in runs})
+    arms = []
+    for key, label, colour, style in SERIES:
+        # A method may be absent from a sweep, or from one of its rates.
+        pts = [(i, float(runs[(key, w)]["mean_latency_ms"]),
+                str(runs[(key, w)].get("overloaded")) == "True")
+               for i, w in enumerate(rates) if (key, w) in runs]
+        if pts:
+            arms.append((pts, colour, style, label))
+    return rates, arms
+
+
+def _draw_panel(fig, slot, title, runs):
+    """One panel in its grid slot: a single axes, or an upper and a lower half
+    when the arms leave a gap (see _gap)."""
+    rates, arms = _arms(runs)
+    top = max(y for pts, *_ in arms for _, y, _ in pts) * 1.08
+    gap = _gap(arms)
+    if gap is None:
+        axes = [fig.add_subplot(slot)]
+        axes[0].set_ylim(0, top)
+    else:
+        lower_max, upper_min = gap
+        sub = slot.subgridspec(2, 1, height_ratios=BREAK_HEIGHTS, hspace=BREAK_GAP)
+        upper = fig.add_subplot(sub[0])
+        lower = fig.add_subplot(sub[1], sharex=upper)
+        axes = [upper, lower]
+        upper.set_ylim(upper_min / 1.15, top)
+        lower.set_ylim(0, lower_max * 1.15)
+        _mark_break(upper, lower)
+    for ax in axes:
+        for pts, colour, style, label in arms:
+            ax.plot([i for i, _, _ in pts], [y for _, y, _ in pts], marker="o",
+                    markersize=2, linewidth=0.9, color=colour, linestyle=style, label=label)
+            # A run whose writer could not sustain W is drawn hollow: its x is
+            # the target rate, not the rate the method actually saw.
+            over = [(i, y) for i, y, o in pts if o]
+            if over:
+                ax.plot([i for i, _ in over], [y for _, y in over], linestyle="none",
+                        marker="o", markersize=2.6, markerfacecolor="white",
+                        markeredgecolor=colour, markeredgewidth=0.7)
+        ax.set_xticks(list(range(len(rates))))
+        # Every rate gets a tick; labelling every other one keeps them apart.
+        ax.set_xticklabels([rate_label(w) if i % 2 == 0 else "" for i, w in enumerate(rates)])
+        ax.set_xlim(-0.35, len(rates) - 0.65)
+        ax.yaxis.set_major_locator(mt.MaxNLocator(nbins=4, steps=[1, 2, 2.5, 5, 10]))
+        ax.yaxis.set_major_formatter(mt.FuncFormatter(lambda v, _: f"{v:g}"))
+        ax.grid(False)
+    axes[0].set_title(title)
+    return axes
+
+
+def _gap(arms):
     """(lower_max, upper_min) of the widest gap between the arms' latency
     ranges when it exceeds BREAK_RATIO, else None. Arms are ordered by their
     lowest latency; a gap is measured from the slowest point below it to the
     fastest point above it."""
-    ranges = sorted((min(y for _, y, _ in pts), max(y for _, y, _ in pts)) for pts, *_ in series)
+    ranges = sorted((min(y for _, y, _ in pts), max(y for _, y, _ in pts)) for pts, *_ in arms)
     best = None
     lower_max = ranges[0][1]
     for lo, hi in ranges[1:]:
@@ -206,6 +209,22 @@ def _mark_break(upper, lower):
         kw = dict(transform=ax.transAxes, color="k", clip_on=False, linewidth=0.5)
         ax.plot((-d, d), (y0 - 2 * d, y0 + 2 * d), **kw)
         ax.plot((1 - d, 1 + d), (y0 - 2 * d, y0 + 2 * d), **kw)
+
+
+def _legend(fig):
+    """One legend for the figure, drawn once, in LEGEND_ORDER."""
+    handles, labels = [], []
+    for ax in fig.axes:
+        for h, l in zip(*ax.get_legend_handles_labels()):
+            if l not in labels:
+                handles.append(h)
+                labels.append(l)
+    label_of = {key: label for key, label, _, _ in SERIES}
+    order = [labels.index(label_of[k]) for k in LEGEND_ORDER if label_of[k] in labels]
+    fig.legend([handles[i] for i in order], [labels[i] for i in order],
+               loc="upper center", frameon=False, fontsize=6, ncol=LEGEND_NCOL,
+               bbox_to_anchor=(0.5, 1.0), columnspacing=1.0,
+               handlelength=LEGEND_HANDLE_LEN, handletextpad=0.5)
 
 
 def main():
