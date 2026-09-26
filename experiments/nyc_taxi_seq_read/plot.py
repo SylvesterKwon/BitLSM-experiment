@@ -40,7 +40,7 @@ FIGURE_BANDS = (1e-5, 1e-4, 1e-3)
 # because the rows' y ticks and sigma labels are not the same size. Re-measure
 # by reading ax.get_position() whenever FIGURE_BANDS or the grid shape moves --
 # the value is measured, never eyeballed.
-FIG_HEIGHT_IN = 3.77
+FIG_HEIGHT_IN = 3.87
 # The legend lists No Index last: its dashed reference line is not a box,
 # and with it out of the first slot the two arms of each method stack in
 # one column of the two-row legend.
@@ -139,7 +139,7 @@ def load_result_dir(result_dir):
         with open(path, newline="") as f:
             reader = csv.DictReader(f)
             for row in reader:
-                times.append(float(row["time_elapsed_ms"]) / 1000.0)
+                times.append(float(row["time_elapsed_ms"]))
 
         key = (sel, k)
         data.setdefault(key, {})
@@ -198,7 +198,7 @@ def plot_grid(data, output_dir):
                 if ri == 0:
                     ax.set_title(f"c = {k}")
                 if ci == 0:
-                    ax.set_ylabel(f"{sel_label(sel)}\nQuery Latency (s)")
+                    ax.set_ylabel(f"{sel_label(sel)}\nQuery Latency (ms)")
                 continue
 
             # no-index as horizontal dashed line (mean)
@@ -222,8 +222,8 @@ def plot_grid(data, output_dir):
                     patch.set_facecolor(color)
                     patch.set_hatch(hatch)
 
-            # Log scale: a single cell spans ~0.4s (Embedded Postings at high selectivity)
-            # to ~250s (post-filtering at low selectivity). On a linear axis
+            # Log scale: a single cell spans ~400 ms (Embedded Postings at high selectivity)
+            # to ~250,000 ms (post-filtering at low selectivity). On a linear axis
             # the fast methods collapse onto the baseline and are unreadable.
             # (ticklabel_format is incompatible with a log axis.)
             ax.set_yscale("log")
@@ -239,7 +239,7 @@ def plot_grid(data, output_dir):
             if ri == 0:
                 ax.set_title(f"c = {k}")
             if ci == 0:
-                ax.set_ylabel(f"{sel_label(sel)}\nQuery Latency (s)")
+                ax.set_ylabel(f"{sel_label(sel)}\nQuery Latency (ms)")
 
     # Shared legend at top
     from matplotlib.patches import Patch

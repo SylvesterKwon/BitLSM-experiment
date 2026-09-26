@@ -255,8 +255,6 @@ these across experiments:
   `Mean index read (MB/query)` -- so a reader never has to guess which
   one a figure used.
 - Latency axes are in milliseconds (`... latency (ms)`), never seconds.
-  `queries_under_concurrent_updates` follows this; the older read figures
-  still say (s) until they are converted.
 - Byte volumes are reported PER QUERY (run total / query count), not as run
   totals and not as medians. They are a cost that accumulates, so the middle
   query does not represent them, and the per-query volume falls across a run

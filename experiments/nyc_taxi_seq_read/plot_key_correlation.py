@@ -82,7 +82,7 @@ QUERIES_CSV = "key_correlation_queries.csv"
 
 
 def load_levels(result_dir):
-    """{method: {level selectivity: [latency s, ...]}} over the window queries.
+    """{method: {level selectivity: [latency ms, ...]}} over the window queries.
 
     The level is the workload's nominal selectivity (its file name), which is
     what the queries were generated to hit; the measured selectivity of every
@@ -97,12 +97,12 @@ def load_levels(result_dir):
             if r["family"] != "window":
                 continue
             levels[r["method"]][float(r["selectivity"])].append(
-                float(r["time_elapsed_ms"]) / 1000.0)
+                float(r["time_elapsed_ms"]))
     return levels
 
 
 def level_stat(levels, stat):
-    """[(level selectivity, statistic of latency s)] in ascending selectivity.
+    """[(level selectivity, statistic of latency ms)] in ascending selectivity.
 
     The mean, not the paper's usual median, is the statistic that makes this
     figure read: a global-bins query costs the bins its window touches, an
@@ -138,13 +138,13 @@ def plot(levels, stat, out_path):
     ax.set_yscale("log")
     ax.set_xlim(SEL_MIN, SEL_MAX)
     # Selectivity reads as powers of ten (the paper's sigma notation);
-    # latency as plain seconds.
+    # latency as plain milliseconds.
     ax.xaxis.set_major_formatter(mticker.LogFormatterMathtext())
     ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda v, _: f"{v:g}"))
     ax.xaxis.set_minor_formatter(mticker.NullFormatter())
     ax.yaxis.set_minor_formatter(mticker.NullFormatter())
     ax.set_xlabel(r"Query selectivity $\sigma$")
-    ax.set_ylabel(f"{stat.capitalize()} query latency (s)")
+    ax.set_ylabel(f"{stat.capitalize()} query latency (ms)")
     ax.set_box_aspect(PANEL_BOX_ASPECT)
     ax.grid(False)
 

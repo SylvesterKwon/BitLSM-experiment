@@ -62,7 +62,7 @@ THREAD_RE = re.compile(r"_(no-index|bitlsm_rho[\d.]+)_thread_log\.csv$")
 
 
 def read_cells(read_dir):
-    """({(c, rho): [latency_s, ...]}, {(c, rho): mean_rows_matched})."""
+    """({(c, rho): [latency_ms, ...]}, {(c, rho): mean_rows_matched})."""
     cells, matched = {}, {}
     for path in sorted(glob.glob(os.path.join(read_dir, "*_read_log.csv"))):
         m = READ_RE.search(os.path.basename(path))
@@ -72,7 +72,7 @@ def read_cells(read_dir):
         lat, hits = [], []
         with open(path) as f:
             for row in csv.DictReader(f):
-                lat.append(int(row["time_elapsed_ms"]) / 1000)
+                lat.append(int(row["time_elapsed_ms"]))
                 hits.append(int(row["records_matched"]))
         if lat:
             cells[(c, rho)] = lat
@@ -268,7 +268,7 @@ def plot_latency(cells, matched, out_dir, stat, yscale="log"):
                 label=f"c = {c}", zorder=3)
 
     ax.set_yscale(yscale)
-    ax.set_ylabel(f"{stat.capitalize()} Query Latency (s)")
+    ax.set_ylabel(f"{stat.capitalize()} Query Latency (ms)")
     style_rho_axis(ax, rhos, label_all=True)
     if yscale == "log":
         ax.yaxis.set_major_formatter(

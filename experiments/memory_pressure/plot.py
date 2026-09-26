@@ -2,7 +2,7 @@
 """Plot median query latency vs block-cache budget for memory_pressure.
 
 One subplot per k (# query attributes); x = block_cache budget (MB, log scale),
-y = mean query latency (s). One line per method. Reads the per-budget subdirs
+y = median query latency (ms). One line per method. Reads the per-budget subdirs
 (mb8192/, mb4096/, ..., default/) the runner writes.
 
 Usage:
@@ -124,7 +124,7 @@ def budget_tick_labels(budgets):
     return [str(b) if (last - i) % 2 == 0 else "" for i, b in enumerate(budgets)]
 
 
-def median_latency_s(path):
+def median_latency_ms(path):
     """Median per-query latency, the statistic the query section reports.
 
     A boxplot's centre line is a median, so the unbounded anchor here lands on
@@ -136,7 +136,7 @@ def median_latency_s(path):
     times = []
     with open(path, newline="") as f:
         for row in csv.DictReader(f):
-            times.append(float(row["time_elapsed_ms"]) / 1000.0)
+            times.append(float(row["time_elapsed_ms"]))
     return float(np.median(times)) if times else None
 
 
@@ -174,7 +174,7 @@ def data_read_mb_per_query(path):
     return sum(vals) / len(vals) if vals else None
 
 
-def cpu_s_per_query(path):
+def cpu_ms_per_query(path):
     """Process CPU time per query, user plus system.
 
     Read beside the latency panel: what the two do not share is time spent
@@ -187,8 +187,7 @@ def cpu_s_per_query(path):
         for row in csv.DictReader(f):
             if row.get("cpu_user_ms") is None:
                 return None
-            vals.append((float(row["cpu_user_ms"]) + float(row["cpu_sys_ms"]))
-                        / 1000.0)
+            vals.append(float(row["cpu_user_ms"]) + float(row["cpu_sys_ms"]))
     return sum(vals) / len(vals) if vals else None
 
 
@@ -207,7 +206,7 @@ def peak_rss_gb(path):
 
 
 def load_result_dir(result_dir):
-    """Return ({k: {method: {budget_mb: median_latency_s}}}, same shape for RSS and reads).
+    """Return ({k: {method: {budget_mb: median_latency_ms}}}, same shape for RSS and reads).
 
     budget_mb is an int; the 'default' subdir maps to 0.
     """
@@ -234,7 +233,7 @@ def load_result_dir(result_dir):
             k = int(fm.group(2))
             method = fm.group(4)
             path = os.path.join(sub, fname)
-            med = median_latency_s(path)
+            med = median_latency_ms(path)
             if med is None:
                 continue
             data.setdefault(k, {}).setdefault(method, {})[budget] = med
@@ -243,7 +242,7 @@ def load_result_dir(result_dir):
                 rss.setdefault(k, {}).setdefault(method, {})[budget] = peak
             idx.setdefault(k, {}).setdefault(method, {})[budget] = index_read_mb_per_query(path)
             dat.setdefault(k, {}).setdefault(method, {})[budget] = data_read_mb_per_query(path)
-            c = cpu_s_per_query(path)
+            c = cpu_ms_per_query(path)
             if c is not None:
                 cpu.setdefault(k, {}).setdefault(method, {})[budget] = c
     return data, rss, idx, dat, cpu
@@ -395,14 +394,14 @@ def main():
     os.makedirs(output_dir, exist_ok=True)
 
     data, rss, idx, dat, cpu = load_result_dir(args.result_dir)
-    draw_panels(data, "Median query latency (s)",
+    draw_panels(data, "Median query latency (ms)",
                 "memory_pressure.pdf", output_dir, role="top")
     # The paper stacks two rows: the result, then the one quantity a budget
     # actually changes. Everything else is generated standalone -- kept for the
     # artifact and for reviewer questions, not for the section.
     draw_panels(idx, "Mean index read (MB/query)",
                 "memory_pressure_index_reads.pdf", output_dir, role="bottom")
-    draw_panels(cpu, "Mean CPU time (s/query)",
+    draw_panels(cpu, "Mean CPU time (ms/query)",
                 "memory_pressure_cpu.pdf", output_dir, role="solo")
     draw_panels(dat, "Mean data read (MB/query)",
                 "memory_pressure_data_reads.pdf", output_dir, role="solo")
