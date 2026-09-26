@@ -35,9 +35,7 @@ import matplotlib.ticker as mt
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import summarize  # noqa: E402
 
-# Square panels here, not the paper's 0.702: the broken c = 2 panel splits
-# its box in two, and each half needs the height to stay readable.
-PANEL_BOX_ASPECT = 1.0
+PANEL_BOX_ASPECT = 0.702
 
 plt.rcParams.update({
     "font.size": 6,
