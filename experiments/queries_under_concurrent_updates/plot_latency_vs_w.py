@@ -59,6 +59,7 @@ SERIES = [("lazy-bitmaps_rho0.001", "Lazy Bitmaps", "#C0409A", "-"),
 FIG_W = 3.333          # one paper column
 LEFT, RIGHT, WSPACE = 0.17, 0.965, 0.26
 TICKS_H, XLABEL_H = 0.14, 0.17
+LATENCY_TICKS_MS = (1, 2, 3, 5, 10, 20, 30, 50, 100, 200, 300, 500, 1000, 2000, 3000, 5000)
 TITLES_H = 0.13
 # The legend is one column, one row per series drawn, so its band grows with
 # the series count and the panel box below it stays put.
@@ -105,15 +106,32 @@ def make_figure(result_dirs, titles=None):
     for ax, (title, runs) in zip(axes[0], panels):
         rates = sorted({w for (_, w) in runs})
         xs = list(range(len(rates)))
+        ys = []
         for key, label, colour, style in SERIES:
             # A method may be absent from a sweep, or from one of its rates.
-            pts = [(i, float(runs[(key, w)]["mean_latency_ms"]) / 1000)
+            pts = [(i, float(runs[(key, w)]["mean_latency_ms"]),
+                    str(runs[(key, w)].get("overloaded")) == "True")
                    for i, w in enumerate(rates) if (key, w) in runs]
             if not pts:
                 continue
-            ax.plot([i for i, _ in pts], [y for _, y in pts], marker="o",
+            ys += [y for _, y, _ in pts]
+            ax.plot([i for i, _, _ in pts], [y for _, y, _ in pts], marker="o",
                     markersize=2, linewidth=0.9, color=colour, linestyle=style, label=label)
-        ax.set_ylim(0, None)
+            # A run whose writer could not sustain W is drawn hollow: its
+            # x is the target rate, not the rate the method actually saw.
+            over = [(i, y) for i, y, o in pts if o]
+            if over:
+                ax.plot([i for i, _ in over], [y for _, y in over], linestyle="none",
+                        marker="o", markersize=2.6, markerfacecolor="white",
+                        markeredgecolor=colour, markeredgewidth=0.7)
+        # Log axis: the arms sit an order of magnitude apart, and the vertical
+        # distance between two lines is then their ratio. Ticks are written
+        # out in ms at the values that fall inside the panel's range.
+        ax.set_yscale("log")
+        lo, hi = min(ys) / 1.15, max(ys) * 1.15
+        ax.set_ylim(lo, hi)
+        ax.set_yticks([t for t in LATENCY_TICKS_MS if lo <= t <= hi])
+        ax.set_yticks([], minor=True)
         ax.set_xticks(xs)
         # Every rate gets a tick; labelling every other one keeps them apart.
         ax.set_xticklabels([rate_label(w) if i % 2 == 0 else "" for i, w in enumerate(rates)])
@@ -123,7 +141,7 @@ def make_figure(result_dirs, titles=None):
         ax.grid(False)
         ax.set_box_aspect(PANEL_BOX_ASPECT)
 
-    fig.supylabel("Mean query latency (s)", fontsize=6, x=0.012)
+    fig.supylabel("Mean query latency (ms)", fontsize=6, x=0.012)
     fig.supxlabel("Update rate (updates/s)", fontsize=6, y=0.015)
 
     handles, labels = [], []

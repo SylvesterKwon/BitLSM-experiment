@@ -22,17 +22,35 @@ class FigureTest(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def test_one_panel_per_result_dir_on_its_own_linear_axis(self):
+    def test_one_panel_per_result_dir_on_its_own_log_axis(self):
         fig = pq.make_figure([self.a, self.b], titles=["c = 2", "c = 3"])
         self.assertEqual(len(fig.axes), 2)
         for ax in fig.axes:
-            self.assertEqual(ax.get_yscale(), "linear")
-            self.assertEqual(ax.get_ylim()[0], 0)
+            self.assertEqual(ax.get_yscale(), "log")
+            self.assertTrue(all(t in pq.LATENCY_TICKS_MS for t in ax.get_yticks()))
         # Each panel is a different query set, so the y axes are independent.
         self.assertFalse(fig.axes[0].get_shared_y_axes().joined(fig.axes[0], fig.axes[1]))
         self.assertEqual([t.get_text() for t in fig.axes[0].get_xticklabels()], ["0", ""])
         self.assertEqual([t.get_text() for t in fig.axes[1].get_xticklabels()], ["0", "", "200"])
         self.assertEqual(fig.get_size_inches()[0], 3.333)
+
+    def test_latency_is_plotted_in_milliseconds(self):
+        import summarize
+        runs, _ = summarize.collect(self.a)
+        fig = pq.make_figure([self.a])
+        line = {l.get_label(): l for l in fig.axes[0].get_lines()}["BitLSM"]
+        self.assertEqual(list(line.get_ydata()),
+                         [float(runs[("bitlsm_rho0.001", w)]["mean_latency_ms"]) for w in (0, 100)])
+        self.assertEqual(fig.texts[0].get_text(), "Mean query latency (ms)")
+
+    def test_overloaded_run_is_drawn_hollow(self):
+        over = os.path.join(self.tmp.name, "over")
+        fixture.make_result_dir(over, overloaded_method="bitlsm_rho0.001")
+        fig = pq.make_figure([over])
+        hollow = [l for l in fig.axes[0].get_lines()
+                  if l.get_markerfacecolor() == "white" and l.get_markeredgecolor() == "#E04040"]
+        self.assertEqual(len(hollow), 1)
+        self.assertEqual(list(hollow[0].get_xdata()), [1])  # W = 100 is the second rate
 
     def test_titles_default_to_the_query_set(self):
         # fixture writes read_seq_sel0.0001_k3_r300_* file names
