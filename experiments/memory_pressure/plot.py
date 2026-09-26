@@ -37,7 +37,7 @@ plt.rcParams.update({
 # parens, BitLSM by rho desc). Extends nyc_taxi_seq_read/plot.py with si-eager,
 # embedded-postings, and rho0.01.
 #
-# The formal full-baseline sweep (exp_set/sel0.0001.json) runs
+# The formal full-baseline sweep (exp_set/sel0.00001.json) runs
 # bitlsm/embedded-postings/embedded with --index_mode ondemand; honk_player's ParamSuffix()
 # appends "_ondemand" to those CSV names (si-ck/si-lu never carry it — they
 # have no --index_mode flag). The "_ondemand" entries below are additive:
