@@ -32,7 +32,7 @@ def summarize_run(path):
         rows = list(csv.DictReader(f))
     if not rows:
         return None
-    lat = [float(r["time_elapsed_ms"]) / 1000.0 for r in rows]
+    lat = [float(r["time_elapsed_ms"]) for r in rows]
     idx = [float(r["idx_read_mb"]) for r in rows]
     data = [max(0.0, float(r["disk_read_mb"]) - float(r["idx_read_mb"]))
             for r in rows]
@@ -41,32 +41,33 @@ def summarize_run(path):
     # which would read as "no CPU time" instead of "not measured".
     has_cpu = "cpu_user_ms" in rows[0]
     if has_cpu:
-        cpu = [(float(r["cpu_user_ms"]) + float(r["cpu_sys_ms"])) / 1000.0
-               for r in rows]
+        cpu = [float(r["cpu_user_ms"]) + float(r["cpu_sys_ms"]) for r in rows]
         # Wall clock a query did not spend on a CPU. io_uring completions do
         # not burn CPU while outstanding, so on an otherwise idle machine this
         # is device wait.
         io_wait = [max(0.0, w - c) for w, c in zip(lat, cpu)]
-    has_blocks = "dataudi_miss" in rows[0]
+    # honk_player writes these columns in every run but fills them only under
+    # EXP_CACHE_STATS; without it they are all zero, which means not measured.
+    has_blocks = "dataudi_miss" in rows[0] and any(
+        int(r["dataudi_miss"]) or int(r["dataudi_hit"]) or int(r["keyidx_hit"])
+        or int(r["keyidx_miss"]) for r in rows)
     return {
         "queries": len(rows),
-        "mean_latency_s": round(float(np.mean(lat)), 4),
-        "median_latency_s": round(float(np.median(lat)), 4),
-        "total_latency_s": round(sum(lat), 2),
+        "mean_latency_ms": round(float(np.mean(lat)), 1),
+        "median_latency_ms": round(float(np.median(lat)), 1),
+        "total_latency_ms": round(sum(lat)),
         "mean_index_read_mb_per_query": round(sum(idx) / len(rows), 3),
         "mean_data_read_mb_per_query": round(sum(data) / len(rows), 3),
         "total_index_read_gb": round(sum(idx) / 1024.0, 3),
         "total_data_read_gb": round(sum(data) / 1024.0, 3),
         "mean_index_reads_per_query": round(
             sum(int(r["idx_reads"]) for r in rows) / len(rows), 1),
-        **({"mean_cpu_s_per_query": round(sum(cpu) / len(rows), 4),
-            "mean_cpu_user_s_per_query": round(
-                sum(float(r["cpu_user_ms"]) for r in rows) / len(rows) / 1000.0,
-                4),
-            "mean_cpu_sys_s_per_query": round(
-                sum(float(r["cpu_sys_ms"]) for r in rows) / len(rows) / 1000.0,
-                4),
-            "mean_io_wait_s_per_query": round(sum(io_wait) / len(rows), 4),
+        **({"mean_cpu_ms_per_query": round(sum(cpu) / len(rows), 1),
+            "mean_cpu_user_ms_per_query": round(
+                sum(float(r["cpu_user_ms"]) for r in rows) / len(rows), 1),
+            "mean_cpu_sys_ms_per_query": round(
+                sum(float(r["cpu_sys_ms"]) for r in rows) / len(rows), 1),
+            "mean_io_wait_ms_per_query": round(sum(io_wait) / len(rows), 1),
             "cpu_fraction": round(sum(cpu) / sum(lat), 3) if sum(lat) else 0.0}
            if has_cpu else {}),
         **({"mean_data_blocks_per_query": round(
@@ -128,10 +129,10 @@ def add_speedups(rows):
             for r in group:
                 r["speedup_vs_best_baseline"] = ""
             continue
-        best = min(base, key=lambda r: r["median_latency_s"])
+        best = min(base, key=lambda r: r["median_latency_ms"])
         for r in group:
             r["speedup_vs_best_baseline"] = (
-                round(best["median_latency_s"] / ours[0]["median_latency_s"], 2)
+                round(best["median_latency_ms"] / ours[0]["median_latency_ms"], 2)
                 if r is ours[0] else "")
     return rows
 

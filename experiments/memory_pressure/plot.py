@@ -86,14 +86,14 @@ METHOD_COLORS = {
     "si-lu_strategy_pf": "#4CC850",
     "embedded_bloom_bits10": "#1FA8A0",
     "embedded_bloom_bits10_ondemand": "#1FA8A0",
-    "embedded-postings_il0": "#3060C0",
-    "embedded-postings_il2": "#3060C0",
-    "embedded-postings_il0_ondemand": "#3060C0",
-    "embedded-postings_il2_ondemand": "#3060C0",
+    "embedded-postings_il0": "#2F6FD0",
+    "embedded-postings_il2": "#2F6FD0",
+    "embedded-postings_il0_ondemand": "#2F6FD0",
+    "embedded-postings_il2_ondemand": "#2F6FD0",
     "bitlsm_rho0.01": "#9B1B1B",
     "bitlsm_rho0.01_ondemand": "#9B1B1B",
-    "bitlsm_rho0.001": "#D9534F",
-    "bitlsm_rho0.001_ondemand": "#D9534F",
+    "bitlsm_rho0.001": "#E04040",
+    "bitlsm_rho0.001_ondemand": "#E04040",
 }
 # Intersection strategy dashed to separate from post-filtering of same color.
 # embedded-postings_il2_ondemand (Cassandra default) is dashed to separate it from
