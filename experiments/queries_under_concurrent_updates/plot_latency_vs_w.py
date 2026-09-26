@@ -59,7 +59,10 @@ SERIES = [("lazy-bitmaps_rho0.001", "Lazy Bitmaps", "#C0409A", "-"),
 FIG_W = 3.333          # one paper column
 LEFT, RIGHT, WSPACE = 0.17, 0.965, 0.26
 TICKS_H, XLABEL_H = 0.14, 0.17
-TITLES_H, LEGEND_H = 0.13, 0.38
+TITLES_H = 0.13
+# The legend is one column, one row per series drawn, so its band grows with
+# the series count and the panel box below it stays put.
+LEGEND_ROW_H, LEGEND_PAD = 0.105, 0.17
 
 
 def panel_title(result_dir):
@@ -92,7 +95,10 @@ def make_figure(result_dirs, titles=None):
     ncols = len(panels)
     box_w = FIG_W * (RIGHT - LEFT) / (ncols + (ncols - 1) * WSPACE)
     box_h = box_w * PANEL_BOX_ASPECT + 0.01
-    above, below = LEGEND_H + TITLES_H, TICKS_H + XLABEL_H
+    n_series = sum(1 for key, _, _, _ in SERIES
+                   if any(k == key for _, runs in panels for (k, _) in runs))
+    legend_h = LEGEND_PAD + LEGEND_ROW_H * n_series
+    above, below = legend_h + TITLES_H, TICKS_H + XLABEL_H
     fig_h = box_h + above + below
 
     fig, axes = plt.subplots(1, ncols, figsize=(FIG_W, fig_h), squeeze=False)
@@ -126,11 +132,9 @@ def make_figure(result_dirs, titles=None):
             if l not in labels:
                 handles.append(h)
                 labels.append(l)
-    # matplotlib fills a two-column legend column-major, which keeps the two
-    # Embedded Postings arms stacked in the first column and ours in the second.
     order = [labels.index(l) for _, l, _, _ in SERIES if l in labels]
     fig.legend([handles[i] for i in order], [labels[i] for i in order], loc="upper center",
-               frameon=False, fontsize=6, ncol=2, bbox_to_anchor=(0.5, 1.0))
+               frameon=False, fontsize=6, ncol=1, bbox_to_anchor=(0.5, 1.0))
     fig.subplots_adjust(left=LEFT, right=RIGHT, wspace=WSPACE,
                         bottom=below / fig_h, top=1.0 - above / fig_h)
     return fig
