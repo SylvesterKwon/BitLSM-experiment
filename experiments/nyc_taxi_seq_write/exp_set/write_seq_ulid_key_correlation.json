@@ -20,7 +20,7 @@
           0.001
         ],
         "bin_policy": [
-          "/scratch/honk/bin_policy/write_seq_2024-2025_all_ulid_rho0.001.bin"
+          "experiments/nyc_taxi_seq_write/bin_policy/write_seq_2024-2025_all_ulid_rho0.001.bin"
         ]
       }
     },

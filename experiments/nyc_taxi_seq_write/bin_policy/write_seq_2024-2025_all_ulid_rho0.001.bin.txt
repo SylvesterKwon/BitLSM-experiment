@@ -1,0 +1,10 @@
+source workloads/write_seq_2024-2025_all_ulid.tsv (40881402899 bytes)
+rows 89892322
+rho 0.001
+PULocationID bins=263 values=263
+DOLocationID bins=263 values=263
+tpep_pickup_datetime bins=1821 min=1041353167 max=1782517992
+tpep_dropoff_datetime bins=1821 min=1041355447 max=1782593950
+fare_amount bins=1821 min=-2261.1999999999998 max=863372.12
+passenger_count bins=11 min=-1 max=9
+total_bins 6000

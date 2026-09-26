@@ -35,6 +35,9 @@ EXP_DIR = os.path.dirname(os.path.abspath(__file__))
 BINARY = os.path.join(PROJECT_ROOT, "build", "bin", "honk_player")
 
 DB_PARAMS = ["rho", "bloom_bits"]
+# Parameters that name files: a relative value resolves against the project
+# root, so a param set can point at a file committed with the experiment.
+FILE_PARAMS = ["bin_policy"]
 
 
 def encode_method_params(params: dict) -> str:
@@ -54,6 +57,8 @@ def build_command(method_name: str, workload: str, db_path: str,
     for key, val in common_params.items():
         cmd += [f"--{key}", fmt(val)]
     for key, val in combo.items():
+        if key in FILE_PARAMS and not os.path.isabs(val):
+            val = os.path.join(PROJECT_ROOT, val)
         cmd += [f"--{key}", fmt(val)]
     return cmd
 
