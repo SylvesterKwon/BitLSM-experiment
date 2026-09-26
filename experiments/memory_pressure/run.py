@@ -7,7 +7,8 @@ memory-budget axis: each run is repeated at every block_cache size listed under
 "block_cache_mb" in the param set. The budget is applied to EVERY method through
 EXP_BLOCK_CACHE_MB (a single process-wide LRU cache shared by all column
 families; see src/bindings/rocksdb_common_option.h). A budget of 0 means "no
-override" — RocksDB defaults, i.e. the standard config.
+override" — RocksDB defaults, i.e. the standard config. Every run also gets
+EXP_CACHE_STATS=1, so the read CSV carries the block-cache counters.
 
 This measures how each index (BitLSM SABI, Embedded Postings, embedded BF+ZM, si-*
 native CFs, no-index) degrades as the total resident memory shrinks. It is a
@@ -163,9 +164,12 @@ def run(config_path: str, dry_run: bool, method_filter: list,
                 # workload+method+params, so budgets would otherwise collide.
                 budget_tag = f"mb{budget}" if budget else "default"
                 budget_out = os.path.join(output_dir, budget_tag)
-                run_env = None
+                # Block-cache counters (data blocks fetched, RocksDB index
+                # misses) are recorded only under EXP_CACHE_STATS, which is off
+                # by default everywhere else; this experiment always wants them.
+                run_env = dict(os.environ, EXP_CACHE_STATS="1")
                 if budget:
-                    run_env = dict(os.environ, EXP_BLOCK_CACHE_MB=str(budget))
+                    run_env["EXP_BLOCK_CACHE_MB"] = str(budget)
 
                 for method in methods:
                     if budget not in method_budgets(method):
@@ -186,7 +190,8 @@ def run(config_path: str, dry_run: bool, method_filter: list,
                         cmd = build_command(name, workload, db_path, budget_out,
                                             combo, common_params, query_limit)
 
-                        env_prefix = f"EXP_BLOCK_CACHE_MB={budget} " if budget else ""
+                        env_prefix = "EXP_CACHE_STATS=1 " + (
+                            f"EXP_BLOCK_CACHE_MB={budget} " if budget else "")
                         print(f"[{global_idx}/{total_runs}] [{budget_tag}][{wl_stem}][{name}] "
                               f"{env_prefix}{' '.join(cmd)}")
 
