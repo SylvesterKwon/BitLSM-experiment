@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Query-under-ingestion sweep: qui_player over update rates W, W-major.
+"""Queries-under-concurrent-updates sweep: qui_player over update rates W, W-major.
 
 Every run works on its own checkpoint copy of the base DB, because the
 run overwrites records. The copy is what rocksdb::Checkpoint does for a
@@ -352,7 +352,7 @@ def run(config_path: str, dry_run: bool, method_filter: list, cooldown: int,
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Query-under-ingestion sweep: qui_player over update rates")
+        description="Queries-under-concurrent-updates sweep: qui_player over update rates")
     add_common_args(parser)
     parser.add_argument("--keep-run-db", action="store_true",
                         help="Keep each run's DB copy instead of deleting it")

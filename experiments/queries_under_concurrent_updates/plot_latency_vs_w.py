@@ -11,8 +11,8 @@ worker's throughput inverts to.
 Unlike the other figures here the panels do NOT share a y axis: each panel is a
 different query set, so there is nothing to compare across them, and a shared
 axis would only squeeze the slower methods of the wider-spread panel. The axes
-are linear, in milliseconds and start at zero, which keeps "how much does
-ingestion cost a query" readable; ratios between methods are reported in the
+are linear, in milliseconds and start at zero, which keeps "how much do
+concurrent updates cost a query" readable; ratios between methods are reported in the
 text. A panel whose arms leave a gap wider than BREAK_RATIO (c = 2: Lazy
 Bitmaps at 300-700 ms over the rest at 30-80 ms) is drawn on a broken y axis,
 so the arms below keep their resolution. A run whose writer could not sustain

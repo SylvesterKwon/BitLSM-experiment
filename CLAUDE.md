@@ -40,7 +40,7 @@ src/
 │   └── result/                # CSV outputs (auto-created)
 └── honk_player/
     ├── honk_player.cpp        # real-world workload driver (→ build/bin/honk_player)
-    ├── qui_player.cpp         # query-under-ingestion driver (→ build/bin/qui_player)
+    ├── qui_player.cpp         # queries-under-concurrent-updates driver (→ build/bin/qui_player)
     ├── honk_run.py            # honk_player sweep runner
     ├── taxi_schema.h          # NYC taxi column definitions
     ├── json_record_parser.h   # JSON → Attr/Query conversion
@@ -251,6 +251,11 @@ these across experiments:
   alignment. A rotated y label is longer than the box, so leave it room.
 - One word per statistic across a project: this one says "mean", never "avg"
   or "average", in axis labels, CSV column names and prose alike.
+- The same goes for the load cost: "ingest time" is the wall clock from DB
+  open until the flush/compaction drain after the last Put, never "write time"
+  or "walltime", so no label needs an "incl. drain" qualifier. "Write" stays
+  for the write itself (write amplification, writer threads), and the
+  query-while-updating experiment is "concurrent updates", not "ingestion".
 - Axis labels name their statistic -- `Median query latency (ms)`,
   `Mean index read (MB/query)` -- so a reader never has to guess which
   one a figure used.
@@ -287,8 +292,8 @@ these across experiments:
 - A hatch means the same thing in both families: no hatch is a strategy that
   intersects some predicates and verifies the rest (Post Filtering, Top-2
   Intersection), cross-hatch is one that intersects all of them
-  (Intersection). Strategy suffixes are a read-side distinction, so the write
-  and ingestion figures carry a bare `Embedded Postings`.
+  (Intersection). Strategy suffixes are a read-side distinction, so the
+  ingest and concurrent-update figures carry a bare `Embedded Postings`.
 - The legend reads No Index, Lazy (Post Filtering), Lazy (Intersection),
   Composite (Post Filtering), Composite (Intersection), Lazy Bitmaps,
   Per-Block Filters, Embedded Postings (Top-2 Intersection), Embedded

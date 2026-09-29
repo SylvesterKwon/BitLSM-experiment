@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Plot DB size and write time comparison across methods for seq_write experiment."""
+"""Plot DB size and ingest time comparison across methods for seq_write experiment."""
 
 import argparse
 import csv
@@ -175,7 +175,7 @@ def plot_db_size(data, output_dir):
 
 
 def plot_write_time(data, output_dir):
-    """Bar chart: total write time (seconds) per method per schema."""
+    """Bar chart: ingest time (seconds) per method per schema."""
     methods = get_ordered_methods(data.keys())
 
     fig, ax = plt.subplots(figsize=(7, 7 * 0.618))
@@ -200,7 +200,7 @@ def plot_write_time(data, output_dir):
                     va="bottom",
                 )
 
-    ax.set_ylabel("Write Time incl. drain (seconds)")
+    ax.set_ylabel("Ingest Time (seconds)")
 
     ax.set_xticks(x)
     ax.set_xticklabels(SCHEMA_TICK_LABELS)
@@ -217,7 +217,7 @@ def plot_write_time(data, output_dir):
 
 
 def plot_normalized(data, output_dir):
-    """Two-column figure: DB size and write time normalized to no-index."""
+    """Two-column figure: DB size and ingest time normalized to no-index."""
     methods = get_ordered_methods(data.keys())
     if "no-index" not in data:
         print("Skipping normalized plot: no-index data missing.")
@@ -237,7 +237,7 @@ def plot_normalized(data, output_dir):
 
     for ax, get_raw, bl, annot_vals, annot_fmt, ylabel in [
         (ax_time, lambda m: [s[0] for s in data[m]], time_baseline,
-         time_baseline_sec, lambda v: f"  {v:.1f}s", "Total Write Time Ratio"),
+         time_baseline_sec, lambda v: f"  {v:.1f}s", "Ingest Time Ratio"),
         (ax_size, lambda m: [s[2] for s in data[m]], size_baseline,
          size_baseline_gb, lambda v: f"  {v:.1f} GB", "DB Size Ratio"),
     ]:
@@ -316,7 +316,7 @@ def plot_write_throughput(timeseries, schema_idx, output_dir):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Plot DB size and write time comparison"
+        description="Plot DB size and ingest time comparison"
     )
     parser.add_argument("csv", help="Path to master CSV file")
     parser.add_argument(

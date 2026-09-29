@@ -2,7 +2,7 @@
 """
 Sequential write experiment.
 
-Measures write time and DB size for each method × parameter combination.
+Measures ingest time and DB size for each method × parameter combination.
 
 Usage:
     python3 experiments/seq_write/run.py exp_set/<params>.json [options]
@@ -284,7 +284,7 @@ def run(config_path: str, dry_run: bool, method_filter: list, cooldown: int,
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Sequential write performance: measure write time and DB size"
+        description="Sequential write performance: measure ingest time and DB size"
     )
     add_common_args(parser)
     args = parser.parse_args()

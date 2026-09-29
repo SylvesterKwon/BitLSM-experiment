@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Plot ingest walltime and on-disk size per cell for myrocks_integration_test.
+"""Plot ingest time and on-disk size per cell for myrocks_integration_test.
 
 Reads the `ingest.csv` written by ingest_run.py and draws one bar per
 (engine, index_layout) cell in two panels: wall-clock seconds to stream the
 whole table row-by-row, and the resulting datadir size.
 
-Walltime spans ~45x between the LSM cells and InnoDB's composite layout. A
+Ingest time spans ~45x between the LSM cells and InnoDB's composite layout. A
 plain linear axis flattens the five LSM bars into a rug, so the outliers are
 truncated at a cap and marked with a wavy axis break, their true value printed
 above the bar. Pass --log for a log axis instead, or --cap to set the cut by
@@ -169,7 +169,7 @@ def plot_ingest(data, output_dir, log, cap, fmts):
 
     fig, axes = plt.subplots(1, 2, figsize=(7, 7 * 0.618 * 0.66))
 
-    draw_panel(axes[0], cells, seconds, "Ingest walltime (s)",
+    draw_panel(axes[0], cells, seconds, "Ingest time (s)",
                lambda v: f"{v:,.0f}", log=log, cap=cap)
     draw_panel(axes[1], cells, gib, "Datadir size (GiB)",
                lambda v: f"{v:.2f}")
@@ -190,14 +190,14 @@ def plot_ingest(data, output_dir, log, cap, fmts):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Plot ingest walltime and datadir size per cell")
+        description="Plot ingest time and datadir size per cell")
     parser.add_argument("result_dir", help="Result directory holding ingest.csv")
     parser.add_argument("-o", "--output-dir", default=None,
                         help="Output directory (default: result_dir)")
     parser.add_argument("--log", action="store_true",
-                        help="Log walltime axis instead of a broken linear one")
+                        help="Log ingest-time axis instead of a broken linear one")
     parser.add_argument("--cap", type=float, default=None,
-                        help="Truncate walltime bars above this many seconds "
+                        help="Truncate ingest-time bars above this many seconds "
                              "(default: derived from the data)")
     parser.add_argument("--format", default="pdf",
                         choices=["pdf", "png", "both"],

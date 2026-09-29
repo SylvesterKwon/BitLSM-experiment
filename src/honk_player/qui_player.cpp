@@ -1,4 +1,4 @@
-// qui_player: query-under-ingestion driver.
+// qui_player: queries-under-concurrent-updates driver.
 //
 // One update thread issues full-record overwrites of existing keys at a fixed
 // rate (open loop, schedule from qui::Pacer), one query thread runs the query
@@ -563,7 +563,7 @@ static json RunMixed(experiment::Binding* b, const Config& cfg,
 }
 
 static Config ParseArgs(int argc, char* argv[]) {
-  cxxopts::Options opts("qui_player", "Query-under-ingestion driver");
+  cxxopts::Options opts("qui_player", "Queries-under-concurrent-updates driver");
   opts.allow_unrecognised_options();
   // clang-format off
   opts.add_options()
