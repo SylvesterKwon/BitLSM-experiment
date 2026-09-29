@@ -7,6 +7,7 @@ CLI argument parsing, and daemon mode.
 
 import argparse
 import glob
+import json
 import os
 import subprocess
 import sys
@@ -121,6 +122,15 @@ def clean_db(db_path: str):
         subprocess.run(["rm", "-rf", db_path], check=True)
 
 
+def get_db_size_bytes(db_path: str) -> int:
+    """Get total size of a DB directory in bytes using du."""
+    result = subprocess.run(
+        ["du", "-sb", db_path], capture_output=True, text=True)
+    if result.returncode == 0:
+        return int(result.stdout.split()[0])
+    return -1
+
+
 def reset_hardware(db_path_base: str):
     """Reset hardware state between runs: sync, drop_caches, fstrim."""
     print("  [hw-reset] sync + drop_caches ...")
@@ -183,6 +193,55 @@ def make_result_dir(exp_name: str) -> str:
     """
     ts = datetime.now().strftime("%Y%m%d_%H%M")
     return os.path.join(PROJECT_ROOT, "results", f"{ts}_{exp_name}")
+
+
+# ---------------------------------------------------------------------------
+# Provenance
+# ---------------------------------------------------------------------------
+
+def git_commit(path: str) -> str:
+    try:
+        return subprocess.check_output(["git", "-C", path, "rev-parse", "HEAD"],
+                                       text=True, stderr=subprocess.DEVNULL).strip()
+    except (subprocess.CalledProcessError, OSError):
+        return ""
+
+
+def git_dirty(path: str) -> list:
+    """`git status --porcelain` lines: what the commit alone does not pin."""
+    try:
+        return subprocess.check_output(
+            ["git", "-C", path, "status", "--porcelain"],
+            text=True, stderr=subprocess.DEVNULL).splitlines()
+    except (subprocess.CalledProcessError, OSError):
+        return []
+
+
+def write_run_meta(output_dir: str, config_path: str, config: dict,
+                   binary: str, log_path: str = None):
+    """Record what produced a result directory in its sweep_meta.json.
+
+    The exp_set is copied in full because the file can change after the run.
+    Per-run command lines, DB paths included, stay in the run log named here.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    st = os.stat(binary)
+    meta = {
+        "started": datetime.now().isoformat(timespec="seconds"),
+        "argv": sys.argv,
+        "log_path": os.path.abspath(log_path) if log_path else "",
+        "exp_set_path": os.path.abspath(config_path),
+        "exp_set": config,
+        "experiment_commit": git_commit(PROJECT_ROOT),
+        "experiment_dirty": git_dirty(PROJECT_ROOT),
+        "bitlsm_commit": git_commit(
+            os.path.join(PROJECT_ROOT, "third_party", "BitLSM")),
+        "binary": {"path": binary, "size": st.st_size,
+                   "mtime": datetime.fromtimestamp(st.st_mtime)
+                   .isoformat(timespec="seconds")},
+    }
+    with open(os.path.join(output_dir, "sweep_meta.json"), "w") as f:
+        json.dump(meta, f, indent=2)
 
 
 def resolve_workload_paths(raw) -> list:

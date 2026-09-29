@@ -4,10 +4,15 @@ NYC Taxi sequential write experiment.
 
 Replays a taxi TSV workload in write-only mode using honk_player.
 
+After each run exits (drain and Close both done) the DB directory is sized
+with `du -sb`, as seq_write does, and appended to db_size.csv in the result
+directory: one row per DB, keyed by workload, method and DB_PARAMS.
+
 Usage:
     python3 experiments/nyc_taxi_seq_write/run.py exp_set/<params>.json [options]
 """
 
+import csv
 import json
 import os
 import sys
@@ -20,6 +25,7 @@ from run_common import (
     clean_db,
     cooldown_sleep,
     fmt,
+    get_db_size_bytes,
     make_result_dir,
     maybe_run_as_daemon,
     parse_method_filter,
@@ -29,12 +35,14 @@ from run_common import (
     run_process,
     setup_logging,
     teardown_logging,
+    write_run_meta,
 )
 
 EXP_DIR = os.path.dirname(os.path.abspath(__file__))
 BINARY = os.path.join(PROJECT_ROOT, "build", "bin", "honk_player")
 
 DB_PARAMS = ["rho", "bloom_bits"]
+DB_SIZE_COLUMNS = ["workload", "method", *DB_PARAMS, "db_size_bytes"]
 # Parameters that name files: a relative value resolves against the project
 # root, so a param set can point at a file committed with the experiment.
 FILE_PARAMS = ["bin_policy"]
@@ -45,6 +53,16 @@ def encode_method_params(params: dict) -> str:
     if not db_params:
         return "default"
     return "_".join(f"{k}{fmt(v)}" for k, v in db_params.items())
+
+
+def append_db_size(path: str, row: dict):
+    write_header = not os.path.exists(path) or os.path.getsize(path) == 0
+    with open(path, "a", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=DB_SIZE_COLUMNS, restval="",
+                                extrasaction="ignore")
+        if write_header:
+            writer.writeheader()
+        writer.writerow(row)
 
 
 def build_command(method_name: str, workload: str, db_path: str,
@@ -102,6 +120,9 @@ def run(config_path: str, dry_run: bool, method_filter: list,
         else:
             print()
 
+        if not dry_run:
+            write_run_meta(output_dir, config_path, config, BINARY, log_path)
+
         global_idx = 0
 
         if hw_reset and not dry_run:
@@ -135,6 +156,15 @@ def run(config_path: str, dry_run: bool, method_filter: list,
                         rc, _ = run_process(cmd)
                         if rc != 0:
                             sys.exit(f"Run failed (exit {rc}): {' '.join(cmd)}")
+
+                        db_size = get_db_size_bytes(db_path)
+                        print(f"  [result] db_size={db_size} bytes")
+                        append_db_size(
+                            os.path.join(output_dir, "db_size.csv"),
+                            {"workload": os.path.splitext(
+                                 os.path.basename(workload))[0],
+                             "method": name, **combo,
+                             "db_size_bytes": db_size})
 
                         if clean_db_flag:
                             clean_db(db_path)

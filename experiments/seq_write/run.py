@@ -21,7 +21,6 @@ import argparse
 import csv
 import json
 import os
-import subprocess
 import sys
 
 # Add src/ to path so we can import run_common
@@ -33,6 +32,7 @@ from run_common import (
     clean_db,
     cooldown_sleep,
     fmt,
+    get_db_size_bytes,
     make_result_dir,
     maybe_run_as_daemon,
     parse_method_filter,
@@ -75,15 +75,6 @@ def attr_count(schema_path: str) -> int:
     """
     with open(schema_path) as f:
         return len(json.load(f)["attrs"])
-
-
-def get_db_size_bytes(db_path: str) -> int:
-    """Get total size of a DB directory in bytes using du."""
-    result = subprocess.run(
-        ["du", "-sb", db_path], capture_output=True, text=True)
-    if result.returncode == 0:
-        return int(result.stdout.split()[0])
-    return -1
 
 
 def parse_checkpoints(output: str) -> list[tuple[int, int]]:

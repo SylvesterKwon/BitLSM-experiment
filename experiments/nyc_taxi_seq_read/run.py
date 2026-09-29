@@ -30,6 +30,7 @@ from run_common import (
     run_process,
     setup_logging,
     teardown_logging,
+    write_run_meta,
 )
 
 EXP_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -107,6 +108,9 @@ def run(config_path: str, dry_run: bool, method_filter: list,
             print("mode     : dry-run\n")
         else:
             print()
+
+        if not dry_run:
+            write_run_meta(output_dir, config_path, config, BINARY, log_path)
 
         global_idx = 0
         warmed_up_dbs = set()

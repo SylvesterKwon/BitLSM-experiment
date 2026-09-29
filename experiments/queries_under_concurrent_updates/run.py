@@ -24,7 +24,6 @@ import hashlib
 import json
 import os
 import shutil
-import subprocess
 import sys
 import time
 from datetime import datetime
@@ -39,6 +38,7 @@ from run_common import (
     cartesian_combinations,
     cooldown_sleep,
     fmt,
+    git_commit,
     make_result_dir,
     maybe_run_as_daemon,
     parse_method_filter,
@@ -163,14 +163,6 @@ def tsv_sha256(path: str) -> tuple:
                 if tok.startswith("sha256="):
                     return tok[len("sha256="):], "sidecar"
     return sha256_file(path), "computed"
-
-
-def git_commit(path: str) -> str:
-    try:
-        return subprocess.check_output(["git", "-C", path, "rev-parse", "HEAD"],
-                                       text=True, stderr=subprocess.DEVNULL).strip()
-    except (subprocess.CalledProcessError, OSError):
-        return ""
 
 
 def write_sweep_meta(output_dir: str, cfg: dict, config_path: str,
