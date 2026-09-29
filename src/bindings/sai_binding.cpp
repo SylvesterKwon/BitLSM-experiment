@@ -79,7 +79,7 @@ ScanResult SAIBinding::Scan(BitLSMQuery& query) {
   auto iter = db_->NewIterator(query);
   for (iter->SeekToFirst(); iter->Valid(); iter->Next())
     matched++;
-  auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+  auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
                      std::chrono::high_resolution_clock::now() - start)
                      .count();
   // !Valid() alone only means "no more rows"; a non-OK status means the scan

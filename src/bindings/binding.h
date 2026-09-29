@@ -13,7 +13,9 @@ using bit_lsm::BitLSMOptions;
 using bit_lsm::BitLSMQuery;
 
 struct ScanResult {
-  uint64_t elapsed_ms;
+  // Scan wall clock in microseconds. Drivers derive their integer-ms columns
+  // from it (us / 1000 truncates exactly as a millisecond cast would).
+  uint64_t elapsed_us;
   uint64_t matched;
   // False when the scan stopped on an error (e.g. an index block that could
   // not be loaded): `matched` is then a partial count and must not be

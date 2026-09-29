@@ -286,7 +286,8 @@ int main(int argc, char* argv[]) {
                   "keyidx_bytes_insert,dataudi_hit,dataudi_miss,"
                   "rchar_mb,disk_read_mb,syscr,"
                   "cpu_user_ms,cpu_sys_ms,"
-                  "idx_reads,idx_read_mb,idx_cache_hits,idx_cache_misses\n";
+                  "idx_reads,idx_read_mb,idx_cache_hits,idx_cache_misses,"
+                  "time_elapsed_us,disk_read_bytes\n";
     }
   };
 
@@ -509,8 +510,13 @@ int main(int argc, char* argv[]) {
             auto cache = CacheCounters::Read() - cache_before;
             const CpuTime cpu = CpuTime::Read() - cpu_before;
             auto idx = IndexIoCounters::Read(binding.get()) - idx_before;
+            // time_elapsed_ms and disk_read_mb truncate; the last two columns
+            // carry the same measurements before truncation.
+            const long long disk_bytes =
+                ReadIoCounter("read_bytes") - disk_before;
             read_csv << reads << "," << k << ",\"" << attr_names << "\","
-                     << scan_result.elapsed_ms << "," << scan_result.matched
+                     << scan_result.elapsed_us / 1000 << ","
+                     << scan_result.matched
                      << "," << writes << "," << fixed << setprecision(6)
                      << selectivity << "," << ReadStatusKb("VmRSS") << ","
                      << ReadStatusKb("VmHWM") << "," << cache.keyidx_hit << ","
@@ -518,13 +524,14 @@ int main(int argc, char* argv[]) {
                      << "," << cache.dataudi_hit << "," << cache.dataudi_miss
                      << "," << (ReadIoCounter("rchar") - rchar_before) / (1 << 20)
                      << ","
-                     << (ReadIoCounter("read_bytes") - disk_before) / (1 << 20)
+                     << disk_bytes / (1 << 20)
                      << "," << (ReadIoCounter("syscr") - syscr_before) << ","
                      << (cpu.user_us / 1000.0) << ","
                      << (cpu.sys_us / 1000.0)
                      << "," << idx.reads << "," << fixed << setprecision(6)
                      << (static_cast<double>(idx.bytes) / (1 << 20)) << ","
-                     << idx.cache_hits << "," << idx.cache_misses << "\n";
+                     << idx.cache_hits << "," << idx.cache_misses << ","
+                     << scan_result.elapsed_us << "," << disk_bytes << "\n";
             read_csv.flush();
           }
           reads++;

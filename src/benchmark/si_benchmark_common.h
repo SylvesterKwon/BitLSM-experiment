@@ -301,11 +301,11 @@ inline ReadResult ScanByIndexMerge(
     }
   }
 
-  auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+  auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
                      std::chrono::high_resolution_clock::now() - start)
                      .count();
   std::cout << "scan (im) done: " << matched << "/" << n
-            << " matched, " << elapsed << "ms\n";
+            << " matched, " << elapsed / 1000 << "ms\n";
   return {static_cast<uint64_t>(elapsed), matched,
           n > 0 ? static_cast<double>(matched) / n : 0.0};
 }
@@ -370,11 +370,11 @@ inline ReadResult ScanByPostFiltering(
     }
   }
 
-  auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+  auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
                      std::chrono::high_resolution_clock::now() - start)
                      .count();
   std::cout << "scan (pf) done: " << matched << "/" << n
-            << " matched, " << elapsed << "ms\n";
+            << " matched, " << elapsed / 1000 << "ms\n";
   return {static_cast<uint64_t>(elapsed), matched,
           n > 0 ? static_cast<double>(matched) / n : 0.0};
 }
@@ -396,12 +396,12 @@ ScanFullTable(rocksdb::TransactionDB* txn_db,
     if (query.CheckCondition(it->value(), layout))
       matched++;
   }
-  auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+  auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
                      std::chrono::high_resolution_clock::now() - start)
                      .count();
   delete it;
   std::cout << "scan (full_table) done: " << matched << "/" << total
-            << " matched, " << elapsed << "ms\n";
+            << " matched, " << elapsed / 1000 << "ms\n";
   return {static_cast<uint64_t>(elapsed), matched,
           total > 0 ? static_cast<double>(matched) / total : 0.0};
 }

@@ -75,12 +75,12 @@ ScanResult NoIndexBinding::Scan(BitLSMQuery& query) {
     if (query.CheckCondition(it->value(), *layout_))
       matched++;
   }
-  auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+  auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
                      std::chrono::high_resolution_clock::now() - start)
                      .count();
   delete it;
   std::cout << "scan done: " << matched << "/" << total << " matched, "
-            << elapsed << "ms\n";
+            << elapsed / 1000 << "ms\n";
   return {static_cast<uint64_t>(elapsed), matched};
 }
 

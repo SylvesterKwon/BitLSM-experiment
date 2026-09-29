@@ -98,7 +98,7 @@ ScanResult SIEagerBinding::Scan(BitLSMQuery& query) {
   if (plan.si_lookups.empty()) {
     auto r = benchmark::ScanFullTable(db_.txn_db, db_.cf_handles, query,
                                        options_, 0);
-    return {r.time_elapsed_ms, r.records_matched};
+    return {r.time_elapsed_us, r.records_matched};
   }
 
   auto GetPKList = [this](const benchmark::SILookup& lookup) -> vector<string> {
@@ -179,7 +179,7 @@ ScanResult SIEagerBinding::Scan(BitLSMQuery& query) {
     r = benchmark::ScanByPostFiltering(db_.txn_db, db_.cf_handles, plan,
                                         query, options_, 0, GetPKList);
   }
-  return {r.time_elapsed_ms, r.records_matched};
+  return {r.time_elapsed_us, r.records_matched};
 }
 
 WriteStats SIEagerBinding::GetWriteStats() {

@@ -38,7 +38,7 @@ inline const char* kCharSet =
 inline const size_t kMaxCharIndex = strlen(kCharSet) - 1;
 
 struct ReadResult {
-  uint64_t time_elapsed_ms;
+  uint64_t time_elapsed_us;
   uint64_t records_matched;
   double selectivity_actual;
 };
@@ -176,7 +176,7 @@ class BenchmarkExperiment {
         return 1;
       }
       double sel_actual = n > 0 ? static_cast<double>(sr.matched) / n : 0.0;
-      cout << "RESULT:" << sr.elapsed_ms << "," << sr.matched
+      cout << "RESULT:" << sr.elapsed_us / 1000 << "," << sr.matched
            << "," << sel_actual << "\n";
     } else {
       uint64_t user_bytes = FillKVP(schema, n, wa_mode);

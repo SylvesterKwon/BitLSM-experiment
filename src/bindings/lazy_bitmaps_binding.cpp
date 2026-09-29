@@ -212,7 +212,7 @@ ScanResult LazyBitmapsBinding::Scan(BitLSMQuery& query) {
   if (plan.si_lookups.empty()) {
     auto r = benchmark::ScanFullTable(db_, cf_, query, options_, 0);
     last_scan_ = {r.records_matched, r.records_matched, r.records_matched};
-    return {r.time_elapsed_ms, r.records_matched};
+    return {r.time_elapsed_us, r.records_matched};
   }
   const auto start = std::chrono::high_resolution_clock::now();
   const PerfSnapshot p0 = PerfSnapshot::Now();
@@ -324,7 +324,7 @@ ScanResult LazyBitmapsBinding::Scan(BitLSMQuery& query) {
   db_->ReleaseSnapshot(snap);
 
   const auto elapsed =
-      std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::duration_cast<std::chrono::microseconds>(
           std::chrono::high_resolution_clock::now() - start)
           .count();
   const PerfSnapshot bitmaps = p1 - p0, rowid_map = p2 - p1, index = p2 - p0;
@@ -333,7 +333,7 @@ ScanResult LazyBitmapsBinding::Scan(BitLSMQuery& query) {
   idx_hits_ += index.hits;
   last_scan_ = {n_q, n_pk, matched};
   std::cout << "scan (lazy-bitmaps) done: " << matched << " matched, |Q|="
-            << n_q << " |PKs|=" << n_pk << ", " << elapsed
+            << n_q << " |PKs|=" << n_pk << ", " << elapsed / 1000
             << "ms, operands_folded=" << lazy_bitmaps::tl_operands_folded
             << ", bitmaps_read_kb=" << bitmaps.bytes / 1024
             << " rowid_map_read_kb=" << rowid_map.bytes / 1024 << "\n";

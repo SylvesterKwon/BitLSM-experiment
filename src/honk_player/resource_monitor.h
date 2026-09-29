@@ -14,7 +14,7 @@ class ResourceMonitor {
                   const std::string& thread_path)
       : sample_csv_(sample_path), thread_csv_(thread_path),
         start_(std::chrono::steady_clock::now()) {
-    sample_csv_ << "timestamp_ns,insertions,rss_kb\n";
+    sample_csv_ << "timestamp_ns,insertions,rss_kb,peak_rss_kb\n";
     thread_csv_
         << "timestamp_ns,insertions,tid,comm,utime_ticks,stime_ticks\n";
   }
@@ -24,8 +24,11 @@ class ResourceMonitor {
                      std::chrono::steady_clock::now() - start_)
                      .count();
 
-    long rss_kb = ReadRssKb();
-    sample_csv_ << ts_ns << "," << insertions << "," << rss_kb << "\n";
+    // VmHWM is the kernel's peak RSS since process start, so the last row
+    // (taken after the drain) holds the run's peak even where it fell between
+    // two checkpoints.
+    sample_csv_ << ts_ns << "," << insertions << "," << ReadStatusKb("VmRSS")
+                << "," << ReadStatusKb("VmHWM") << "\n";
     sample_csv_.flush();
 
     DIR* dir = opendir("/proc/self/task");
@@ -46,13 +49,15 @@ class ResourceMonitor {
   }
 
  private:
-  static long ReadRssKb() {
+  // One field of /proc/self/status in KB, 0 if absent.
+  static long ReadStatusKb(const char* field) {
     std::ifstream f("/proc/self/status");
     std::string line;
+    const size_t n = std::strlen(field);
     while (std::getline(f, line)) {
-      if (line.compare(0, 6, "VmRSS:") == 0) {
+      if (line.compare(0, n, field) == 0 && line.size() > n && line[n] == ':') {
         long kb = 0;
-        std::sscanf(line.c_str() + 6, "%ld", &kb);
+        std::sscanf(line.c_str() + n + 1, "%ld", &kb);
         return kb;
       }
     }
