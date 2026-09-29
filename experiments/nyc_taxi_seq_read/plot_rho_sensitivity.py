@@ -1,49 +1,63 @@
 #!/usr/bin/env python3
-"""Plot the rho sensitivity supplementary experiment (single-column figures).
+"""Plot the rho sensitivity supplementary experiment (one two-column figure).
 
-Two figures, both with rho on a log x-axis running coarse (left) to fine
-(right), so moving right always means spending more on the index:
+Reads the CSVs that summarize_rho_sensitivity.py writes from the read,
+candidate and ingest runs, and draws rho_sensitivity.pdf: one row of three
+panels, each with rho on a log x-axis running coarse (left) to fine (right),
+so moving right always means spending more on the index. A dotted vertical
+line marks the default, rho = 0.001.
 
-  1. rho_sensitivity_latency.pdf   — mean query latency per predicate count c.
-     The optimum rho moves with c, and past it the curve turns back up because
-     the SABI block keeps growing after pruning has saturated. c=1 has not
-     turned by the edge of the grid, so its optimum lies below the smallest rho
-     measured.
+  1. MEDIAN query latency per predicate count c. The optimum rho moves with c,
+     and past it the curve turns back up because the SABI block keeps growing
+     after pruning has saturated. c=1 has not turned by the edge of the grid,
+     so its optimum lies below the smallest rho measured.
 
      The curves are plotted exactly as measured. Higher c necessarily draws in
      lower-cardinality attributes, because reaching a fixed total selectivity
      with more predicates requires weaker ones -- that is a property of
      multi-predicate queries, not a sampling artifact, so it is not filtered
      out.
-  2. rho_sensitivity_ingestion.pdf — what that resolution costs to build:
-     DB size and background CPU side by side, both normalized to no-index.
-
-Latency comes from the read sweep, ingestion cost from the write sweep, so the
-two live in different result directories.
+  2. The mechanism: the MEDIAN candidate-to-match ratio, per c. 1 means every
+     candidate the bitmaps select is a match.
+  3. What each rho costs to build: ingest time (drain included) and DB size,
+     each relative to No Index. Background CPU time (1.4-1.6x) would flatten
+     these two on a shared axis, so the text reports it instead. Peak RSS is
+     left out: it is dominated by the resident index, which the reader
+     currently holds twice, so it would not read as the cost of rho.
 
 Usage:
-    python3 experiments/nyc_taxi_seq_read/plot_rho_sensitivity.py <read_dir>
-    python3 experiments/nyc_taxi_seq_read/plot_rho_sensitivity.py <read_dir> \
-        -w <write_dir> -o <output_dir>
+    python3 experiments/nyc_taxi_seq_read/summarize_rho_sensitivity.py \\
+        <read_dir> <candidates_dir> <ingest_dir>
+    python3 experiments/nyc_taxi_seq_read/plot_rho_sensitivity.py <read_dir> \\
+        [-o <output_dir>]
 """
 
 import argparse
 import csv
-import glob
 import math
 import os
-import re
-import statistics as st
+from collections import defaultdict
 
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import matplotlib.transforms as mtransforms
 
-plt.rcParams.update({"font.size": 6})
+plt.rcParams.update({
+    "font.size": 6,
+    # Ticks point into the axes, short and hairline-thin, matching
+    # seq_write_wa/plot.py.
+    "xtick.direction": "in", "ytick.direction": "in",
+    "xtick.major.size": 2, "ytick.major.size": 2,
+    "xtick.minor.size": 1, "ytick.minor.size": 1,
+    "xtick.major.width": 0.3, "ytick.major.width": 0.3,
+    "xtick.minor.width": 0.3, "ytick.minor.width": 0.3,
+})
 
 COLUMN_W = 3.333          # single text column, inches
-GOLDEN = 0.618
-HZ = 100                  # USER_HZ for /proc/<pid>/task/<tid>/stat ticks
+BOX_ASPECT = 0.702        # the paper's panel shape (see CLAUDE.md)
+
+QUERY_SUMMARY_CSV = "rho_sensitivity_query_summary.csv"
+INGEST_CSV = "rho_sensitivity_ingest.csv"
 
 # honk_player logs records_total as 0 for these workloads, so per-query
 # selectivity has to be recovered against the known row count of the ingest.
@@ -57,42 +71,64 @@ DELTA = 0.2
 C_COLORS = {1: "#F09080", 2: "#E05545", 3: "#B02525", 4: "#6B0F0F"}
 C_MARKERS = {1: "o", 2: "s", 3: "D", 4: "^"}
 
-READ_RE = re.compile(r"_k(\d)_.*_bitlsm_rho([\d.]+)_read_log\.csv$")
-THREAD_RE = re.compile(r"_(no-index|bitlsm_rho[\d.]+)_thread_log\.csv$")
+DEFAULT_RHO = 0.001
+
+# The ingest costs are BitLSM's own, not methods. Every other hue already
+# names a method somewhere in the paper (red BitLSM, and the c lines beside
+# them; lavender, green, magenta, teal, blue, orange for the baselines), so
+# the two costs share brown, a hue no method uses, in a dark and a light shade.
+INGEST_STYLES = {
+    "ingest_ms_vs_no_index":
+        ("Ingest time", dict(color="#7A4A2A", marker="o")),
+    "db_size_vs_no_index":
+        ("DB size", dict(color="#C49A6C", marker="^")),
+}
 
 
-def read_cells(read_dir):
-    """({(c, rho): [latency_ms, ...]}, {(c, rho): mean_rows_matched})."""
-    cells, matched = {}, {}
-    for path in sorted(glob.glob(os.path.join(read_dir, "*_read_log.csv"))):
-        m = READ_RE.search(os.path.basename(path))
-        if not m:
-            continue
-        c, rho = int(m.group(1)), float(m.group(2))
-        lat, hits = [], []
-        with open(path) as f:
-            for row in csv.DictReader(f):
-                lat.append(int(row["time_elapsed_ms"]))
-                hits.append(int(row["records_matched"]))
-        if lat:
-            cells[(c, rho)] = lat
-            matched[(c, rho)] = st.mean(hits)
-    return cells, matched
+def read_csv_rows(path):
+    with open(path, newline="") as f:
+        return list(csv.DictReader(f))
 
 
-def measured_sigma(matched):
+def load_query_cells(summary_dir):
+    """{(c, rho): summary row with numeric fields as floats}."""
+    cells = {}
+    for r in read_csv_rows(os.path.join(summary_dir, QUERY_SUMMARY_CSV)):
+        row = {k: float(v) if v not in ("",) and k != "c" else v
+               for k, v in r.items()}
+        cells[(int(r["c"]), float(r["rho"]))] = row
+    return cells
+
+
+def load_ingest(summary_dir):
+    """({rho: row}, no_index_row) with numeric fields as floats."""
+    path = os.path.join(summary_dir, INGEST_CSV)
+    if not os.path.exists(path):
+        return {}, None
+    arms, base = {}, None
+    for r in read_csv_rows(path):
+        row = {k: (float(v) if v != "" and k != "method" else v)
+               for k, v in r.items()}
+        if r["method"] == "no-index":
+            base = row
+        else:
+            arms[float(r["rho"])] = row
+    return arms, base
+
+
+def measured_sigma(cells):
     """Total query selectivity, averaged over the predicate counts.
 
     The same query set runs at every rho, so per-c selectivity is constant down
     the rho axis; averaging the per-c values gives the single sigma the
     workload was generated to hit.
     """
-    per_c = {}
-    for (c, _), hits in matched.items():
-        per_c.setdefault(c, []).append(hits)
+    per_c = defaultdict(list)
+    for (c, _), row in cells.items():
+        per_c[c].append(row["mean_records_matched"])
     if not per_c:
         return None
-    return st.mean([st.mean(v) / TOTAL_ROWS for v in per_c.values()])
+    return sum(sum(v) / len(v) / TOTAL_ROWS for v in per_c.values()) / len(per_c)
 
 
 def _sci(v):
@@ -194,174 +230,144 @@ def draw_optimum_refs(ax, sigma, rhos, counts):
                 bbox=box, zorder=5)
 
 
-def ingestion_costs(write_dir):
-    """({rho: size_ratio}, {rho: bg_cpu_ratio}) normalized to no-index."""
-    sizes = {}
-    size_csv = os.path.join(write_dir, "db_size.csv")
-    if os.path.exists(size_csv):
-        for row in csv.DictReader(open(size_csv)):
-            key = "no-index" if row["method"] == "no-index" else float(row["rho"])
-            sizes[key] = int(row["db_size_bytes"])
-
-    bg = {}
-    for path in glob.glob(os.path.join(write_dir, "*_thread_log.csv")):
-        m = THREAD_RE.search(os.path.basename(path))
-        if not m:
-            continue
-        tag = m.group(1)
-        key = "no-index" if tag == "no-index" else float(tag[len("bitlsm_rho"):])
-        rows = list(csv.DictReader(open(path)))
-        if not rows:
-            continue
-        # Ticks are cumulative, so the final checkpoint holds the run total.
-        last = rows[-1]["timestamp_ns"]
-        bg[key] = sum(int(r["utime_ticks"]) + int(r["stime_ticks"])
-                      for r in rows
-                      if r["timestamp_ns"] == last
-                      and r["comm"].startswith("rocksdb")) / HZ
-
-    def normalize(d):
-        base = d.get("no-index")
-        if not base:
-            return {}
-        return {k: v / base for k, v in d.items() if k != "no-index"}
-
-    return normalize(sizes), normalize(bg)
-
-
-def style_rho_axis(ax, rhos, label_all=False):
+def style_rho_axis(ax, rhos, label_all=False, decades=False, xlabel=True):
     """Log rho axis, coarse on the left and fine on the right.
 
-    label_all labels every sampled rho. That fits on a full-width axis but not
-    on the paired ingestion panels, which fall back to labelling decades and
-    carrying the sampled values as unlabelled minor ticks.
+    Every sampled rho gets a tick. The labels would collide even across a full
+    column, so only every other one is labelled, coarsest first and ending on
+    the finest: the measurement points stay visible and the labels stop
+    colliding. A half-column panel is too narrow even for that and labels the
+    decades only (decades=True); label_all labels them all, for a wider figure.
     """
     ax.set_xscale("log")
     ax.set_xlim(max(rhos) * 1.35, min(rhos) / 1.35)   # inverted: fine to the right
-    fmt = mticker.FuncFormatter(lambda v, _: f"{v:g}")
-    if label_all:
-        ax.xaxis.set_major_locator(mticker.FixedLocator(rhos))
-        ax.xaxis.set_minor_locator(mticker.NullLocator())
-    else:
-        ax.xaxis.set_major_locator(mticker.LogLocator(base=10.0))
-        ax.xaxis.set_minor_locator(mticker.FixedLocator(rhos))
-        ax.xaxis.set_minor_formatter(mticker.NullFormatter())
-    ax.xaxis.set_major_formatter(fmt)
-    ax.set_xlabel(r"$\rho$  (coarse $\rightarrow$ fine)")
-    ax.tick_params(which="both", direction="in", top=False, right=False)
+    ax.xaxis.set_major_locator(mticker.FixedLocator(rhos))
+    ax.xaxis.set_minor_locator(mticker.NullLocator())
+    shown = sorted(rhos, reverse=True)
+    if decades:
+        shown = [r for r in shown
+                 if abs(math.log10(r) - round(math.log10(r))) < 1e-9]
+    elif not label_all:
+        shown = shown[::2]
+
+    def fmt(v, _):
+        hit = [r for r in shown if abs(math.log(v / r)) < 1e-6]
+        return f"{hit[0]:g}" if hit else ""
+    ax.xaxis.set_major_formatter(mticker.FuncFormatter(fmt))
+    if xlabel:
+        ax.set_xlabel(r"$\rho$  (coarse $\rightarrow$ fine)")
+    ax.tick_params(which="both", top=False, right=False)
 
 
-def plot_latency(cells, matched, out_dir, stat, yscale="log"):
+def log_y(ax):
+    """Log y labelled at the decades as powers of ten (10^4, not 10000)."""
+    ax.set_yscale("log")
+    ax.yaxis.set_major_locator(mticker.LogLocator(base=10.0))
+    ax.yaxis.set_major_formatter(mticker.LogFormatterMathtext())
+    ax.yaxis.set_minor_formatter(mticker.NullFormatter())
+
+
+def save(fig, out_dir, name):
+    out = os.path.join(out_dir, name)
+    fig.savefig(out, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  wrote {out}")
+
+
+def c_legend(fig_or_ax, handles, labels, **kw):
+    fig_or_ax.legend(handles, labels, ncol=len(labels), frameon=False,
+                     handlelength=1.6, **kw)
+
+
+def plot_row(cells, arms, out_dir, stat):
     rhos = sorted({rho for _, rho in cells})
+    counts = sorted({c for c, _ in cells})
     if not rhos:
-        print("  no read cells found, skipping latency figure")
+        print("  no read cells found, skipping the figure")
         return
 
-    fig, ax = plt.subplots(figsize=(COLUMN_W, COLUMN_W * GOLDEN))
-    agg = st.mean if stat == "mean" else st.median
+    fig, axes = plt.subplots(1, 3, figsize=(7, 1.85))
+    fig.subplots_adjust(left=0.07, right=0.995, bottom=0.16, top=0.86,
+                        wspace=0.42)
+    for ax in axes:
+        ax.set_box_aspect(BOX_ASPECT)
+        ax.axvline(DEFAULT_RHO, color="#5A5A5A", linewidth=0.5,
+                   linestyle=":", zorder=1)
 
-    for c in sorted({c for c, _ in cells}):
-        xs = [r for r in rhos if (c, r) in cells]
-        ys = [agg(cells[(c, r)]) for r in xs]
-        ax.plot(xs, ys, marker=C_MARKERS.get(c, "o"), markersize=2.5,
-                linewidth=1.0, color=C_COLORS.get(c, "#5A5A5A"),
-                label=f"c = {c}", zorder=3)
-
-    ax.set_yscale(yscale)
-    ax.set_ylabel(f"{stat.capitalize()} Query Latency (ms)")
-    style_rho_axis(ax, rhos, label_all=True)
-    if yscale == "log":
-        ax.yaxis.set_major_formatter(
-            mticker.FuncFormatter(lambda v, _: f"{v:g}"))
-        ax.yaxis.set_minor_formatter(mticker.NullFormatter())
-    else:
-        ax.set_ylim(bottom=0)
-
-    sigma = measured_sigma(matched)
+    query_panels = [
+        (axes[0], f"{stat}_latency_ms",
+         f"{stat.capitalize()} query latency (ms)"),
+        (axes[1], "median_candidate_ratio", "Median candidate-to-match"),
+    ]
+    for ax, col, ylabel in query_panels:
+        for c in counts:
+            xs = [r for r in rhos if (c, r) in cells]
+            ax.plot(xs, [cells[(c, r)][col] for r in xs],
+                    marker=C_MARKERS.get(c, "o"), markersize=2.5,
+                    linewidth=1.0, color=C_COLORS.get(c, "#5A5A5A"),
+                    label=f"c = {c}", zorder=3)
+        ax.set_ylabel(ylabel)
+        log_y(ax)
+    axes[1].set_ylim(bottom=0.6)
+    sigma = measured_sigma(cells)
     # 임시 비활성처리.
     # if sigma:
-    #     draw_optimum_refs(ax, sigma, rhos, {c for c, _ in cells})
-    ax.legend(loc="lower left", bbox_to_anchor=(0, 1.02, 1, 0.2),
-              ncol=len({c for c, _ in cells}), mode="expand", frameon=False,
-              handlelength=1.6)
+    #     draw_optimum_refs(axes[0], sigma, rhos, set(counts))
 
-    fig.tight_layout()
-    suffix = "" if yscale == "log" else f"_{yscale}"
-    out = os.path.join(out_dir, f"rho_sensitivity_latency{suffix}.pdf")
-    fig.savefig(out, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    print(f"  wrote {out}")
+    ax = axes[2]
+    if arms:
+        irhos = sorted(arms)
+        vals = []
+        for col, (label, style) in INGEST_STYLES.items():
+            ys = [arms[r][col] for r in irhos]
+            vals += ys
+            ax.plot(irhos, ys, markersize=2.5, linewidth=1.0, label=label,
+                    zorder=3, **style)
+        lo, hi = min(vals + [1.0]), max(vals)
+        ax.set_ylim(lo - 0.15 * (hi - lo), hi + 0.15 * (hi - lo))
+    else:
+        print("  no ingest summary found, leaving the third panel empty")
+    ax.set_ylabel("Ingest cost relative\nto No Index")
 
-
-def plot_ingestion(sizes, bg, out_dir):
-    rhos = sorted(set(sizes) & set(bg))
-    if not rhos:
-        print("  no ingestion data found, skipping ingestion figure")
-        return
-
-    fig, axes = plt.subplots(1, 2, figsize=(COLUMN_W, COLUMN_W * 0.46),
-                             sharex=True)
-    # No panel titles: these figures get their (a)/(b) captions in LaTeX.
-    panels = [
-        (axes[0], sizes, "DB Size Ratio"),
-        (axes[1], bg, "Background CPU Ratio"),
-    ]
-    for ax, data, ylabel in panels:
-        ys = [data[r] for r in rhos]
-        ax.axhline(1.0, color="#5A5A5A", linewidth=0.7, linestyle=":",
-                   zorder=1)
-        ax.plot(rhos, ys, marker="o", markersize=2.5, linewidth=1.0,
-                color="#E04040", zorder=3)
-        ax.set_ylabel(ylabel)
-        style_rho_axis(ax, rhos)
-        lo, hi = min(ys + [1.0]), max(ys + [1.0])
-        pad = (hi - lo) * 0.15 or 0.05
-        ax.set_ylim(lo - pad, hi + pad)
-    fig.tight_layout(pad=0.4, w_pad=0.8)
-    out = os.path.join(out_dir, "rho_sensitivity_ingestion.pdf")
-    fig.savefig(out, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    print(f"  wrote {out}")
+    for ax in axes:
+        style_rho_axis(ax, rhos, xlabel=False)
+    fig.supxlabel(r"$\rho$  (coarse $\rightarrow$ fine)", fontsize=6,
+                  y=0.035)
+    # Legends on one row above the panels: c over the two query panels, the
+    # ingest costs over their own.
+    b0, b1, b2 = (ax.get_position() for ax in axes)
+    handles, labels = axes[0].get_legend_handles_labels()
+    c_legend(fig, handles, labels, loc="lower center",
+             bbox_to_anchor=((b0.x0 + b1.x1) / 2, b0.y1 + 0.005))
+    if arms:
+        handles, labels = axes[2].get_legend_handles_labels()
+        c_legend(fig, handles, labels, loc="lower center",
+                 bbox_to_anchor=((b2.x0 + b2.x1) / 2, b2.y1 + 0.005))
+    save(fig, out_dir, "rho_sensitivity.pdf")
 
 
 def main():
     parser = argparse.ArgumentParser(
         description="Plot the rho sensitivity experiment")
-    parser.add_argument("read_dir",
-                        help="Read sweep result directory (*_read_log.csv)")
-    parser.add_argument("-w", "--write-dir", default=None,
-                        help="Write sweep result directory (db_size.csv and "
-                             "*_thread_log.csv); omit to skip figure 2")
+    parser.add_argument("summary_dir",
+                        help="Directory holding summarize_rho_sensitivity.py "
+                             "output (by default the read result directory)")
     parser.add_argument("-o", "--output-dir", default=None,
-                        help="Where to write the PDFs (default: read_dir)")
-    parser.add_argument("--stat", choices=["mean", "median"], default="mean",
+                        help="Where to write the PDF (default: summary_dir)")
+    parser.add_argument("--stat", choices=["median", "mean"], default="median",
                         help="Per-cell statistic for the latency curves")
-    parser.add_argument("--yscale", choices=["log", "linear", "both"],
-                        default="both",
-                        help="Latency axis scale; 'both' writes the log figure "
-                             "and a _linear companion")
     args = parser.parse_args()
 
-    out_dir = args.output_dir or args.read_dir
+    out_dir = args.output_dir or args.summary_dir
     os.makedirs(out_dir, exist_ok=True)
 
-    cells, matched = read_cells(args.read_dir)
-    counts = sorted({c for c, _ in cells})
+    cells = load_query_cells(args.summary_dir)
+    arms, _ = load_ingest(args.summary_dir)
     print(f"read cells: {len(cells)} "
-          f"(c = {counts}, "
-          f"{len({r for _, r in cells})} rho values, "
-          f"{min((len(v) for v in cells.values()), default=0)}-"
-          f"{max((len(v) for v in cells.values()), default=0)} queries each)")
-    scales = ["log", "linear"] if args.yscale == "both" else [args.yscale]
-    for scale in scales:
-        plot_latency(cells, matched, out_dir, args.stat, scale)
-
-    if args.write_dir:
-        sizes, bg = ingestion_costs(args.write_dir)
-        print(f"ingestion: {len(sizes)} sizes, {len(bg)} CPU totals")
-        plot_ingestion(sizes, bg, out_dir)
-    else:
-        print("no --write-dir given, skipping the ingestion figure")
+          f"(c = {sorted({c for c, _ in cells})}, "
+          f"{len({r for _, r in cells})} rho values); "
+          f"ingest arms: {len(arms)}")
+    plot_row(cells, arms, out_dir, args.stat)
 
 
 if __name__ == "__main__":
