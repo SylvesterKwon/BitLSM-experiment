@@ -38,6 +38,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from run_common import (  # noqa: E402
     add_common_args, make_result_dir, maybe_run_as_daemon,
+    parse_method_filter,
     setup_logging, teardown_logging, warn_if_cpu_unpinned,
 )
 from myrocks import server_profile  # noqa: E402
@@ -319,9 +320,14 @@ def run_one(workload, config, table, engine, layout, n_writers, n_rows,
     }
 
 
-def run(config_path, dry_run, start_from):
+def run(config_path, dry_run, start_from, method_filter=None):
     with open(config_path) as f:
         config = json.load(f)
+    if method_filter:
+        config["identities"] = [c for c in config["identities"]
+                                if c["engine"] in method_filter]
+        if not config["identities"]:
+            sys.exit(f"No methods matched: {method_filter}")
     if config.get("build_kind") != "release":
         raise SystemExit("ingest sweep requires build_kind=release — "
                          f"got {config.get('build_kind')!r}")
@@ -399,7 +405,8 @@ def main():
     args = parser.parse_args()
     maybe_run_as_daemon(args)
     sys.exit(run(args.config, dry_run=args.dry_run,
-                 start_from=args.start_from))
+                 start_from=args.start_from,
+                 method_filter=parse_method_filter(args)))
 
 
 if __name__ == "__main__":

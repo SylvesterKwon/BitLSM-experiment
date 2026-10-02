@@ -33,6 +33,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from run_common import (  # noqa: E402
     add_common_args, make_result_dir, maybe_run_as_daemon,
+    parse_method_filter,
     setup_logging, teardown_logging, warn_if_cpu_unpinned,
 )
 from myrocks import metrics, server_profile  # noqa: E402
@@ -94,9 +95,14 @@ def _measure_cold_once(datadir, profile, engine, workload, qid, sql, plan,
         return row, srv.build_info(), srv.args_hash()
 
 
-def run(config_path, dry_run, start_from):
+def run(config_path, dry_run, start_from, method_filter=None):
     with open(config_path) as f:
         config = json.load(f)
+    if method_filter:
+        config["cells"] = [c for c in config["cells"]
+                           if c["engine"] in method_filter]
+        if not config["cells"]:
+            sys.exit(f"No methods matched: {method_filter}")
     if config.get("build_kind") != "release":
         raise SystemExit("perf-mode requires build_kind=release (D7) — "
                          f"got {config.get('build_kind')!r}")
@@ -274,7 +280,8 @@ def main():
     args = parser.parse_args()
     maybe_run_as_daemon(args)
     sys.exit(run(args.config, dry_run=args.dry_run,
-                 start_from=args.start_from))
+                 start_from=args.start_from,
+                 method_filter=parse_method_filter(args)))
 
 
 if __name__ == "__main__":

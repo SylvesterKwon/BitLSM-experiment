@@ -28,6 +28,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from run_common import (  # noqa: E402
     add_common_args, make_result_dir, maybe_run_as_daemon,
+    parse_method_filter,
     setup_logging, teardown_logging,
 )
 from myrocks import driver as drv  # noqa: E402
@@ -98,9 +99,14 @@ class GroundTruth:
         return self.cache[qid], self.cache[qid] == engine_count
 
 
-def run(config_path, dry_run, start_from):
+def run(config_path, dry_run, start_from, method_filter=None):
     with open(config_path) as f:
         config = json.load(f)
+    if method_filter:
+        config["cells"] = [c for c in config["cells"]
+                           if c["engine"] in method_filter]
+        if not config["cells"]:
+            sys.exit(f"No methods matched: {method_filter}")
 
     exp_set = os.path.splitext(os.path.basename(config_path))[0]
     exp_name = os.path.basename(os.path.dirname(os.path.abspath(__file__)))
@@ -271,7 +277,8 @@ def main():
     args = parser.parse_args()
     maybe_run_as_daemon(args)
     sys.exit(run(args.config, dry_run=args.dry_run,
-                 start_from=args.start_from))
+                 start_from=args.start_from,
+                 method_filter=parse_method_filter(args)))
 
 
 if __name__ == "__main__":

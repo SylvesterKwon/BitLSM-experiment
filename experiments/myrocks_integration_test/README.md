@@ -68,6 +68,8 @@ MANIFEST and never downloads.
 
 All take an exp_set JSON + the common runner flags (`--dry-run`,
 `--start-from`, `--no-daemon`, ...; daemon is the default, logs in `logs/`).
+`--methods` takes engine names (`bitlsm`, `myrocks`, `innodb`) and keeps only
+those cells, e.g. `--methods bitlsm` to re-run the BitLSM arms alone.
 
 ```bash
 # plan-mode: EXPLAIN/optimizer-trace sweep + COUNT ground-truth gate
