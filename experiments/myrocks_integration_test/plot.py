@@ -59,9 +59,9 @@ CELL_COLORS = {
     ("innodb", "composite_v1"): "#6A5A8A",
 }
 ENGINE_LEGEND = [
-    ("MyRocks", "#4CC850"),
-    ("BitLSM", "#E04040"),
-    ("InnoDB", "#9888B8"),
+    ("myrocks", "MyRocks", "#4CC850"),
+    ("bitlsm", "BitLSM", "#E04040"),
+    ("innodb", "InnoDB", "#9888B8"),
 ]
 
 GIB = float(1 << 30)
@@ -174,8 +174,11 @@ def plot_ingest(data, output_dir, log, cap, fmts):
     draw_panel(axes[1], cells, gib, "Datadir size (GiB)",
                lambda v: f"{v:.2f}")
 
-    handles = [plt.Rectangle((0, 0), 1, 1, color=c) for _, c in ENGINE_LEGEND]
-    axes[0].legend(handles, [n for n, _ in ENGINE_LEGEND],
+    # The legend lists only the engines present in the data.
+    present = {engine for engine, _ in cells}
+    legend = [(n, c) for e, n, c in ENGINE_LEGEND if e in present]
+    handles = [plt.Rectangle((0, 0), 1, 1, color=c) for _, c in legend]
+    axes[0].legend(handles, [n for n, _ in legend],
                    loc="upper left", frameon=False, ncol=3,
                    handlelength=1.0, columnspacing=1.0)
 
