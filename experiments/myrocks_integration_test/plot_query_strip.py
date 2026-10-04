@@ -72,6 +72,14 @@ ROWS = [
 JITTER = 0.10
 JITTER_SEED = 1234      # fixed so a re-run redraws the same figure
 
+# Dots named on the figure: query id -> (label, the rows it is named on).
+# Taxpayer Q2 has no predicate, so the bitmap cannot serve it and the two
+# BitLSM rows differ on it alone.
+LABELLED = {
+    "pbitax_q02": ("Q2", {("bitlsm", "sk_bi_v1", "auto"),
+                          ("bitlsm", "bi_v1", "auto")}),
+}
+
 FIG_W = 7.0             # two-column figure width in inches
 FIG_H = FIG_W * 0.618 * 0.66 * 0.7
 
@@ -117,6 +125,7 @@ def fmt(v):
 
 def panel(ax, cells, queries):
     present = [(k, eng, sch, col) for k, eng, sch, col in ROWS if k in cells]
+    named = {}          # query id -> [(x, y)] of its dots on the named rows
     for i, (key, engine, scheme, colour) in enumerate(present):
         y = len(present) - 1 - i
         vals = [cells[key][q] for q in queries]
@@ -125,8 +134,12 @@ def panel(ax, cells, queries):
         # across the panel. Not a grid -- there is nothing to read off it.
         ax.axhline(y, color=colour, lw=0.5, alpha=0.22, zorder=1)
         rng = random.Random(JITTER_SEED)
-        ax.scatter(vals, [y + rng.uniform(-JITTER, JITTER) for _ in vals],
+        ys = [y + rng.uniform(-JITTER, JITTER) for _ in vals]
+        ax.scatter(vals, ys,
                    s=4.5, c=colour, alpha=0.55, edgecolors="none", zorder=3)
+        for q, x, yq in zip(queries, vals, ys):
+            if key in LABELLED.get(q, (None, ()))[1]:
+                named.setdefault(q, []).append((x, yq))
         gm = st.geometric_mean(vals)
         # A short heavy rule, not a marker: it pins the summary to one x
         # without covering the dots it summarises, and cannot be mistaken for
@@ -136,6 +149,18 @@ def panel(ax, cells, queries):
         ax.annotate(fmt(gm), (gm, y), textcoords="offset points",
                     xytext=(0, 5), ha="center", fontsize=5,
                     color=colour, zorder=6)
+    # One label per named query, midway between its dots (the x axis is log,
+    # so midway is the geometric mean), with an arrow to each.
+    for q, pts in named.items():
+        mx = st.geometric_mean([x for x, _ in pts])
+        my = st.mean([yq for _, yq in pts])
+        ax.text(mx, my, LABELLED[q][0], ha="center", va="center",
+                fontsize=5, color="black", zorder=6)
+        for x, yq in pts:
+            ax.annotate("", xy=(x, yq), xytext=(mx, my),
+                        arrowprops=dict(arrowstyle="->", lw=0.4,
+                                        color="black", mutation_scale=4,
+                                        shrinkA=6, shrinkB=4.5), zorder=6)
     ax.set_xscale("log")
     ax.set_ylim(-0.6, len(present) - 0.25)
     ax.grid(False)
